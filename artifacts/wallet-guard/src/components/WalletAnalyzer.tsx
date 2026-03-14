@@ -133,21 +133,22 @@ const WalletAnalyzer = () => {
     const balanceUSDT = rawUsdt ? parseFloat(rawUsdt) / 1e6 : 0;
     const dateCreated: number = account.create_time || Date.now();
 
-    // 2. Transaction counts via TronGrid (total, in, out)
+    // 2. Transaction counts via TronGrid
+    //    txIn  = transactions where addr is RECEIVER (only_to=true)
+    //    txOut = transactions where addr is SENDER   (only_from=true)
     let totalTx = 0;
     let txIn = 0;
     let txOut = 0;
     try {
-      const txData = await tronGridFetch(
-        `https://api.trongrid.io/v1/accounts/${encodeURIComponent(addr)}/transactions?limit=1&only_confirmed=true`
-      );
-      totalTx = txData.meta?.total || 0;
-
-      const txInData = await tronGridFetch(
-        `https://api.trongrid.io/v1/accounts/${encodeURIComponent(addr)}/transactions?limit=1&only_confirmed=true&only_to=true`
-      );
-      txIn = txInData.meta?.total || 0;
-      txOut = Math.max(0, totalTx - txIn);
+      const base = `https://api.trongrid.io/v1/accounts/${encodeURIComponent(addr)}/transactions?limit=1&only_confirmed=true`;
+      const [txTotalData, txInData, txOutData] = await Promise.all([
+        tronGridFetch(base),
+        tronGridFetch(`${base}&only_to=true`),
+        tronGridFetch(`${base}&only_from=true`),
+      ]);
+      totalTx = txTotalData.meta?.total || 0;
+      txIn    = txInData.meta?.total   || 0;   // receiver = wallet → incoming (green)
+      txOut   = txOutData.meta?.total  || 0;   // sender   = wallet → outgoing (red)
     } catch {
       // Non-fatal; continue with zeros
     }
