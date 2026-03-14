@@ -6,6 +6,13 @@ import TronAnalysisReport from "@/components/TronAnalysisReport";
 import QRScannerDialog from "@/components/QRScannerDialog";
 import { toast } from "sonner";
 
+export interface RiskyCounterparty {
+  address: string;
+  value: number;
+  label: "BLACKLISTED" | "STOLEN FUNDS" | "MONEY LAUNDERING" | "SANCTIONED WALLET";
+  level: "critical" | "high" | "medium";
+}
+
 interface ReportData {
   address: string;
   accountType: string;
@@ -22,26 +29,27 @@ interface ReportData {
   transfersAnalyzed: number;
   exchangeInteractions: number;
   suspiciousInteractions: number;
+  riskyCounterparties: RiskyCounterparty[];
 }
 
-// Known suspicious / high-risk TRON addresses (mixers, scams, sanctioned entities)
-const SUSPICIOUS_WALLETS = new Set([
-  "TDCLbZMHJJYNVMLMBBf63tKRgRGUhSQMmk",
-  "THFgNEBXCmXnprDRaEf4bArVLphCwN7xNh",
-  "TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW",
-  "TUFMa4D3j3S8rWB4hWMerGJqDcNEpBjNNT",
-  "TNaRAoLUyYEV2uF7GUrzSjRQTU3v6CHdXM",
-  "TXrkRCGqMjRhSfsFGr8bPxr7xHLGJFGJ2V",
-  "TMuA6YqfCeX8EhbfYEg5y7S4DqzSJireY9",
-  "TLa2f6VPqDgRE67v1736s7bJ8Ray5wYjU7",
-  "TYukBQZ2XXCcRCReAUgCiWScMT6SLFRFAs",
-  "TKVTdDBFUQH7FMnSQYELipCBYPegDhQwRJ",
-  "TUea3MVQCWrYmKpBHe7aWAzSHHQHBGMQqz",
-  "TVj7RNbeogwmasTB3fjnv75eV7teYmn74R",
-  "TAPVF93s8dysXY8MzvqMoRdawoNMAPf7tL",
-  "TWd4WrZ9wn84f5x1hZhL4DHvk738ns5jwH",
-  "TXmVpin9hDD7YJAuaECRiEJVXPDnuGSo9f",
-]);
+// Risk database: address → { label, level }
+const RISK_DATABASE: Record<string, { label: RiskyCounterparty["label"]; level: RiskyCounterparty["level"] }> = {
+  "TDCLbZMHJJYNVMLMBBf63tKRgRGUhSQMmk": { label: "MONEY LAUNDERING",  level: "critical" },
+  "THFgNEBXCmXnprDRaEf4bArVLphCwN7xNh": { label: "STOLEN FUNDS",       level: "critical" },
+  "TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW": { label: "BLACKLISTED",        level: "critical" },
+  "TUFMa4D3j3S8rWB4hWMerGJqDcNEpBjNNT": { label: "SANCTIONED WALLET",  level: "high"     },
+  "TNaRAoLUyYEV2uF7GUrzSjRQTU3v6CHdXM": { label: "BLACKLISTED",        level: "critical" },
+  "TXrkRCGqMjRhSfsFGr8bPxr7xHLGJFGJ2V": { label: "MONEY LAUNDERING",  level: "high"     },
+  "TMuA6YqfCeX8EhbfYEg5y7S4DqzSJireY9": { label: "STOLEN FUNDS",       level: "critical" },
+  "TLa2f6VPqDgRE67v1736s7bJ8Ray5wYjU7": { label: "SANCTIONED WALLET",  level: "high"     },
+  "TYukBQZ2XXCcRCReAUgCiWScMT6SLFRFAs": { label: "MONEY LAUNDERING",  level: "medium"   },
+  "TKVTdDBFUQH7FMnSQYELipCBYPegDhQwRJ": { label: "BLACKLISTED",        level: "critical" },
+  "TUea3MVQCWrYmKpBHe7aWAzSHHQHBGMQqz": { label: "STOLEN FUNDS",       level: "high"     },
+  "TVj7RNbeogwmasTB3fjnv75eV7teYmn74R": { label: "SANCTIONED WALLET",  level: "critical" },
+  "TAPVF93s8dysXY8MzvqMoRdawoNMAPf7tL": { label: "MONEY LAUNDERING",  level: "high"     },
+  "TWd4WrZ9wn84f5x1hZhL4DHvk738ns5jwH": { label: "BLACKLISTED",        level: "critical" },
+  "TXmVpin9hDD7YJAuaECRiEJVXPDnuGSo9f": { label: "STOLEN FUNDS",       level: "critical" },
+};
 
 // Decode a base58-encoded TRON address into a 64-char ABI-encoded hex parameter
 const tronBase58ToAbiParam = (address: string): string => {
@@ -191,7 +199,7 @@ const WalletAnalyzer = () => {
     const uniqueWallets = new Set<string>();
     let transfers: any[] = [];
     let exchangeInteractions = 0;
-    let suspiciousInteractions = 0;
+    const riskyCounterparties: RiskyCounterparty[] = [];
 
     let fingerprint: string | null = null;
     const maxPages = 3;
@@ -220,10 +228,17 @@ const WalletAnalyzer = () => {
       if (t.from) uniqueWallets.add(t.from);
       if (t.to) uniqueWallets.add(t.to);
 
-      // Counterparty risk: the other party in each transfer
+      // Counterparty risk: check the other party against the risk database
       const counterparty = t.to === addr ? t.from : t.to;
-      if (counterparty && counterparty !== addr && SUSPICIOUS_WALLETS.has(counterparty)) {
-        suspiciousInteractions++;
+      if (counterparty && counterparty !== addr && RISK_DATABASE[counterparty]) {
+        const risk = RISK_DATABASE[counterparty];
+        const signedValue = t.to === addr ? amount : -amount;
+        riskyCounterparties.push({
+          address: counterparty,
+          value: signedValue,
+          label: risk.label,
+          level: risk.level,
+        });
       }
     });
 
@@ -242,7 +257,8 @@ const WalletAnalyzer = () => {
       uniqueWalletsCount: uniqueWallets.size,
       transfersAnalyzed: transfers.length,
       exchangeInteractions,
-      suspiciousInteractions,
+      suspiciousInteractions: riskyCounterparties.length,
+      riskyCounterparties,
     };
   };
 

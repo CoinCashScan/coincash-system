@@ -2,7 +2,8 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { motion } from "framer-motion";
-import { History, AlertTriangle, ArrowRightLeft, Ban, ShieldAlert } from "lucide-react";
+import { History, AlertTriangle, ArrowRightLeft, Ban, ShieldAlert, ShieldX } from "lucide-react";
+import type { RiskyCounterparty } from "@/components/WalletAnalyzer";
 
 interface ReportData {
   address: string;
@@ -20,6 +21,7 @@ interface ReportData {
   transfersAnalyzed: number;
   exchangeInteractions: number;
   suspiciousInteractions: number;
+  riskyCounterparties: RiskyCounterparty[];
 }
 
 const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
@@ -39,6 +41,7 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
     transfersAnalyzed = 0,
     exchangeInteractions = 0,
     suspiciousInteractions = 0,
+    riskyCounterparties = [],
   } = reportData || {};
 
   const creationDate = dateCreated ? new Date(dateCreated) : new Date();
@@ -420,6 +423,82 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
                       No se encontraron sanciones ni congelamientos para esta dirección.
                     </TableCell>
                   </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Risk Counterparty */}
+      <Card className="border-orange-500/20">
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-lg text-orange-400">
+            <ShieldX className="w-5 h-5" />
+            Contrapartes de Riesgo
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-md border overflow-hidden">
+            <Table>
+              <TableHeader className="bg-muted/50">
+                <TableRow>
+                  <TableHead>Nivel de Riesgo</TableHead>
+                  <TableHead>Dirección Contraparte</TableHead>
+                  <TableHead>Valor Transacción</TableHead>
+                  <TableHead>Etiqueta de Riesgo</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {riskyCounterparties.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center text-muted-foreground py-4">
+                      No se detectaron contrapartes de riesgo en los últimos 150 movimientos.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  riskyCounterparties.map((r, i) => {
+                    const levelLabel =
+                      r.level === "critical" ? "Crítico"
+                      : r.level === "high" ? "Alto"
+                      : "Moderado";
+                    const levelColor =
+                      r.level === "critical" ? "text-red-500"
+                      : r.level === "high" ? "text-orange-400"
+                      : "text-yellow-400";
+                    const valueColor = r.value >= 0 ? "text-green-400" : "text-red-400";
+                    const formattedValue =
+                      (r.value >= 0 ? "+" : "") +
+                      r.value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) +
+                      " USDT";
+                    return (
+                      <TableRow key={i}>
+                        <TableCell>
+                          <span className={`font-semibold text-sm ${levelColor}`}>{levelLabel}</span>
+                        </TableCell>
+                        <TableCell className="font-mono text-xs text-muted-foreground">
+                          {r.address.slice(0, 8)}…{r.address.slice(-6)}
+                        </TableCell>
+                        <TableCell className={`font-medium tabular-nums ${valueColor}`}>
+                          {formattedValue}
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant={r.level === "critical" ? "destructive" : "outline"}
+                            className={
+                              r.level === "high"
+                                ? "border-orange-500 text-orange-400"
+                                : r.level === "medium"
+                                ? "border-yellow-500 text-yellow-400"
+                                : ""
+                            }
+                          >
+                            {r.label}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
                 )}
               </TableBody>
             </Table>
