@@ -10,6 +10,7 @@ import { toast } from "sonner";
 interface ReportData {
   address: string;
   accountType: string;
+  isFrozen: boolean;
   balanceUSDT: number;
   totalTx: number;
   txIn: number;
@@ -22,6 +23,24 @@ interface ReportData {
   transfersAnalyzed: number;
   exchangeInteractions: number;
 }
+
+// Decode a base58-encoded TRON address into a 64-char ABI-encoded hex parameter
+const tronBase58ToAbiParam = (address: string): string => {
+  const ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+  let n = 0n;
+  for (const c of address) {
+    const idx = ALPHABET.indexOf(c);
+    if (idx < 0) throw new Error("Invalid base58 character");
+    n = n * 58n + BigInt(idx);
+  }
+  // 25 bytes: [0x41 prefix][20-byte address][4-byte checksum]
+  // Encoded as 50 hex chars
+  const hex = n.toString(16).padStart(50, "0");
+  // Take only the 20-byte address part (chars 2-42, skipping "41" prefix)
+  const addressHex = hex.slice(2, 42);
+  // ABI-encode as address: left-pad to 32 bytes (64 hex chars)
+  return addressHex.padStart(64, "0");
+};
 
 const WalletAnalyzer = () => {
   const [address, setAddress] = useState("");
@@ -50,16 +69,46 @@ const WalletAnalyzer = () => {
     return res.json();
   };
 
+  const checkUsdtBlacklist = async (addr: string): Promise<boolean> => {
+    try {
+      const usdtContract = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
+      const param = tronBase58ToAbiParam(addr);
+      const apiKey = import.meta.env.VITE_TRON_API_KEY;
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (apiKey) headers["TRON-PRO-API-KEY"] = apiKey;
+
+      const res = await fetch("https://api.trongrid.io/wallet/triggerconstantcontract", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          owner_address: addr,
+          contract_address: usdtContract,
+          function_selector: "isBlacklisted(address)",
+          parameter: param,
+          visible: true,
+        }),
+      });
+      if (!res.ok) return false;
+      const data = await res.json();
+      // ABI bool result: 32 bytes — all zeros = false, last byte 01 = true
+      const result: string = data.constant_result?.[0] ?? "";
+      return /[^0]/.test(result);
+    } catch {
+      return false;
+    }
+  };
+
   const fetchTronData = async (addr: string): Promise<ReportData> => {
     if (!isValidTronAddress(addr)) {
       throw new Error("Formato de dirección TRON inválido");
     }
     const usdtContract = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
 
-    // 1. Account info via TronGrid
-    const accountData = await tronGridFetch(
-      `https://api.trongrid.io/v1/accounts/${encodeURIComponent(addr)}`
-    );
+    // 1. Account info + blacklist check in parallel
+    const [accountData, isFrozen] = await Promise.all([
+      tronGridFetch(`https://api.trongrid.io/v1/accounts/${encodeURIComponent(addr)}`),
+      checkUsdtBlacklist(addr),
+    ]);
     const account = accountData.data?.[0];
     if (!account) throw new Error("Dirección no encontrada en la red TRON");
 
@@ -152,6 +201,7 @@ const WalletAnalyzer = () => {
     return {
       address: addr,
       accountType,
+      isFrozen,
       balanceUSDT,
       totalTx,
       txIn,

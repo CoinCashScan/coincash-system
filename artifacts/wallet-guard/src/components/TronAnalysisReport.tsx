@@ -7,6 +7,7 @@ import { Shield, AlertTriangle, ArrowRightLeft, Clock, History, Ban, ShieldAlert
 interface ReportData {
   address: string;
   accountType: string;
+  isFrozen: boolean;
   balanceUSDT: number;
   totalTx: number;
   txIn: number;
@@ -24,6 +25,7 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
   const {
     address = "",
     accountType = "Normal",
+    isFrozen = false,
     balanceUSDT = 0,
     totalTx = 0,
     txIn = 0,
@@ -67,7 +69,12 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
   let riskColor = "";
   let riskBadgeVariant: "default" | "secondary" | "destructive" | "outline" = "default";
 
-  if (riskScore <= 25) {
+  if (isFrozen) {
+    riskScore = 100;
+    riskLevel = "RISK LEVEL: CRITICAL";
+    riskColor = "text-red-500";
+    riskBadgeVariant = "destructive";
+  } else if (riskScore <= 25) {
     riskLevel = "Riesgo Bajo";
     riskColor = "text-green-500";
     riskBadgeVariant = "default";
@@ -129,6 +136,27 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
       <div className="text-center">
         <p className="text-xs text-muted-foreground font-mono break-all">{address}</p>
       </div>
+
+      {/* USDT Frozen Warning */}
+      {isFrozen && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.97 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.3 }}
+          className="flex items-center gap-4 rounded-lg border border-red-500 bg-red-500/10 px-5 py-4"
+        >
+          <Ban className="h-7 w-7 shrink-0 text-red-500" />
+          <div className="flex-1 space-y-0.5">
+            <p className="font-bold uppercase tracking-widest text-red-500">
+              STATUS: BLOCKED
+            </p>
+            <p className="text-sm text-red-400">LABEL: USDT FROZEN ADDRESS</p>
+          </div>
+          <Badge variant="destructive" className="shrink-0 px-3 py-1 text-xs uppercase tracking-widest">
+            RISK LEVEL: CRITICAL
+          </Badge>
+        </motion.div>
+      )}
 
       {/* Network Info & Risk Score */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
