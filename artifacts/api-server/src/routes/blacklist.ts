@@ -85,6 +85,23 @@ async function syncBlacklist(): Promise<void> {
 syncBlacklist();
 setInterval(syncBlacklist, 5 * 60 * 1000);
 
+// GET /api/blacklist/check/:address — returns whether an address is in the DB
+router.get("/blacklist/check/:address", async (req, res) => {
+  try {
+    const { address } = req.params;
+    const { eq } = await import("drizzle-orm");
+    const rows = await db
+      .select({ address: blacklistedAddresses.address })
+      .from(blacklistedAddresses)
+      .where(eq(blacklistedAddresses.address, address))
+      .limit(1);
+    res.json({ found: rows.length > 0 });
+  } catch (err) {
+    console.error("[GET /blacklist/check] DB error:", err);
+    res.status(500).json({ error: "Error al verificar la dirección" });
+  }
+});
+
 // GET /api/blacklist — latest 100 frozen addresses
 router.get("/blacklist", async (_req, res) => {
   try {

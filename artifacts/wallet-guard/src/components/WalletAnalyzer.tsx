@@ -17,6 +17,7 @@ interface ReportData {
   address: string;
   accountType: string;
   isFrozen: boolean;
+  isInBlacklistDB: boolean;
   balanceUSDT: number;
   totalTx: number;
   txIn: number;
@@ -49,6 +50,20 @@ const RISK_DATABASE: Record<string, { label: RiskyCounterparty["label"]; level: 
   "TAPVF93s8dysXY8MzvqMoRdawoNMAPf7tL": { label: "MONEY LAUNDERING",  level: "high"     },
   "TWd4WrZ9wn84f5x1hZhL4DHvk738ns5jwH": { label: "BLACKLISTED",        level: "critical" },
   "TXmVpin9hDD7YJAuaECRiEJVXPDnuGSo9f": { label: "STOLEN FUNDS",       level: "critical" },
+};
+
+// Decode a TRON base58 address to Ethereum-style hex (0x + 20 bytes)
+// Used to look up addresses in the blacklist DB which stores 0x-format from TronGrid events
+const tronBase58ToEthHex = (address: string): string => {
+  const ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+  let n = 0n;
+  for (const c of address) {
+    const idx = ALPHABET.indexOf(c);
+    if (idx < 0) throw new Error("Invalid base58 character");
+    n = n * 58n + BigInt(idx);
+  }
+  const hex = n.toString(16).padStart(50, "0");
+  return "0x" + hex.slice(2, 42);
 };
 
 // Decode a base58-encoded TRON address into a 64-char ABI-encoded hex parameter
@@ -134,10 +149,24 @@ const WalletAnalyzer = () => {
     }
     const usdtContract = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
 
-    // 1. Account info + blacklist check in parallel
-    const [accountData, isFrozen] = await Promise.all([
+    // Helper: check DB blacklist (Ethereum hex format stored from TronGrid events)
+    const checkBlacklistDB = async (): Promise<boolean> => {
+      try {
+        const ethHex = tronBase58ToEthHex(addr);
+        const res = await fetch(`/api-server/api/blacklist/check/${encodeURIComponent(ethHex)}`);
+        if (!res.ok) return false;
+        const data = await res.json();
+        return data.found === true;
+      } catch {
+        return false;
+      }
+    };
+
+    // 1. Account info + blacklist checks in parallel
+    const [accountData, isFrozen, isInBlacklistDB] = await Promise.all([
       tronGridFetch(`https://api.trongrid.io/v1/accounts/${encodeURIComponent(addr)}`),
       checkUsdtBlacklist(addr),
+      checkBlacklistDB(),
     ]);
     const account = accountData.data?.[0];
     if (!account) throw new Error("Dirección no encontrada en la red TRON");
@@ -289,6 +318,7 @@ const WalletAnalyzer = () => {
       address: addr,
       accountType,
       isFrozen,
+      isInBlacklistDB,
       balanceUSDT,
       totalTx,
       txIn,

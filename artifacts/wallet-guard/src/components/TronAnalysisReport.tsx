@@ -1,14 +1,15 @@
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { motion } from "framer-motion";
-import { History, AlertTriangle, ArrowRightLeft, Ban, ShieldAlert, ShieldX } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { History, AlertTriangle, ArrowRightLeft, Ban, ShieldAlert, ShieldX, TriangleAlert } from "lucide-react";
 import type { RiskyCounterparty } from "@/components/WalletAnalyzer";
 
 interface ReportData {
   address: string;
   accountType: string;
   isFrozen: boolean;
+  isInBlacklistDB: boolean;
   balanceUSDT: number;
   totalTx: number;
   txIn: number;
@@ -29,6 +30,7 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
     address = "",
     accountType = "Normal",
     isFrozen = false,
+    isInBlacklistDB = false,
     balanceUSDT = 0,
     totalTx = 0,
     txIn = 0,
@@ -125,6 +127,17 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
   const seg3Active = riskScore > 50;  // Alto     50-75
   const seg4Active = riskScore > 75;  // Severo   75-100
 
+  // Warning banner conditions
+  const hasBlacklistHit = isFrozen || isInBlacklistDB;
+  const hasRiskyInteraction = riskyCounterparties.length > 0;
+  const hasHighRiskScore = riskScore > 60;
+  const showWarningBanner = hasBlacklistHit || hasRiskyInteraction || hasHighRiskScore;
+
+  const warningReasons: string[] = [];
+  if (hasBlacklistHit) warningReasons.push("Esta dirección aparece en la lista de billeteras congeladas.");
+  if (hasRiskyInteraction) warningReasons.push(`Interactuó con ${riskyCounterparties.length} contraparte${riskyCounterparties.length > 1 ? "s" : ""} de alto riesgo o congelada${riskyCounterparties.length > 1 ? "s" : ""}.`);
+  if (hasHighRiskScore) warningReasons.push(`Puntuación de riesgo elevada: ${riskScore}/100.`);
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -132,6 +145,44 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
       transition={{ duration: 0.5 }}
       className="w-full max-w-4xl mx-auto space-y-6 mt-8"
     >
+      {/* High-Risk Warning Banner */}
+      <AnimatePresence>
+        {showWarningBanner && (
+          <motion.div
+            key="warning-banner"
+            initial={{ opacity: 0, y: -8, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.97 }}
+            transition={{ duration: 0.35 }}
+            className="rounded-xl border-2 border-red-500 bg-red-950/60 px-5 py-4 shadow-lg shadow-red-900/20"
+          >
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 p-1.5 rounded-full bg-red-500/20 shrink-0">
+                <TriangleAlert className="h-5 w-5 text-red-400" />
+              </div>
+              <div className="flex-1 space-y-1.5">
+                <p className="font-bold text-red-400 uppercase tracking-wider text-sm">
+                  ⚠️ Advertencia: Actividad de Alto Riesgo Detectada
+                </p>
+                <p className="text-sm text-red-300 font-medium">
+                  Esta billetera muestra actividad de alto riesgo. No envíe ni reciba USDT desde esta dirección. Los fondos pueden ser congelados.
+                </p>
+                {warningReasons.length > 0 && (
+                  <ul className="mt-2 space-y-0.5">
+                    {warningReasons.map((reason, i) => (
+                      <li key={i} className="text-xs text-red-400/80 flex items-start gap-1.5">
+                        <span className="mt-0.5 shrink-0">•</span>
+                        <span>{reason}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* USDT Frozen Warning */}
       {isFrozen && (
         <motion.div
