@@ -3,7 +3,10 @@ import { sign as secp256k1Sign } from "@noble/secp256k1";
 
 const BASE = "https://api.trongrid.io";
 const KEY  = import.meta.env.VITE_TRON_API_KEY ?? "";
-export const USDT_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
+
+// Both known mainnet USDT TRC20 contract addresses (TR7... is the primary Tether contract)
+export const USDT_CONTRACT  = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
+export const USDT_CONTRACT2 = "TXLAQ63Xg1NAzckPwKHvzw7CSEmLMEqcdj";
 
 // ── Rate limiter (100 ms gap) ─────────────────────────────────────────────────
 let _next = 0;
@@ -91,29 +94,82 @@ export interface TxRecord {
   status: "SUCCESS" | "FAILED";
 }
 
-// ── Fetch account info ────────────────────────────────────────────────────────
-export async function fetchAccountInfo(address: string): Promise<AccountInfo> {
-  await rateWait();
-  const res = await fetch(`${BASE}/v1/accounts/${address}`, {
-    headers: apiHeaders(),
-  });
-  if (!res.ok) throw new Error(`TronGrid error ${res.status}`);
-  const json = await res.json();
-  if (!json.data || json.data.length === 0) {
-    return { trxBalance: 0, usdtBalance: 0, activated: false };
+// ── Direct TRC20 balanceOf call via triggerconstantcontract ──────────────────
+// This is the authoritative way to get a TRC20 balance — reads directly from
+// the smart contract. No reliance on the account endpoint's trc20 array.
+async function fetchTRC20Balance(walletAddress: string, contractAddress: string): Promise<number> {
+  try {
+    await rateWait();
+    const walletHex   = tronAddrToHex(walletAddress);
+    const contractHex = tronAddrToHex(contractAddress);
+    // ABI-encode balanceOf(address): 20-byte address, left-padded to 32 bytes
+    const addrParam = walletHex.slice(2).padStart(64, "0"); // drop "41", pad
+
+    const res = await fetch(`${BASE}/wallet/triggerconstantcontract`, {
+      method: "POST",
+      headers: apiHeaders(),
+      body: JSON.stringify({
+        owner_address: walletHex,
+        contract_address: contractHex,
+        function_selector: "balanceOf(address)",
+        parameter: addrParam,
+        visible: false,
+      }),
+    });
+    if (!res.ok) return 0;
+    const json = await res.json();
+    const hex = json.constant_result?.[0];
+    if (!hex || hex === "0".repeat(64)) return 0;
+    // Parse 32-byte big-endian uint256
+    return Number(BigInt("0x" + hex)) / 1_000_000;
+  } catch {
+    return 0;
   }
-  const acc = json.data[0];
-  const trxBalance = (acc.balance ?? 0) / 1_000_000;
-  let usdtBalance = 0;
-  if (Array.isArray(acc.trc20)) {
-    for (const entry of acc.trc20) {
-      if (entry[USDT_CONTRACT] !== undefined) {
-        usdtBalance = Number(entry[USDT_CONTRACT]) / 1_000_000;
-        break;
+}
+
+// ── Fetch account info ────────────────────────────────────────────────────────
+// Fetches TRX balance from the account endpoint, and USDT balance via a direct
+// balanceOf() call to both known USDT contract addresses. Takes the maximum.
+export async function fetchAccountInfo(address: string): Promise<AccountInfo> {
+  // Run all three requests in parallel for speed
+  const [accountRes, balanceOf1, balanceOf2] = await Promise.all([
+    (async () => {
+      await rateWait();
+      const res = await fetch(`${BASE}/v1/accounts/${address}`, {
+        headers: apiHeaders(),
+      });
+      return res.ok ? res.json() : null;
+    })(),
+    fetchTRC20Balance(address, USDT_CONTRACT),
+    fetchTRC20Balance(address, USDT_CONTRACT2),
+  ]);
+
+  // TRX balance from account endpoint
+  let trxBalance = 0;
+  let activated  = false;
+  // Start USDT candidates from the direct contract calls (authoritative)
+  let usdtCandidates = [balanceOf1, balanceOf2];
+
+  if (accountRes?.data && accountRes.data.length > 0) {
+    const acc = accountRes.data[0];
+    trxBalance = (acc.balance ?? 0) / 1_000_000;
+    activated  = true;
+
+    // Also check the account's trc20 array as an additional data source
+    if (Array.isArray(acc.trc20)) {
+      for (const entry of acc.trc20) {
+        const v1 = entry[USDT_CONTRACT];
+        const v2 = entry[USDT_CONTRACT2];
+        if (v1 !== undefined) usdtCandidates.push(Number(v1) / 1_000_000);
+        if (v2 !== undefined) usdtCandidates.push(Number(v2) / 1_000_000);
       }
     }
   }
-  return { trxBalance, usdtBalance, activated: true };
+
+  // Take the highest balance across all sources
+  const usdtBalance = Math.max(...usdtCandidates, 0);
+
+  return { trxBalance, usdtBalance, activated };
 }
 
 // ── Fetch TRX transactions ────────────────────────────────────────────────────
@@ -158,17 +214,18 @@ export async function fetchTRXTransactions(address: string, limit = 20): Promise
   return records;
 }
 
-// ── Fetch USDT (TRC20) transactions ──────────────────────────────────────────
-export async function fetchUSDTTransactions(address: string, limit = 20): Promise<TxRecord[]> {
+// ── Fetch USDT (TRC20) transactions for one contract ─────────────────────────
+async function fetchUSDTTxForContract(
+  address: string, contractAddress: string, limit = 20
+): Promise<TxRecord[]> {
   await rateWait();
   const res = await fetch(
-    `${BASE}/v1/accounts/${address}/transactions/trc20?limit=${limit}&contract_address=${USDT_CONTRACT}&only_confirmed=true`,
+    `${BASE}/v1/accounts/${address}/transactions/trc20?limit=${limit}&contract_address=${contractAddress}&only_confirmed=true`,
     { headers: apiHeaders() }
   );
-  if (!res.ok) throw new Error(`TronGrid TRC20 error ${res.status}`);
+  if (!res.ok) return [];
   const json = await res.json();
   const records: TxRecord[] = [];
-
   for (const tx of json.data ?? []) {
     try {
       const amount = Number(tx.value ?? "0") / 1_000_000;
@@ -185,6 +242,21 @@ export async function fetchUSDTTransactions(address: string, limit = 20): Promis
     } catch { /* skip malformed */ }
   }
   return records;
+}
+
+// ── Fetch USDT (TRC20) transactions — both known contract addresses ───────────
+export async function fetchUSDTTransactions(address: string, limit = 20): Promise<TxRecord[]> {
+  const [set1, set2] = await Promise.all([
+    fetchUSDTTxForContract(address, USDT_CONTRACT, limit),
+    fetchUSDTTxForContract(address, USDT_CONTRACT2, limit),
+  ]);
+  // Merge, deduplicate by tx ID, sort by timestamp descending
+  const seen = new Set<string>();
+  const all: TxRecord[] = [];
+  for (const r of [...set1, ...set2]) {
+    if (!seen.has(r.id)) { seen.add(r.id); all.push(r); }
+  }
+  return all.sort((a, b) => b.ts - a.ts);
 }
 
 // ── Fetch all transactions (merged + sorted) ──────────────────────────────────
