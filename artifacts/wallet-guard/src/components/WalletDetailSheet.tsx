@@ -10,8 +10,8 @@ import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import {
   fetchAccountInfo, fetchAllTransactions,
-  sendTRX, sendUSDT,
-  type AccountInfo, type TxRecord,
+  sendTRX, sendUSDT, relayUSDTTransfer, fetchRelayStatus,
+  type AccountInfo, type TxRecord, type RelayResult,
 } from "@/lib/tronApi";
 import { decryptPrivateKey, hasEncryptedKey } from "@/lib/security";
 import type { SavedWallet } from "@/pages/WalletsPage";
@@ -75,6 +75,8 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
   const [sendAmt, setSendAmt]     = useState("");
   const [sendLoading, setSendLoading] = useState(false);
   const [sentTxId, setSentTxId]   = useState("");
+  const [sentSponsored, setSentSponsored] = useState(false);
+  const [relayActive, setRelayActive] = useState(false);
 
   const canSend = wallet.type !== "watch" && hasEncryptedKey(wallet.id);
 
@@ -107,6 +109,7 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
   useEffect(() => {
     loadInfo();
     loadTxs();
+    fetchRelayStatus().then(s => setRelayActive(s.relayerActive)).catch(() => {});
   }, [loadInfo, loadTxs]);
 
   // ── QR code ───────────────────────────────────────────────────────────────
@@ -142,13 +145,16 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
     try {
       const privKey = await decryptPrivateKey(wallet.id);
       const amt = parseFloat(sendAmt);
-      let txId: string;
       if (sendToken === "TRX") {
-        txId = await sendTRX(wallet.address, sendTo, amt, privKey);
+        const txId = await sendTRX(wallet.address, sendTo, amt, privKey);
+        setSentTxId(txId);
+        setSentSponsored(false);
       } else {
-        txId = await sendUSDT(wallet.address, sendTo, amt, privKey);
+        // USDT: use gasless relay — signs locally, relay handles energy delegation + broadcast
+        const result: RelayResult = await relayUSDTTransfer(wallet.address, sendTo, amt, privKey);
+        setSentTxId(result.txId);
+        setSentSponsored(result.sponsored);
       }
-      setSentTxId(txId);
       setSendStep("done");
       toast.success("Transacción enviada a la red TRON.");
       await loadInfo();
@@ -162,7 +168,7 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
   };
 
   const resetSend = () => {
-    setSendStep("form"); setSendTo(""); setSendAmt(""); setSentTxId("");
+    setSendStep("form"); setSendTo(""); setSendAmt(""); setSentTxId(""); setSentSponsored(false);
   };
 
   // ── Back navigation ────────────────────────────────────────────────────────
@@ -412,6 +418,24 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
                     Fue transmitida a la red TRON y se confirmará en breve.
                   </p>
                 </div>
+
+                {/* Sponsored badge — only shown when relay covered the energy */}
+                {sentSponsored && (
+                  <div className="w-full rounded-2xl px-4 py-3 flex items-center gap-3"
+                    style={{ background: `${GREEN}0A`, border: `1px solid ${GREEN}25` }}>
+                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
+                      style={{ background: `${GREEN}20` }}>
+                      <ShieldAlert className="h-3.5 w-3.5" style={{ color: GREEN }} />
+                    </div>
+                    <div className="text-left">
+                      <p className="text-[11px] font-bold" style={{ color: GREEN }}>Gas Fee: 0 TRX</p>
+                      <p className="text-[10px]" style={{ color: "rgba(255,255,255,0.4)" }}>
+                        Patrocinado por CoinCash
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 <div className="w-full rounded-2xl p-3"
                   style={{ background: "rgba(255,255,255,0.04)", border: `1px solid ${BORDER}` }}>
                   <p className="text-[10px] font-semibold uppercase tracking-wide mb-1"
@@ -432,9 +456,13 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
             {sendStep === "signing" && (
               <div className="flex flex-col items-center py-12 gap-4">
                 <Loader2 className="h-10 w-10 animate-spin" style={{ color: BLUE }} />
-                <p className="text-sm font-semibold text-white">Firmando y transmitiendo…</p>
-                <p className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>
-                  No cierres la app
+                <p className="text-sm font-semibold text-white">
+                  {sendToken === "USDT" ? "Firmando y retransmitiendo…" : "Firmando y transmitiendo…"}
+                </p>
+                <p className="text-xs text-center max-w-[200px] leading-relaxed" style={{ color: "rgba(255,255,255,0.4)" }}>
+                  {sendToken === "USDT"
+                    ? "CoinCash está procesando el gas por ti"
+                    : "No cierres la app"}
                 </p>
               </div>
             )}
@@ -450,7 +478,7 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
                     ["Monto", `${sendAmt} ${sendToken}`],
                     ["Desde", short(wallet.address)],
                     ["Hacia", short(sendTo)],
-                    ["Fee est.", sendToken === "TRX" ? "~1 TRX (bandwidth)" : "~10–25 TRX (energy)"],
+                    ["Gas / Fee", sendToken === "TRX" ? "~1 TRX (bandwidth)" : "0 TRX — Patrocinado por CoinCash"],
                   ].map(([label, value], i, arr) => (
                     <div key={label} className="flex items-start justify-between px-4 py-3"
                       style={{ borderBottom: i < arr.length - 1 ? `1px solid ${BORDER}` : "none" }}>
@@ -550,12 +578,20 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
                 />
 
                 {sendToken === "USDT" && (
-                  <div className="rounded-2xl p-3 mb-4 flex gap-2.5"
-                    style={{ background: `${AMBER}0C`, border: `1px solid ${AMBER}25` }}>
-                    <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" style={{ color: AMBER }} />
-                    <p className="text-[11px] leading-relaxed" style={{ color: "rgba(255,255,255,0.5)" }}>
-                      Las transferencias USDT consumen <span className="font-semibold" style={{ color: AMBER }}>energía TRX</span>. Asegúrate de tener TRX para las comisiones.
-                    </p>
+                  <div className="rounded-2xl p-3 mb-4 flex items-center gap-3"
+                    style={{ background: `${GREEN}0A`, border: `1px solid ${GREEN}25` }}>
+                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
+                      style={{ background: `${GREEN}20` }}>
+                      <CheckCheck className="h-3.5 w-3.5" style={{ color: GREEN }} />
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-bold mb-0.5" style={{ color: GREEN }}>
+                        Gas Fee: 0 TRX
+                      </p>
+                      <p className="text-[10px] leading-relaxed" style={{ color: "rgba(255,255,255,0.45)" }}>
+                        Patrocinado por CoinCash — sin costes de energía para ti.
+                      </p>
+                    </div>
                   </div>
                 )}
 

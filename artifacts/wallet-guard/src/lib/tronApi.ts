@@ -242,7 +242,7 @@ export async function sendTRX(
   return broadcastSigned(tx, privKeyHex);
 }
 
-// ── Send USDT (TRC20) ─────────────────────────────────────────────────────────
+// ── Send USDT (TRC20) — direct broadcast ─────────────────────────────────────
 export async function sendUSDT(
   from: string, to: string, amountUsdt: number, privKeyHex: string
 ): Promise<string> {
@@ -251,8 +251,7 @@ export async function sendUSDT(
 
   const fromHex     = tronAddrToHex(from);
   const contractHex = tronAddrToHex(USDT_CONTRACT);
-  // ABI encode transfer(address,uint256): address is 20 bytes (drop 0x41 prefix), padded to 32
-  const toHex20    = tronAddrToHex(to).slice(2); // drop "41"
+  const toHex20    = tronAddrToHex(to).slice(2);
   const toParam    = toHex20.padStart(64, "0");
   const amtRaw     = BigInt(Math.round(amountUsdt * 1_000_000));
   const amtParam   = amtRaw.toString(16).padStart(64, "0");
@@ -276,4 +275,92 @@ export async function sendUSDT(
   if (result.Error || !result.transaction) throw new Error(result.Error ?? "Error de smart contract.");
 
   return broadcastSigned(result.transaction, privKeyHex);
+}
+
+// ── Build + sign USDT tx (without broadcasting) ───────────────────────────────
+// Used by the relay flow: tx is signed locally, the signed object is sent to the relay server.
+async function buildAndSignUSDTTx(
+  from: string, to: string, amountUsdt: number, privKeyHex: string
+): Promise<any> {
+  const fromHex     = tronAddrToHex(from);
+  const contractHex = tronAddrToHex(USDT_CONTRACT);
+  const toHex20     = tronAddrToHex(to).slice(2);
+  const toParam     = toHex20.padStart(64, "0");
+  const amtRaw      = BigInt(Math.round(amountUsdt * 1_000_000));
+  const amtParam    = amtRaw.toString(16).padStart(64, "0");
+  const parameter   = toParam + amtParam;
+
+  await rateWait();
+  const res = await fetch(`${BASE}/wallet/triggersmartcontract`, {
+    method: "POST",
+    headers: apiHeaders(),
+    body: JSON.stringify({
+      owner_address: fromHex,
+      contract_address: contractHex,
+      function_selector: "transfer(address,uint256)",
+      parameter,
+      fee_limit: 50_000_000,
+      call_value: 0,
+    }),
+  });
+  if (!res.ok) throw new Error(`Error creando tx USDT (${res.status})`);
+  const result = await res.json();
+  if (result.Error || !result.transaction) throw new Error(result.Error ?? "Error de smart contract.");
+
+  // Sign locally — private key never leaves this function / the browser
+  const tx = result.transaction;
+  const txHashBytes = hexToBytes(tx.txID);
+  const privBytes   = hexToBytes(privKeyHex);
+  const sig = secp256k1Sign(txHashBytes, privBytes, { lowS: false });
+  const sigHex = sig.toCompactHex() + sig.recovery.toString(16).padStart(2, "0");
+
+  return { ...tx, signature: [sigHex] };
+}
+
+// ── Relay result type ─────────────────────────────────────────────────────────
+export interface RelayResult {
+  txId: string;
+  sponsored: boolean;  // true = CoinCash covered the TRX energy cost
+}
+
+// ── Send USDT via CoinCash relay (gasless for user) ───────────────────────────
+// 1. Creates TRC20 transfer transaction on TronGrid
+// 2. Signs it entirely client-side (private key stays in browser memory only)
+// 3. Sends ONLY the signed transaction object to the relay server
+// 4. Relay attempts energy delegation (so user pays 0 TRX) then broadcasts
+export async function relayUSDTTransfer(
+  from: string, to: string, amountUsdt: number, privKeyHex: string
+): Promise<RelayResult> {
+  if (amountUsdt <= 0) throw new Error("El monto debe ser mayor a 0.");
+  if (!to.startsWith("T") || to.length < 30) throw new Error("Dirección destino inválida.");
+
+  // Step 1 + 2: build and sign locally — private key never sent anywhere
+  const signedTx = await buildAndSignUSDTTx(from, to, amountUsdt, privKeyHex);
+
+  // Step 3: POST only the signed tx to our relay
+  const relayUrl = "/api-server/api/relay/usdt";
+  const relayRes = await fetch(relayUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ signedTx, userAddress: from }),
+  });
+
+  if (!relayRes.ok) {
+    const err = await relayRes.json().catch(() => ({ error: "Error de red" }));
+    throw new Error(err.error ?? `Relay error ${relayRes.status}`);
+  }
+
+  const data = await relayRes.json();
+  return { txId: data.txId, sponsored: data.sponsored ?? false };
+}
+
+// ── Check relay server status ─────────────────────────────────────────────────
+export async function fetchRelayStatus(): Promise<{ relayerActive: boolean; sponsoredTransactions: boolean }> {
+  try {
+    const res = await fetch("/api-server/api/relay/status");
+    if (!res.ok) return { relayerActive: false, sponsoredTransactions: false };
+    return res.json();
+  } catch {
+    return { relayerActive: false, sponsoredTransactions: false };
+  }
 }
