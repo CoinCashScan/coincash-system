@@ -49,7 +49,7 @@ function BottomSheet({ onClose, children }: { onClose:()=>void; children: React.
       style={{ background:"rgba(0,0,0,0.75)", backdropFilter:"blur(4px)" }}
       onClick={onClose}>
       <div className="w-full rounded-t-[20px] flex flex-col"
-        style={{ height:"88vh", background:SHEET, borderTop:`1px solid ${BORDER}`, overflowY:"auto" }}
+        style={{ height:"80vh", background:SHEET, borderTop:`1px solid ${BORDER}`, overflowY:"auto" }}
         onClick={e => e.stopPropagation()}>
         <div className="flex justify-center pt-3 pb-1 shrink-0">
           <div className="h-1 w-10 rounded-full" style={{ background:"rgba(255,255,255,0.15)" }} />
@@ -238,17 +238,19 @@ export default function WalletsPage({ onScan }: Props) {
       {/* Action grid */}
       <div className="px-4 grid grid-cols-3 gap-3 mb-6">
         {[
-          { label:"Watch",        icon:Eye,      color:GREEN,  action:()=>setModal("watch") },
-          { label:"Importar",     icon:Key,      color:BLUE,   action:()=>setModal("import") },
-          { label:"Crear Wallet", icon:Sparkles, color:PURPLE, action:openCreate },
-        ].map(({ label, icon:Icon, color, action }) => (
-          <button key={label} onClick={action} disabled={loading}
+          { label:"Crear Wallet", icon:Sparkles, color:PURPLE, action:openCreate, key:"create" },
+          { label:"Importar",     icon:Key,      color:BLUE,   action:()=>setModal("import"), key:"import" },
+          { label:"Watch",        icon:Eye,      color:GREEN,  action:()=>setModal("watch"), key:"watch" },
+        ].map(({ label, icon:Icon, color, action, key }) => (
+          <button key={key} onClick={action} disabled={loading}
             className="flex flex-col items-center gap-2.5 rounded-2xl py-5 px-2 active:opacity-70"
-            style={{ background:CARD, border:`1px solid ${BORDER}`, boxShadow:SHADOW }}>
+            style={{ background:CARD, border:`1px solid ${BORDER}`, boxShadow:SHADOW, opacity:loading&&key==="create"?0.7:1 }}>
             <div className="flex h-11 w-11 items-center justify-center rounded-full" style={{ background:`${color}18` }}>
-              <Icon className="h-5 w-5" style={{ color }} />
+              <Icon className={`h-5 w-5 ${loading&&key==="create"?"animate-pulse":""}`} style={{ color }} />
             </div>
-            <span className="text-[11px] font-medium text-white text-center leading-tight">{label}</span>
+            <span className="text-[11px] font-medium text-white text-center leading-tight">
+              {loading && key==="create" ? "Generando..." : label}
+            </span>
           </button>
         ))}
       </div>
@@ -364,6 +366,14 @@ export default function WalletsPage({ onScan }: Props) {
           <SheetHeader title="Importar Wallet" subtitle="Recupera el acceso con tus credenciales"
             icon={Key} color={BLUE} onClose={closeModal} />
           <div className="px-6 flex-1">
+            {/* No public-address notice */}
+            <div className="rounded-2xl p-3 mb-4 flex gap-2.5"
+              style={{background:`${BLUE}0A`,border:`1px solid ${BLUE}25`}}>
+              <Lock className="h-3.5 w-3.5 mt-0.5 shrink-0" style={{color:BLUE}}/>
+              <p className="text-[11px] leading-relaxed" style={{color:"rgba(255,255,255,0.55)"}}>
+                <span className="font-semibold" style={{color:BLUE}}>Solo importación con clave.</span> No se puede importar usando únicamente una dirección pública. La clave privada se cifra con AES-256 en tu dispositivo.
+              </p>
+            </div>
             {/* Tab bar */}
             <div className="flex gap-1 rounded-2xl p-1 mb-5"
               style={{ background:"rgba(255,255,255,0.04)", border:`1px solid ${BORDER}` }}>
@@ -461,14 +471,22 @@ export default function WalletsPage({ onScan }: Props) {
             icon={Sparkles} color={PURPLE} onClose={closeModal} />
           <div className="px-6">
             {/* Backup warning */}
-            <div className="rounded-2xl p-4 mb-5 flex gap-3" style={{background:`${DANGER}10`,border:`1px solid ${DANGER}35`}}>
+            <div className="rounded-2xl p-4 mb-3 flex gap-3" style={{background:`${DANGER}10`,border:`1px solid ${DANGER}35`}}>
               <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" style={{color:DANGER}}/>
               <div>
-                <p className="text-xs font-bold mb-1" style={{color:DANGER}}>Guarda tu frase de recuperación</p>
-                <p className="text-[11px] leading-relaxed" style={{color:"rgba(255,255,255,0.55)"}}>
-                  Sin ella, perderás acceso permanente a tus fondos. Escríbela en papel y guárdala offline.
+                <p className="text-xs font-bold mb-1" style={{color:DANGER}}>⚠ Advertencia de seguridad</p>
+                <p className="text-[11px] leading-relaxed" style={{color:"rgba(255,255,255,0.7)"}}>
+                  Guarda tu frase de recuperación en un lugar seguro. Si se pierde, tu wallet no podrá ser recuperada.
                 </p>
               </div>
+            </div>
+
+            {/* Never stored notice */}
+            <div className="rounded-2xl p-3 mb-4 flex gap-2.5" style={{background:`${PURPLE}0A`,border:`1px solid ${PURPLE}25`}}>
+              <ShieldCheck className="h-3.5 w-3.5 mt-0.5 shrink-0" style={{color:PURPLE}}/>
+              <p className="text-[11px] leading-relaxed" style={{color:"rgba(255,255,255,0.55)"}}>
+                <span className="font-semibold" style={{color:PURPLE}}>La frase de recuperación nunca se almacena.</span> Solo se muestra aquí para que la copies. La clave privada se cifra con AES-256 antes de guardarse en tu dispositivo.
+              </p>
             </div>
 
             {/* Name */}
