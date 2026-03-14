@@ -4,6 +4,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import WalletAnalyzer from "@/components/WalletAnalyzer";
+import BlacklistPage from "@/pages/BlacklistPage";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
@@ -20,6 +21,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/" component={Home} />
+      <Route path="/blacklist" component={BlacklistPage} />
       <Route component={NotFound} />
     </Switch>
   );
