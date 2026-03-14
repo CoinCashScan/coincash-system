@@ -545,13 +545,7 @@ const WalletAnalyzer = () => {
             )}
             <TronAnalysisReport reportData={reportData} />
           </>
-        ) : (
-          <div className="flex justify-center items-center py-10">
-            <p className="text-muted-foreground text-center text-base">
-              Ingresa una dirección TRON para comenzar el análisis
-            </p>
-          </div>
-        )}
+        ) : null}
       </div>
 
       <QRScannerDialog
