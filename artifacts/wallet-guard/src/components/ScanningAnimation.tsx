@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, Loader2, Database, Globe, LineChart, Lock, Search } from "lucide-react";
+import { Check, Loader2, Database, Globe, LineChart, Lock, Search, Clock } from "lucide-react";
 
 const STEPS = [
   { icon: Globe,     label: "Escaneando blockchain",            detail: "Obteniendo datos de cuenta TRON..." },
@@ -14,9 +14,10 @@ const STEP_DURATION = 1800; // ms per step
 
 interface ScanningAnimationProps {
   isAnalyzing: boolean;
+  waitingMessage?: string | null;
 }
 
-export default function ScanningAnimation({ isAnalyzing }: ScanningAnimationProps) {
+export default function ScanningAnimation({ isAnalyzing, waitingMessage }: ScanningAnimationProps) {
   const [currentStep, setCurrentStep] = useState(0);
   const [completedSteps, setCompletedSteps] = useState<number[]>([]);
 
@@ -167,16 +168,63 @@ export default function ScanningAnimation({ isAnalyzing }: ScanningAnimationProp
             );
           })}
 
+          {/* Rate-limit waiting message */}
+          <AnimatePresence>
+            {waitingMessage && (
+              <motion.div
+                key="waiting"
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.3 }}
+                className="overflow-hidden"
+              >
+                <div
+                  className="flex items-center gap-2.5 rounded-lg px-3 py-2.5 border"
+                  style={{
+                    borderColor: "rgba(251,191,36,0.3)",
+                    background: "rgba(251,191,36,0.07)",
+                  }}
+                >
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                  >
+                    <Clock className="w-4 h-4 shrink-0" style={{ color: "#fbbf24" }} />
+                  </motion.div>
+                  <div className="flex-1 min-w-0">
+                    <span className="text-xs font-mono font-semibold" style={{ color: "#fbbf24" }}>
+                      {waitingMessage}
+                    </span>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Límite de velocidad de TronGrid — reintentando en 10 s automáticamente
+                    </p>
+                  </div>
+                  <motion.div
+                    animate={{ opacity: [1, 0.3, 1] }}
+                    transition={{ duration: 1, repeat: Infinity }}
+                    className="text-xs font-mono shrink-0"
+                    style={{ color: "#fbbf24" }}
+                  >
+                    429
+                  </motion.div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {/* Bottom status line */}
           <div className="pt-2 border-t border-border/20 flex items-center gap-2">
             <motion.div
               animate={{ opacity: [1, 0.4, 1] }}
               transition={{ duration: 1.2, repeat: Infinity }}
               className="w-2 h-2 rounded-full"
-              style={{ background: "#1fbd14" }}
+              style={{ background: waitingMessage ? "#fbbf24" : "#1fbd14" }}
             />
             <span className="text-xs font-mono text-muted-foreground">
-              {currentStep < STEPS.length - 1
+              {waitingMessage
+                ? "En pausa — esperando respuesta de blockchain..."
+                : currentStep < STEPS.length - 1
                 ? `Paso ${currentStep + 1} de ${STEPS.length} — procesando...`
                 : "Finalizando análisis..."}
             </span>

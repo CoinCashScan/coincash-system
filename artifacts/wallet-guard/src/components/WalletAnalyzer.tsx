@@ -71,6 +71,56 @@ const RISK_DATABASE: Record<string, { label: RiskyCounterparty["label"]; level: 
   "TXmVpin9hDD7YJAuaECRiEJVXPDnuGSo9f": { label: "STOLEN FUNDS",       level: "critical" },
 };
 
+// ── TronGrid Rate Limiter ─────────────────────────────────────────────────────
+// Max 10 requests/second. Each call reserves a 100 ms slot and waits its turn.
+// Concurrent callers naturally queue behind each other without extra overhead.
+let _nextSlot = 0;
+function acquireRateLimit(): Promise<void> {
+  const now = Date.now();
+  const slot = Math.max(now, _nextSlot);
+  _nextSlot = slot + 100; // 100 ms gap = 10 req/s
+  const wait = slot - now;
+  return wait > 0 ? new Promise((r) => setTimeout(r, wait)) : Promise.resolve();
+}
+
+const TRON_RETRY_DELAY_MS = 10_000; // wait 10 s on 429
+const TRON_MAX_RETRIES    = 2;
+
+async function tronRequest(
+  url: string,
+  options: RequestInit = {},
+  onWaiting?: (msg: string | null) => void,
+): Promise<any> {
+  const apiKey = import.meta.env.VITE_TRON_API_KEY;
+  const baseHeaders: Record<string, string> = {
+    Accept: "application/json",
+    ...(options.headers as Record<string, string> | undefined),
+  };
+  if (apiKey) baseHeaders["TRON-PRO-API-KEY"] = apiKey;
+
+  for (let attempt = 0; attempt <= TRON_MAX_RETRIES; attempt++) {
+    await acquireRateLimit();
+    const res = await fetch(url, { ...options, headers: baseHeaders });
+
+    if (res.status === 429) {
+      if (attempt < TRON_MAX_RETRIES) {
+        onWaiting?.("Esperando respuesta de blockchain...");
+        await new Promise((r) => setTimeout(r, TRON_RETRY_DELAY_MS));
+        onWaiting?.(null);
+        continue;
+      }
+      throw new Error("Límite de velocidad alcanzado. Intente nuevamente en unos segundos.");
+    }
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => res.statusText);
+      throw new Error(`Error de API TronGrid (${res.status}): ${text}`);
+    }
+
+    return res.json();
+  }
+}
+
 // Decode a TRON base58 address to Ethereum-style hex (0x + 20 bytes)
 // Used to look up addresses in the blacklist DB which stores 0x-format from TronGrid events
 const tronBase58ToEthHex = (address: string): string => {
@@ -107,6 +157,7 @@ const WalletAnalyzer = () => {
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [reportData, setReportData] = useState<ReportData | null>(null);
   const [dailyStats, setDailyStats] = useState<DailyStats>(() => getDailyStats());
+  const [rateLimitMessage, setRateLimitMessage] = useState<string | null>(null);
 
   // Sync daily stats from localStorage on mount
   useEffect(() => {
@@ -117,50 +168,30 @@ const WalletAnalyzer = () => {
     return /^T[a-zA-Z0-9]{33}$/.test(addr);
   };
 
-  const tronGridFetch = async (url: string) => {
-    const headers: Record<string, string> = {
-      "Accept": "application/json",
-    };
-    const apiKey = import.meta.env.VITE_TRON_API_KEY;
-    if (apiKey) {
-      headers["TRON-PRO-API-KEY"] = apiKey;
-    }
-    const res = await fetch(url, { headers });
-    if (!res.ok) {
-      const text = await res.text().catch(() => res.statusText);
-      throw new Error(`Error de API TronGrid (${res.status}): ${text}`);
-    }
-    return res.json();
-  };
+  // Rate-limited GET wrapper — all TronGrid reads go through here
+  const tronGridFetch = (url: string) =>
+    tronRequest(url, { method: "GET" }, setRateLimitMessage);
 
   const checkUsdtBlacklist = async (addr: string): Promise<boolean> => {
     try {
-      // USDT TRC20 contract — exposes isBlackListed(address) in its ABI
       const usdtContract = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
-      // ABI-encode the wallet address as a 32-byte hex parameter
       const param = tronBase58ToAbiParam(addr);
-      const apiKey = import.meta.env.VITE_TRON_API_KEY;
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (apiKey) headers["TRON-PRO-API-KEY"] = apiKey;
-
-      const res = await fetch("https://api.trongrid.io/wallet/triggerconstantcontract", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          owner_address: addr,
-          contract_address: usdtContract,
-          // Correct ABI function name — capital L (isBlackListed, not isBlacklisted)
-          function_selector: "isBlackListed(address)",
-          parameter: param,
-          visible: true,
-        }),
-      });
-      if (!res.ok) return false;
-      const data = await res.json();
-      // Successful call: result.result === true and no revert message
-      if (!data.result?.result) return false;
-      // ABI bool result: 32 hex chars = 32 bytes
-      // false → all zeros; true → ...0001 (any non-zero character)
+      const data = await tronRequest(
+        "https://api.trongrid.io/wallet/triggerconstantcontract",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            owner_address: addr,
+            contract_address: usdtContract,
+            function_selector: "isBlackListed(address)",
+            parameter: param,
+            visible: true,
+          }),
+        },
+        setRateLimitMessage,
+      );
+      if (!data?.result?.result) return false;
       const result: string = data.constant_result?.[0] ?? "";
       return result.length === 64 && /[^0]/.test(result);
     } catch {
@@ -374,6 +405,7 @@ const WalletAnalyzer = () => {
 
     setIsAnalyzing(true);
     setShowReport(false);
+    setRateLimitMessage(null);
     try {
       const data = await fetchTronData(trimmed);
       setReportData(data);
@@ -393,6 +425,7 @@ const WalletAnalyzer = () => {
       toast.error(error.message || "Error al analizar la dirección");
     } finally {
       setIsAnalyzing(false);
+      setRateLimitMessage(null);
     }
   };
 
@@ -487,7 +520,7 @@ const WalletAnalyzer = () => {
       {/* Report / Scanning animation / Placeholder */}
       <div className="w-full">
         {isAnalyzing ? (
-          <ScanningAnimation isAnalyzing={isAnalyzing} />
+          <ScanningAnimation isAnalyzing={isAnalyzing} waitingMessage={rateLimitMessage} />
         ) : showReport && reportData ? (
           <TronAnalysisReport reportData={reportData} />
         ) : (
