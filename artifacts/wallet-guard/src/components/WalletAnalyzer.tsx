@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
-import { Search, Loader2, QrCode, X } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Search, Loader2, QrCode, X, CheckCircle2 } from "lucide-react";
+import { motion } from "framer-motion";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import TronAnalysisReport from "@/components/TronAnalysisReport";
@@ -158,6 +159,7 @@ const WalletAnalyzer = () => {
   const [reportData, setReportData] = useState<ReportData | null>(null);
   const [dailyStats, setDailyStats] = useState<DailyStats>(() => getDailyStats());
   const [rateLimitMessage, setRateLimitMessage] = useState<string | null>(null);
+  const resultRef = useRef<HTMLDivElement>(null);
 
   // Sync daily stats from localStorage on mount
   useEffect(() => {
@@ -411,6 +413,11 @@ const WalletAnalyzer = () => {
       setReportData(data);
       setShowReport(true);
 
+      // Smooth-scroll to results so mobile users see them immediately
+      setTimeout(() => {
+        resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 150);
+
       // Update daily stats
       const current = getDailyStats();
       const isHighRisk = data.isFrozen || data.isInBlacklistDB || data.riskyCounterparties.length > 0;
@@ -518,11 +525,26 @@ const WalletAnalyzer = () => {
       </div>
 
       {/* Report / Scanning animation / Placeholder */}
-      <div className="w-full">
+      <div ref={resultRef} className="w-full scroll-mt-4">
         {isAnalyzing ? (
           <ScanningAnimation isAnalyzing={isAnalyzing} waitingMessage={rateLimitMessage} />
         ) : showReport && reportData ? (
-          <TronAnalysisReport reportData={reportData} />
+          <>
+            {!reportData.isFrozen && !reportData.isInBlacklistDB && reportData.riskyCounterparties.length === 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4 }}
+                className="mb-4 flex items-start gap-3 rounded-xl border border-green-500/30 bg-green-500/10 px-4 py-3.5"
+              >
+                <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-green-400" />
+                <p className="text-sm text-green-300 leading-snug">
+                  <span className="font-semibold text-green-200">Análisis completado</span> — no se detectaron riesgos en esta wallet.
+                </p>
+              </motion.div>
+            )}
+            <TronAnalysisReport reportData={reportData} />
+          </>
         ) : (
           <div className="flex justify-center items-center py-10">
             <p className="text-muted-foreground text-center text-base">
