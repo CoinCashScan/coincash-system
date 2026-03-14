@@ -91,6 +91,39 @@ Generated Zod schemas from the OpenAPI spec (e.g. `HealthCheckResponse`). Used b
 
 Generated React Query hooks and fetch client from the OpenAPI spec (e.g. `useHealthCheck`, `healthCheck`).
 
+### `artifacts/wallet-guard` (`@workspace/wallet-guard`)
+
+TRON Wallet Analyzer PWA — React + Vite, dark fintech theme, all UI in Spanish.
+
+**5 tabs:** Dashboard, Wallets, Scanner, Connections, Settings
+
+**Key libraries:**
+- `@noble/secp256k1` v3 — secp256k1 key generation
+- `@scure/bip39` — BIP39 mnemonic (wordlist import: `@scure/bip39/wordlists/english.js` with `.js` ext)
+- `@scure/bip32` — BIP44 HD key derivation (`m/44'/195'/0'/0/0` for TRON)
+- TronGrid API key: `VITE_TRON_API_KEY`
+- USDT TRC20 contract: `TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t`
+
+**Security architecture (`src/lib/security.ts`):**
+- AES-256-GCM encryption for stored private keys (Web Crypto API)
+- PBKDF2-SHA256 key derivation (200k iterations) for PIN
+- Device-local random key fallback when no PIN set
+- WebAuthn biometric registration + authentication
+- All secrets remain in localStorage (encrypted), never transmitted
+
+**Wallet types (`src/lib/tronWallet.ts`):**
+- `generateTronWallet()` → creates address + private key + 12-word BIP39 mnemonic
+- `importFromMnemonic(phrase)` → BIP44 path derivation → address
+- `importFromPrivateKey(hex)` → validates secp256k1 scalar → address
+- `importFromKeystore(json, password)` → PBKDF2 + AES-128-CTR decrypt (Ethereum v3 format)
+- `validateTronAddress(addr)` → double-SHA256 base58check
+
+**NOTE:** `@noble/hashes` subpath imports are broken with Vite bundler — always use `crypto.subtle` instead. `@ts-nocheck` on `tronWallet.ts` suppresses noble type quirks.
+
+**Wallet storage:** `wg_wallets` (public data), `wg_secure_keys` (encrypted privkeys), `wg_pin_vault` (PIN verification sentinel), `wg_device_key` (fallback AES key)
+
+**Dev port:** 25766 (reads from `PORT` env var)
+
 ### `scripts` (`@workspace/scripts`)
 
 Utility scripts package. Each script is a `.ts` file in `src/` with a corresponding npm script in `package.json`. Run scripts via `pnpm --filter @workspace/scripts run <script>`. Scripts can import any workspace package (e.g., `@workspace/db`) by adding it as a dependency in `scripts/package.json`.

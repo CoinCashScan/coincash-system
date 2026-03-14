@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/sonner";
@@ -11,22 +11,35 @@ import ScannerPage from "@/pages/ScannerPage";
 import ConnectionsPage from "@/pages/ConnectionsPage";
 import SettingsPage from "@/pages/SettingsPage";
 import BlacklistPage from "@/pages/BlacklistPage";
+import PinLockScreen from "@/components/PinLockScreen";
 import NotFound from "@/pages/not-found";
+import { isPinEnabled } from "@/lib/security";
 
 const queryClient = new QueryClient();
 
 function MainApp() {
-  const [tab, setTab] = useState<Tab>("scanner");
+  const [tab, setTab]             = useState<Tab>("scanner");
   const [scanAddress, setScanAddress] = useState<string | undefined>();
+  const [locked, setLocked]       = useState(() => isPinEnabled());
+
+  useEffect(() => {
+    // Re-check lock state whenever PIN setting changes (e.g. user enables PIN in Settings)
+    const onStorage = () => {
+      if (isPinEnabled() && !locked) { /* stay unlocked for current session */ }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [locked]);
 
   const handleScanWallet = (address: string) => {
     setScanAddress(address);
     setTab("scanner");
   };
 
+  if (locked) return <PinLockScreen onUnlock={() => setLocked(false)} />;
+
   return (
     <div className="min-h-screen bg-background text-foreground">
-      {/* Tab content */}
       <div style={{ display: tab === "dashboard"   ? "block" : "none" }}>
         <DashboardPage onScanWallet={handleScanWallet} />
       </div>
@@ -45,7 +58,6 @@ function MainApp() {
       <div style={{ display: tab === "settings"   ? "block" : "none" }}>
         <SettingsPage />
       </div>
-
       <BottomNav active={tab} onChange={setTab} />
     </div>
   );
@@ -61,7 +73,7 @@ function Router() {
   );
 }
 
-function App() {
+export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
@@ -75,5 +87,3 @@ function App() {
     </QueryClientProvider>
   );
 }
-
-export default App;

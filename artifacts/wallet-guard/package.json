@@ -77,6 +77,8 @@
   "dependencies": {
     "@noble/hashes": "^2.0.1",
     "@noble/secp256k1": "^3.0.0",
+    "@scure/bip32": "^2.0.1",
+    "@scure/bip39": "^2.0.1",
     "bs58": "^6.0.0",
     "html5-qrcode": "^2.3.8",
     "jsqr": "^1.4.0"
