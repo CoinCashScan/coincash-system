@@ -172,11 +172,11 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
   };
 
   // ── Send flow ──────────────────────────────────────────────────────────────
-  // Net amount recipient receives after fee deduction (USDT only)
-  const netAmount = (() => {
+  // For USDT: recipient gets exactly sendAmt; wallet pays sendAmt + fee
+  const totalAmount = (() => {
     if (sendToken !== "USDT" || !feeEstimate) return null;
     const amt = parseFloat(sendAmt) || 0;
-    return Math.max(0, parseFloat((amt - feeEstimate.feeUSDT).toFixed(6)));
+    return parseFloat((amt + feeEstimate.feeUSDT).toFixed(6));
   })();
 
   const validateSend = () => {
@@ -186,10 +186,14 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
     const amt = parseFloat(sendAmt);
     if (!amt || amt <= 0) { toast.error("Monto inválido."); return false; }
     const bal = sendToken === "TRX" ? (info?.trxBalance ?? 0) : (info?.usdtBalance ?? 0);
-    if (amt > bal) { toast.error("Saldo insuficiente."); return false; }
-    // For USDT, ensure net amount after fee is positive
-    if (sendToken === "USDT" && feeEstimate && amt <= feeEstimate.feeUSDT) {
-      toast.error(`El monto debe ser mayor a la tarifa de red (${feeEstimate.feeUSDT.toFixed(2)} USDT).`);
+    // For USDT, validate against total (amount + fee)
+    const required = sendToken === "USDT" && feeEstimate ? amt + feeEstimate.feeUSDT : amt;
+    if (required > bal) {
+      if (sendToken === "USDT" && feeEstimate) {
+        toast.error(`Saldo insuficiente. Necesitas ${required.toFixed(2)} USDT (incluye tarifa de ${feeEstimate.feeUSDT.toFixed(2)} USDT).`);
+      } else {
+        toast.error("Saldo insuficiente.");
+      }
       return false;
     }
     return true;
@@ -207,11 +211,10 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
         setSentSponsored(false);
       } else {
         // USDT gas abstraction:
-        // – Deduct the network fee from the transfer amount (recipient gets less)
-        // – Relay broadcasts the tx and pays TRX energy from its staked balance
-        const fee = feeEstimate?.feeUSDT ?? 0;
-        const netAmt = parseFloat(Math.max(0.000001, amt - fee).toFixed(6));
-        const result: RelayResult = await relayUSDTTransfer(wallet.address, sendTo, netAmt, privKey);
+        // – Recipient gets exactly `amt` (what the user typed)
+        // – The fee (feeUSDT) is deducted from the wallet on top of amt
+        // – Relay pays TRX energy cost; we've already validated wallet has amt + fee
+        const result: RelayResult = await relayUSDTTransfer(wallet.address, sendTo, amt, privKey);
         setSentTxId(result.txId);
         setSentSponsored(result.sponsored);
       }
@@ -510,18 +513,20 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
                   </p>
                 </div>
 
-                {/* USDT fee summary — shown after a successful USDT send */}
+                {/* USDT fee receipt — shown after a successful USDT send */}
                 {sendToken === "USDT" && feeEstimate && (
                   <div className="w-full rounded-2xl overflow-hidden"
                     style={{ border: `1px solid ${BORDER}` }}>
                     {[
-                      ["Monto total", `${sendAmt} USDT`, "white"],
+                      ["Destinatario recibió", `${parseFloat(sendAmt).toFixed(2)} USDT`, GREEN],
                       ["Tarifa de red", `${feeEstimate.feeUSDT.toFixed(2)} USDT`, AMBER],
-                      ["Destinatario recibió", `${(netAmount ?? 0).toFixed(2)} USDT`, GREEN],
+                      ["Total descontado", totalAmount !== null ? `${totalAmount.toFixed(2)} USDT` : "—", BLUE],
                     ].map(([label, value, color], i, arr) => (
                       <div key={label} className="flex items-center justify-between px-4 py-2.5"
-                        style={{ borderBottom: i < arr.length - 1 ? `1px solid ${BORDER}` : "none",
-                          background: i === arr.length - 1 ? `${GREEN}06` : "transparent" }}>
+                        style={{
+                          borderBottom: i < arr.length - 1 ? `1px solid ${BORDER}` : "none",
+                          background: i === arr.length - 1 ? `${BLUE}08` : "transparent",
+                        }}>
                         <span className="text-[10px]" style={{ color: "rgba(255,255,255,0.4)" }}>{label}</span>
                         <span className="text-[10px] font-bold" style={{ color }}>{value}</span>
                       </div>
@@ -580,32 +585,28 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
                   style={{ border: `1px solid ${BORDER}`, background: CARD }}>
                   {(sendToken === "TRX"
                     ? [
-                        ["Token", "TRX"],
-                        ["Monto", `${sendAmt} TRX`],
-                        ["Desde", short(wallet.address)],
-                        ["Hacia", short(sendTo)],
-                        ["Tarifa de red", "~1 TRX (bandwidth)"],
+                        ["Token", "TRX", "white"],
+                        ["Monto", `${sendAmt} TRX`, "white"],
+                        ["Tarifa de red", "~1 TRX (bandwidth)", AMBER],
+                        ["Desde", short(wallet.address), "white"],
+                        ["Hacia", short(sendTo), "white"],
                       ]
                     : [
-                        ["Token", "USDT TRC20"],
-                        ["Monto total", `${sendAmt} USDT`],
-                        ["Tarifa de red", feeEstimate ? `${feeEstimate.feeUSDT.toFixed(2)} USDT ≈ ${feeEstimate.feeTRX.toFixed(1)} TRX` : "—"],
-                        ["Destinatario recibe", netAmount !== null ? `${netAmount.toFixed(2)} USDT` : "—"],
-                        ["Hacia", short(sendTo)],
+                        ["Monto a enviar", `${parseFloat(sendAmt).toFixed(2)} USDT`, "white"],
+                        ["Tarifa de red", feeEstimate ? `+ ${feeEstimate.feeUSDT.toFixed(2)} USDT` : "—", AMBER],
+                        ["Total a descontar", totalAmount !== null ? `${totalAmount.toFixed(2)} USDT` : "—", BLUE],
+                        ["Destinatario recibe", `${parseFloat(sendAmt).toFixed(2)} USDT`, GREEN],
+                        ["Hacia", short(sendTo), "white"],
                       ]
-                  ).map(([label, value], i, arr) => (
+                  ).map(([label, value, color], i, arr) => (
                     <div key={label} className="flex items-start justify-between px-4 py-3"
-                      style={{ borderBottom: i < arr.length - 1 ? `1px solid ${BORDER}` : "none" }}>
+                      style={{
+                        borderBottom: i < arr.length - 1 ? `1px solid ${BORDER}` : "none",
+                        background: label === "Total a descontar" ? `${BLUE}08` : "transparent",
+                      }}>
                       <span className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>{label}</span>
-                      <span className={`text-xs font-semibold text-right max-w-[55%] break-all ${
-                        label === "Tarifa de red" ? "" : label === "Destinatario recibe" ? "" : ""
-                      }`} style={{
-                        color: label === "Tarifa de red" && sendToken === "USDT"
-                          ? AMBER
-                          : label === "Destinatario recibe"
-                          ? GREEN
-                          : "white"
-                      }}>{value}</span>
+                      <span className="text-xs font-semibold text-right max-w-[55%] break-all"
+                        style={{ color }}>{value}</span>
                     </div>
                   ))}
                 </div>
@@ -658,7 +659,10 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
                   </p>
                   <button onClick={() => {
                     const b = sendToken === "TRX" ? (info?.trxBalance ?? 0) : (info?.usdtBalance ?? 0);
-                    const max = sendToken === "TRX" ? Math.max(0, b - 1) : b; // keep 1 TRX for fees
+                    // TRX: reserve 1 TRX for bandwidth fee
+                    // USDT: reserve feeUSDT so total (amount + fee) doesn't exceed balance
+                    const fee = sendToken === "USDT" && feeEstimate ? feeEstimate.feeUSDT : 0;
+                    const max = sendToken === "TRX" ? Math.max(0, b - 1) : Math.max(0, b - fee);
                     setSendAmt(max > 0 ? fmtAmt(max, 6) : "0");
                   }} className="text-[11px] font-semibold px-2 py-0.5 rounded-lg"
                     style={{ background: `${GREEN}18`, color: GREEN }}>
@@ -702,7 +706,17 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
                 {sendToken === "USDT" && (
                   <div className="rounded-2xl overflow-hidden mb-4"
                     style={{ border: `1px solid ${BORDER}`, background: CARD }}>
-                    {/* Fee row */}
+                    {/* Amount to send */}
+                    <div className="flex items-center justify-between px-4 py-3"
+                      style={{ borderBottom: `1px solid ${BORDER}` }}>
+                      <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.4)" }}>
+                        Monto a enviar
+                      </span>
+                      <span className="text-[11px] font-bold text-white">
+                        {parseFloat(sendAmt) > 0 ? `${parseFloat(sendAmt).toFixed(2)} USDT` : "—"}
+                      </span>
+                    </div>
+                    {/* Network fee */}
                     <div className="flex items-center justify-between px-4 py-3"
                       style={{ borderBottom: `1px solid ${BORDER}` }}>
                       <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.4)" }}>
@@ -713,7 +727,7 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
                       ) : feeEstimate ? (
                         <div className="flex items-center gap-1.5">
                           <span className="text-[11px] font-bold" style={{ color: AMBER }}>
-                            {feeEstimate.feeUSDT.toFixed(2)} USDT
+                            + {feeEstimate.feeUSDT.toFixed(2)} USDT
                           </span>
                           <span className="text-[9px] font-mono" style={{ color: "rgba(255,255,255,0.25)" }}>
                             ≈ {feeEstimate.feeTRX.toFixed(1)} TRX
@@ -723,17 +737,18 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
                         <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.25)" }}>—</span>
                       )}
                     </div>
-                    {/* Recipient row */}
-                    <div className="flex items-center justify-between px-4 py-3">
-                      <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.4)" }}>
-                        Destinatario recibe
+                    {/* Total charged */}
+                    <div className="flex items-center justify-between px-4 py-3"
+                      style={{ background: `${BLUE}0A` }}>
+                      <span className="text-[11px] font-semibold" style={{ color: "rgba(255,255,255,0.6)" }}>
+                        Total a pagar
                       </span>
                       {feeLoading || !feeEstimate ? (
                         <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.25)" }}>—</span>
                       ) : (
-                        <span className="text-[11px] font-bold" style={{ color: GREEN }}>
-                          {netAmount !== null && netAmount > 0
-                            ? `${netAmount.toFixed(2)} USDT`
+                        <span className="text-[11px] font-bold" style={{ color: BLUE }}>
+                          {totalAmount !== null && totalAmount > 0
+                            ? `${totalAmount.toFixed(2)} USDT`
                             : "—"}
                         </span>
                       )}
