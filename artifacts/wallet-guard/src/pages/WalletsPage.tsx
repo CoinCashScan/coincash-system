@@ -48,10 +48,18 @@ function BottomSheet({ onClose, children }: { onClose:()=>void; children: React.
     <div className="fixed inset-0 z-50 flex items-end"
       style={{ background:"rgba(0,0,0,0.75)", backdropFilter:"blur(4px)" }}
       onClick={onClose}>
-      <div className="w-full rounded-t-[20px] flex flex-col"
-        style={{ height:"80vh", background:SHEET, borderTop:`1px solid ${BORDER}`, overflowY:"auto" }}
+      <div className="w-full rounded-t-[20px]"
+        style={{
+          height: "90vh",
+          background: SHEET,
+          borderTop: `1px solid ${BORDER}`,
+          overflowY: "auto",
+          WebkitOverflowScrolling: "touch" as any,
+          paddingBottom: "env(safe-area-inset-bottom, 0px)",
+        }}
         onClick={e => e.stopPropagation()}>
-        <div className="flex justify-center pt-3 pb-1 shrink-0">
+        {/* Drag handle */}
+        <div className="flex justify-center pt-3 pb-1">
           <div className="h-1 w-10 rounded-full" style={{ background:"rgba(255,255,255,0.15)" }} />
         </div>
         {children}
@@ -334,7 +342,7 @@ export default function WalletsPage({ onScan }: Props) {
         <BottomSheet onClose={closeModal}>
           <SheetHeader title="Watch Wallet" subtitle="Monitoreo de dirección · Solo lectura"
             icon={Eye} color={GREEN} onClose={closeModal} />
-          <div className="px-6 flex-1">
+          <div className="px-6 pb-10">
             {/* Security info */}
             <div className="rounded-2xl p-3.5 mb-5 flex gap-3"
               style={{ background:`${GREEN}0A`, border:`1px solid ${GREEN}25` }}>
@@ -365,7 +373,7 @@ export default function WalletsPage({ onScan }: Props) {
         <BottomSheet onClose={closeModal}>
           <SheetHeader title="Importar Wallet" subtitle="Recupera el acceso con tus credenciales"
             icon={Key} color={BLUE} onClose={closeModal} />
-          <div className="px-6 flex-1">
+          <div className="px-6 pb-10">
             {/* No public-address notice */}
             <div className="rounded-2xl p-3 mb-4 flex gap-2.5"
               style={{background:`${BLUE}0A`,border:`1px solid ${BLUE}25`}}>
@@ -469,7 +477,7 @@ export default function WalletsPage({ onScan }: Props) {
         <BottomSheet onClose={closeModal}>
           <SheetHeader title="Nueva Wallet TRON" subtitle="Generada en tu dispositivo · Nunca sale de aquí"
             icon={Sparkles} color={PURPLE} onClose={closeModal} />
-          <div className="px-6">
+          <div className="px-6 pb-10">
             {/* Backup warning */}
             <div className="rounded-2xl p-4 mb-3 flex gap-3" style={{background:`${DANGER}10`,border:`1px solid ${DANGER}35`}}>
               <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" style={{color:DANGER}}/>
