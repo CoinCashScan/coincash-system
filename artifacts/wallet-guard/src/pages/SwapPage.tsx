@@ -129,11 +129,11 @@ export default function SwapPage({ wallets, activeTab }: Props) {
     ? Math.max(0, sendBalance - 2)
     : Math.max(0, sendBalance - COINCASH_FEE_USDT);
 
-  // Market rate label: "1 USDT ≈ X TRX" or "1 TRX ≈ $X"
+  // Single reference price — always expressed as "1 USDT ≈ X TRX" for clarity.
+  // Derived from the same trxUsd source used for all swap calculations.
+  const usdtPerTrx      = trxUsd > 0 ? 1 / trxUsd : 0;
   const marketRateLabel = trxUsd > 0
-    ? swapDir === "usdt_to_trx"
-      ? `1 USDT ≈ ${(1 / trxUsd).toFixed(2)} TRX`
-      : `1 TRX ≈ $${trxUsd.toFixed(4)}`
+    ? `1 USDT ≈ ${usdtPerTrx.toFixed(2)} TRX`
     : "Cargando precio…";
 
   // ── Live TRX price (CoinGecko → backend fallback, 10 s refresh) ──────────────
@@ -340,7 +340,7 @@ export default function SwapPage({ wallets, activeTab }: Props) {
                     : `${(quote?.inputAmount ?? 0).toFixed(4)} TRX`,                                                                "white"],
                 ["Tarifa swap (2%)",  `−${result.feeAmount.toFixed(receiveToken === "USDT" ? 2 : 4)} ${receiveToken}`,             AMBER],
                 ["Recibiste ✓",       `${result.outputAmount.toFixed(receiveToken === "USDT" ? 2 : 4)} ${receiveToken}`,           GREEN],
-                ["Tasa utilizada",    `1 TRX = $${quote?.trxUsd?.toFixed(4) ?? "—"} USD`,                                         "rgba(255,255,255,0.35)"],
+                ["Tasa utilizada",    quote?.trxUsd ? `1 USDT ≈ ${(1 / quote.trxUsd).toFixed(2)} TRX` : "—",                  "rgba(255,255,255,0.35)"],
               ].map(([lbl, val, col], i, arr) => (
                 <div key={lbl} className="flex items-center justify-between px-4 py-2.5"
                   style={{ borderBottom: i < arr.length - 1 ? `1px solid ${BORDER}` : "none" }}>
@@ -410,8 +410,10 @@ export default function SwapPage({ wallets, activeTab }: Props) {
               </div>
               <div className="flex-1 flex flex-col items-center gap-1">
                 <ArrowDownUp className="h-5 w-5" style={{ color: PURPLE }} />
-                <span className="text-[10px] font-mono" style={{ color: "rgba(255,255,255,0.25)" }}>
-                  1 TRX = ${quote.trxUsd.toFixed(4)}
+                <span className="text-[10px] font-mono text-center" style={{ color: "rgba(255,255,255,0.25)" }}>
+                  {quote.trxUsd > 0
+                    ? `1 USDT ≈ ${(1 / quote.trxUsd).toFixed(2)} TRX`
+                    : "—"}
                 </span>
               </div>
               <div className="flex flex-col items-center gap-1">
@@ -718,8 +720,10 @@ export default function SwapPage({ wallets, activeTab }: Props) {
                       color: hasAmt && enoughForFee ? AMBER : "rgba(255,255,255,0.15)",
                     },
                     {
-                      label: "Precio TRX",
-                      value: trxUsd > 0 ? `$${trxUsd.toFixed(4)} USD` : "Cargando…",
+                      label: "Tasa de cambio",
+                      value: trxUsd > 0
+                        ? `1 USDT ≈ ${usdtPerTrx.toFixed(2)} TRX`
+                        : "Cargando…",
                       color: "rgba(255,255,255,0.4)",
                     },
                   ].map(({ label, value, color }, i, arr) => (
