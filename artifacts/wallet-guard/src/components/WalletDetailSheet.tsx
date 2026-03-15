@@ -59,6 +59,14 @@ function TokenIcon({ token, size = 18 }: { token: Token; size?: number }) {
   );
 }
 
+// Skeleton shimmer block — used instead of spinners while first-ever data loads
+function Skeleton({ w, h = "h-5", radius = "rounded-lg" }: { w: string; h?: string; radius?: string }) {
+  return (
+    <div className={`${w} ${h} ${radius} animate-pulse`}
+      style={{ background: "rgba(255,255,255,0.07)" }} />
+  );
+}
+
 // ── Wallet data cache (localStorage) ─────────────────────────────────────────
 // Stores the last known balances + transactions per address so the UI can
 // render instantly on open while the live fetch runs in the background.
@@ -82,13 +90,11 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
   const [view, setView]           = useState<View>("overview");
   const [info, setInfo]           = useState<AccountInfo | null>(null);
   const [txs, setTxs]             = useState<TxRecord[]>([]);
-  // loading = true only when there is NO cached data and the first fetch is in flight
-  const [loading, setLoading]       = useState(false);
-  // refreshing = subtle indicator shown during every background refresh
+  // refreshing = pulsing dot shown while background fetch is running
   const [refreshing, setRefreshing] = useState(false);
-  // loadError = true only after all 4 fallback nodes failed; hides when retry succeeds
+  // loadError = true only after ALL fallback nodes failed; never shown with cached data unless user triggers manual retry
   const [loadError, setLoadError]   = useState(false);
-  // ts of the last successful live fetch (for "last updated X ago" display)
+  // ts of the last successful live fetch (shown as "Actualizado ahora / Hace X min")
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState("");
   const [copied, setCopied]       = useState(false);
@@ -115,8 +121,8 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
   // ── Background live fetch — always runs silently ───────────────────────────
   // Shows only the subtle refresh dot. Retries up to 3× with fallback nodes.
   // On success: updates state + writes to cache. On full failure: sets loadError.
-  const loadWalletData = useCallback(async (opts: { silent?: boolean } = {}) => {
-    if (fetchingRef.current) return;          // don't double-fetch
+  const loadWalletData = useCallback(async () => {
+    if (fetchingRef.current) return;     // don't overlap fetches
     fetchingRef.current = true;
     setRefreshing(true);
     setLoadError(false);
@@ -130,12 +136,10 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
           fetchAccountInfo(wallet.address),
           fetchAllTransactions(wallet.address),
         ]);
-        // Persist to cache before updating state
         writeCache(wallet.address, accountData, txData);
         setInfo(accountData);
         setTxs(txData);
         setLastUpdated(Date.now());
-        setLoading(false);
         setRefreshing(false);
         setLoadError(false);
         fetchingRef.current = false;
@@ -145,7 +149,6 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
         if (attempt < MAX_ATTEMPTS) {
           await new Promise(r => setTimeout(r, 1000 * attempt));
         } else {
-          setLoading(false);
           setRefreshing(false);
           setLoadError(true);
           fetchingRef.current = false;
@@ -154,24 +157,22 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
     }
   }, [wallet.address]);
 
-  // ── On open: show cache immediately, then fetch live in background ─────────
+  // ── On open: paint cache instantly, then sync live in the background ────────
   useEffect(() => {
-    fetchingRef.current = false; // reset guard on wallet change
+    fetchingRef.current = false;
 
+    // Restore last known state from cache — renders in the same frame, no spinner
     const cached = readCache(wallet.address);
     if (cached) {
-      // Show cached data instantly — no loading spinner needed
       setInfo(cached.info);
       setTxs(cached.txs);
       setLastUpdated(cached.ts);
-      setLoading(false);
-    } else {
-      // No cache — show spinner until first live data arrives
-      setLoading(true);
     }
+    // Reset error so stale error from a previous wallet doesn't show
+    setLoadError(false);
 
-    // Always fetch live data in the background regardless
-    loadWalletData({ silent: true });
+    // Background live sync — always runs, never blocks the UI
+    loadWalletData();
     fetchRelayStatus().then(s => setRelayActive(s.relayerActive)).catch(() => {});
   }, [wallet.address, loadWalletData]);
 
@@ -345,109 +346,96 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
         {view === "overview" && (
           <div className="px-4 pb-6">
 
-            {/* Connection banner — shown only when all fallback nodes failed */}
-            {loadError && !loading && (
-              <div className="flex items-center gap-2.5 rounded-2xl px-3 py-2.5 mb-3"
-                style={{ background: `${BLUE}10`, border: `1px solid ${BLUE}22` }}>
-                <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" style={{ color: BLUE }} />
-                <div className="flex-1">
-                  <p className="text-[10px] font-semibold" style={{ color: "rgba(255,255,255,0.6)" }}>
-                    Conectando a la red TRON…
-                  </p>
-                  <p className="text-[9px] mt-0.5" style={{ color: "rgba(255,255,255,0.3)" }}>
-                    Probando nodos alternativos, reintentando en 3 s
-                  </p>
-                </div>
+            {/* Offline notice — only shown when every fallback node has failed */}
+            {loadError && (
+              <div className="flex items-center gap-2 rounded-xl px-3 py-2 mb-3"
+                style={{ background: "rgba(255,255,255,0.04)", border: `1px solid ${AMBER}25` }}>
+                <span className="h-1.5 w-1.5 rounded-full shrink-0 animate-pulse"
+                  style={{ background: AMBER }} />
+                <p className="text-[10px] flex-1" style={{ color: "rgba(255,255,255,0.35)" }}>
+                  Sin conexión — reintentando…
+                </p>
                 <button onClick={() => loadWalletData()}
-                  className="text-[10px] font-bold px-2 py-0.5 rounded-lg shrink-0"
-                  style={{ background: `${BLUE}20`, color: BLUE }}>
-                  Ahora
+                  className="text-[9px] font-semibold px-1.5 py-0.5 rounded-md shrink-0"
+                  style={{ color: AMBER }}>
+                  Reintentar
                 </button>
               </div>
             )}
 
-            {/* Balance cards */}
-            {loading ? (
-              /* First open with no cache — show minimal spinner */
-              <div className="flex flex-col items-center justify-center py-12 gap-3">
-                <Loader2 className="h-8 w-8 animate-spin" style={{ color: GREEN }} />
-                <p className="text-sm font-semibold" style={{ color: "rgba(255,255,255,0.55)" }}>
-                  Cargando billetera…
-                </p>
-              </div>
-            ) : (
-              <>
-                {/* Balance section header: label + live refresh dot */}
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-[10px] font-semibold uppercase tracking-widest"
-                    style={{ color: "rgba(255,255,255,0.25)" }}>
-                    Saldo
-                  </p>
-                  <div className="flex items-center gap-1.5">
-                    {refreshing && (
-                      <span className="relative flex h-2 w-2">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
-                          style={{ background: GREEN }} />
-                        <span className="relative inline-flex h-2 w-2 rounded-full"
-                          style={{ background: GREEN }} />
-                      </span>
-                    )}
-                    {lastUpdated && !refreshing && (
-                      <p className="text-[9px]" style={{ color: "rgba(255,255,255,0.2)" }}>
-                        {(() => {
-                          const s = Math.floor((Date.now() - lastUpdated) / 1000);
-                          if (s < 60) return "Actualizado ahora";
-                          const m = Math.floor(s / 60);
-                          return `Hace ${m} min`;
-                        })()}
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {/* TRX card */}
-                <div className="rounded-2xl p-4 mb-3"
-                  style={{ background: `linear-gradient(135deg, #FF2D5520 0%, #FF2D5508 100%)`, border: `1px solid #FF2D5530` }}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <div className="flex h-9 w-9 items-center justify-center rounded-full font-bold text-sm"
-                        style={{ background: "#FF2D5520", color: "#FF2D55" }}>TRX</div>
-                      <div>
-                        <p className="text-xs font-semibold" style={{ color: "rgba(255,255,255,0.5)" }}>TRON</p>
-                        <p className="text-xl font-bold text-white">{fmtAmt(info?.trxBalance ?? 0, 4)}</p>
-                      </div>
-                    </div>
-                    <p className="text-xs font-mono" style={{ color: "rgba(255,255,255,0.3)" }}>TRX</p>
-                  </div>
-                </div>
-
-                {/* USDT card */}
-                <div className="rounded-2xl p-4 mb-4"
-                  style={{ background: `linear-gradient(135deg, ${TEAL}20 0%, ${TEAL}08 100%)`, border: `1px solid ${TEAL}30` }}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <div className="flex h-9 w-9 items-center justify-center rounded-full font-bold text-sm"
-                        style={{ background: `${TEAL}20`, color: TEAL }}>₮</div>
-                      <div>
-                        <p className="text-xs font-semibold" style={{ color: "rgba(255,255,255,0.5)" }}>USDT TRC20</p>
-                        <p className="text-xl font-bold text-white">{fmtAmt(info?.usdtBalance ?? 0, 2)}</p>
-                      </div>
-                    </div>
-                    <p className="text-xs font-mono" style={{ color: "rgba(255,255,255,0.3)" }}>USDT</p>
-                  </div>
-                </div>
-
-                {!info?.activated && (
-                  <div className="rounded-2xl p-3 mb-4 flex gap-2.5"
-                    style={{ background: `${AMBER}0C`, border: `1px solid ${AMBER}30` }}>
-                    <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" style={{ color: AMBER }} />
-                    <p className="text-[11px] leading-relaxed" style={{ color: "rgba(255,255,255,0.55)" }}>
-                      Esta wallet no tiene transacciones en la red TRON aún.
+            {/* ── Balance cards — always rendered; skeleton when info is null ── */}
+            <>
+              {/* Section header */}
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[10px] font-semibold uppercase tracking-widest"
+                  style={{ color: "rgba(255,255,255,0.25)" }}>Saldo</p>
+                <div className="flex items-center gap-1.5">
+                  {refreshing && (
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
+                        style={{ background: GREEN }} />
+                      <span className="relative inline-flex h-2 w-2 rounded-full"
+                        style={{ background: GREEN }} />
+                    </span>
+                  )}
+                  {lastUpdated && !refreshing && (
+                    <p className="text-[9px]" style={{ color: "rgba(255,255,255,0.18)" }}>
+                      {(() => {
+                        const s = Math.floor((Date.now() - lastUpdated) / 1000);
+                        if (s < 60) return "Actualizado ahora";
+                        return `Hace ${Math.floor(s / 60)} min`;
+                      })()}
                     </p>
+                  )}
+                </div>
+              </div>
+
+              {/* TRX card */}
+              <div className="rounded-2xl p-4 mb-3"
+                style={{ background: "linear-gradient(135deg,#FF2D5520 0%,#FF2D5508 100%)", border: "1px solid #FF2D5530" }}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-full font-bold text-sm"
+                      style={{ background: "#FF2D5520", color: "#FF2D55" }}>TRX</div>
+                    <div>
+                      <p className="text-xs font-semibold" style={{ color: "rgba(255,255,255,0.5)" }}>TRON</p>
+                      {info
+                        ? <p className="text-xl font-bold text-white">{fmtAmt(info.trxBalance, 4)}</p>
+                        : <Skeleton w="w-24" h="h-6" />}
+                    </div>
                   </div>
-                )}
-              </>
-            )}
+                  <p className="text-xs font-mono" style={{ color: "rgba(255,255,255,0.3)" }}>TRX</p>
+                </div>
+              </div>
+
+              {/* USDT card */}
+              <div className="rounded-2xl p-4 mb-4"
+                style={{ background: `linear-gradient(135deg,${TEAL}20 0%,${TEAL}08 100%)`, border: `1px solid ${TEAL}30` }}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-full font-bold text-sm"
+                      style={{ background: `${TEAL}20`, color: TEAL }}>₮</div>
+                    <div>
+                      <p className="text-xs font-semibold" style={{ color: "rgba(255,255,255,0.5)" }}>USDT TRC20</p>
+                      {info
+                        ? <p className="text-xl font-bold text-white">{fmtAmt(info.usdtBalance, 2)}</p>
+                        : <Skeleton w="w-28" h="h-6" />}
+                    </div>
+                  </div>
+                  <p className="text-xs font-mono" style={{ color: "rgba(255,255,255,0.3)" }}>USDT</p>
+                </div>
+              </div>
+
+              {info && !info.activated && (
+                <div className="rounded-2xl p-3 mb-4 flex gap-2.5"
+                  style={{ background: `${AMBER}0C`, border: `1px solid ${AMBER}30` }}>
+                  <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" style={{ color: AMBER }} />
+                  <p className="text-[11px] leading-relaxed" style={{ color: "rgba(255,255,255,0.55)" }}>
+                    Esta wallet no tiene transacciones en la red TRON aún.
+                  </p>
+                </div>
+              )}
+            </>
 
             {/* Action buttons */}
             <div className="flex gap-3 mb-6">
@@ -476,7 +464,7 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
               <p className="text-sm font-bold text-white">Transacciones recientes</p>
               <div className="flex items-center gap-2">
                 <button onClick={() => loadWalletData()}
-                  disabled={loading || refreshing}
+                  disabled={refreshing}
                   className="flex items-center gap-1 text-[11px] font-medium active:opacity-60 disabled:opacity-30"
                   style={{ color: "rgba(255,255,255,0.35)" }}>
                   {refreshing
@@ -494,14 +482,25 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
               </div>
             </div>
 
-            {loading ? null : txs.length === 0 ? (
+            {info === null ? (
+              /* Skeleton rows — shown only the very first time, before any data arrives */
+              <div className="flex flex-col gap-3">
+                {[1, 2, 3].map(i => (
+                  <div key={i} className="flex items-center gap-3 px-1">
+                    <Skeleton w="w-9" h="h-9" radius="rounded-full" />
+                    <div className="flex-1 flex flex-col gap-1.5">
+                      <Skeleton w="w-32" h="h-3.5" />
+                      <Skeleton w="w-20" h="h-2.5" />
+                    </div>
+                    <Skeleton w="w-16" h="h-3.5" />
+                  </div>
+                ))}
+              </div>
+            ) : txs.length === 0 ? (
               <div className="flex flex-col items-center gap-2 py-8 text-center">
                 <Clock className="h-8 w-8" style={{ color: "rgba(255,255,255,0.12)" }} />
                 <p className="text-sm font-medium" style={{ color: "rgba(255,255,255,0.3)" }}>
                   Sin transacciones aún
-                </p>
-                <p className="text-xs leading-relaxed max-w-[220px]" style={{ color: "rgba(255,255,255,0.2)" }}>
-                  Esta wallet no tiene transacciones en la red TRON aún.
                 </p>
               </div>
             ) : (
@@ -840,7 +839,7 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
             <div className="flex items-center justify-between mb-4">
               <p className="text-base font-bold text-white">Historial completo</p>
               <button onClick={() => loadWalletData()}
-                disabled={loading || refreshing}
+                disabled={refreshing}
                 className="flex items-center gap-1 text-[11px] font-medium disabled:opacity-30"
                 style={{ color: "rgba(255,255,255,0.35)" }}>
                 {refreshing
@@ -849,14 +848,7 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
                 } Actualizar
               </button>
             </div>
-            {loading ? (
-              <div className="flex flex-col items-center gap-3 py-12">
-                <Loader2 className="h-6 w-6 animate-spin" style={{ color: GREEN }} />
-                <p className="text-[11px]" style={{ color: "rgba(255,255,255,0.3)" }}>
-                  Cargando historial…
-                </p>
-              </div>
-            ) : txs.length === 0 ? (
+            {txs.length === 0 ? (
               <div className="flex flex-col items-center gap-2 py-12 text-center">
                 <Wallet className="h-10 w-10" style={{ color: "rgba(255,255,255,0.1)" }} />
                 <p className="text-sm font-medium" style={{ color: "rgba(255,255,255,0.3)" }}>
