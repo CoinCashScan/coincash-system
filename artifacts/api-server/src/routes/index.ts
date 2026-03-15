@@ -4,6 +4,7 @@ import blacklistRouter from "./blacklist";
 import relayRouter from "./relay";
 import bitraceProxyRouter from "./bitraceProxy";
 import riskAnalysisRouter from "./riskAnalysis";
+import bitraceBlacklistRouter from "./bitraceBlacklist";
 
 const router: IRouter = Router();
 
@@ -12,5 +13,6 @@ router.use(blacklistRouter);
 router.use(relayRouter);
 router.use(bitraceProxyRouter);
 router.use(riskAnalysisRouter);
+router.use(bitraceBlacklistRouter);
 
 export default router;
