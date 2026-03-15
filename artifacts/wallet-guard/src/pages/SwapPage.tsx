@@ -54,9 +54,9 @@ function TrxIcon({ size = 36 }: { size?: number }) {
   );
 }
 
-interface Props { wallets: SavedWallet[]; }
+interface Props { wallets: SavedWallet[]; activeTab?: string; }
 
-export default function SwapPage({ wallets }: Props) {
+export default function SwapPage({ wallets, activeTab }: Props) {
   const signableWallets = wallets.filter(w => hasEncryptedKey(w.id));
 
   // ── State ────────────────────────────────────────────────────────────────────
@@ -162,13 +162,34 @@ export default function SwapPage({ wallets }: Props) {
     return () => clearInterval(id);
   }, [loadRate]);
 
+  // ── Balance loader — callable from anywhere ───────────────────────────────────
+  const loadBalance = useCallback(async (address: string) => {
+    setInfoLoading(true);
+    try {
+      const i = await fetchAccountInfo(address);
+      setInfo(i);
+    } catch { /* silently ignore — stale balance stays visible */ }
+    setInfoLoading(false);
+  }, []);
+
+  // Refresh on wallet change
   useEffect(() => {
     if (!selectedWallet) return;
-    setInfoLoading(true);
-    fetchAccountInfo(selectedWallet.address)
-      .then(i => { setInfo(i); setInfoLoading(false); })
-      .catch(() => setInfoLoading(false));
-  }, [selectedWallet?.address]);
+    loadBalance(selectedWallet.address);
+  }, [selectedWallet?.address, loadBalance]);
+
+  // Refresh every time the Swap tab becomes active
+  useEffect(() => {
+    if (activeTab !== "swap" || !selectedWallet) return;
+    loadBalance(selectedWallet.address);
+  }, [activeTab, loadBalance]);  // selectedWallet?.address covered by the effect above
+
+  // Periodic refresh every 30 s while the Swap tab is visible
+  useEffect(() => {
+    if (activeTab !== "swap" || !selectedWallet) return;
+    const id = setInterval(() => loadBalance(selectedWallet.address), 30_000);
+    return () => clearInterval(id);
+  }, [activeTab, selectedWallet?.address, loadBalance]);
 
   const reset = () => { setStep("form"); setAmount(""); setQuote(null); setResult(null); };
 
@@ -216,6 +237,8 @@ export default function SwapPage({ wallets }: Props) {
       setResult(res);
       setStep("done");
       toast.success("¡Swap completado exitosamente!");
+      // Refresh balance so the new amount is visible when the user returns to form
+      loadBalance(selectedWallet.address);
     } catch (e: any) {
       toast.error(e?.message ?? "Error al ejecutar el swap.");
       setStep("confirm");
