@@ -104,9 +104,27 @@ function bigIntToB58(n: bigint, leadingZeros: number): string {
   return "1".repeat(leadingZeros) + s;
 }
 
-// TRON Base58Check → 21-byte hex (41-prefixed)
-export function tronAddrToHex(b58: string): string {
-  const n = b58ToBigInt(b58);
+// ── Address validation & normalization ────────────────────────────────────────
+// Returns true if `addr` is a plausible TRON address (B58 starting with T OR
+// 42-char 41-prefixed hex).  Does NOT verify the checksum.
+export function isValidTronAddr(addr: unknown): addr is string {
+  if (typeof addr !== "string" || !addr) return false;
+  if (addr.startsWith("T") && addr.length === 34) return true;  // B58
+  if (/^41[0-9a-fA-F]{40}$/.test(addr)) return true;            // hex
+  return false;
+}
+
+// TRON address → 42-char 41-prefixed hex.
+// Accepts BOTH Base58Check (T...) and already-normalized hex (41...) so the
+// function never produces garbage when the caller accidentally passes hex.
+export function tronAddrToHex(addr: string): string {
+  if (!addr) throw new Error("tronAddrToHex: dirección vacía");
+  // Already hex with 41-prefix — return as-is (lower-cased for consistency)
+  if (/^41[0-9a-fA-F]{40}$/.test(addr)) return addr.toLowerCase();
+  // 40-char hex without prefix — add it
+  if (/^[0-9a-fA-F]{40}$/.test(addr)) return ("41" + addr).toLowerCase();
+  // Treat as Base58Check
+  const n = b58ToBigInt(addr);
   return n.toString(16).padStart(50, "0").slice(0, 42); // first 21 bytes
 }
 
@@ -586,6 +604,12 @@ export async function sendUSDT(
 async function buildAndSignUSDTTx(
   from: string, to: string, amountUsdt: number, privKeyHex: string
 ): Promise<any> {
+  // ── Pre-flight address validation ─────────────────────────────────────────
+  if (!isValidTronAddr(from))
+    throw new Error(`Dirección de wallet inválida: "${from}"`);
+  if (!isValidTronAddr(to))
+    throw new Error(`Dirección del relayer inválida: "${to}"`);
+
   const fromHex     = tronAddrToHex(from);
   const contractHex = tronAddrToHex(USDT_CONTRACT);
   const toHex20     = tronAddrToHex(to).slice(2);
@@ -594,15 +618,25 @@ async function buildAndSignUSDTTx(
   const amtParam    = amtRaw.toString(16).padStart(64, "0");
   const parameter   = toParam + amtParam;
 
+  // ── Debug log — printed to browser console for easy debugging ─────────────
+  console.log("[swap:buildUSDTTx]", {
+    Wallet:   from,
+    Relayer:  to,
+    Token:    USDT_CONTRACT,
+    Amount:   amountUsdt,
+    AmountSun: Number(amtRaw),
+    fromHex, contractHex, parameter,
+  });
+
   await rateWait();
   const res = await tronFetch("/wallet/triggersmartcontract", {
     method: "POST",
     body: JSON.stringify({
-      owner_address: fromHex,
-      contract_address: contractHex,
+      owner_address:     fromHex,
+      contract_address:  contractHex,
       function_selector: "transfer(address,uint256)",
       parameter,
-      fee_limit: 50_000_000,
+      fee_limit:  50_000_000,
       call_value: 0,
     }),
   });
@@ -663,9 +697,24 @@ export interface SwapResult {
 async function buildAndSignTRXTx(
   from: string, to: string, amountTrx: number, privKeyHex: string
 ): Promise<any> {
+  // ── Pre-flight address validation ─────────────────────────────────────────
+  if (!isValidTronAddr(from))
+    throw new Error(`Dirección de wallet inválida: "${from}"`);
+  if (!isValidTronAddr(to))
+    throw new Error(`Dirección del relayer inválida: "${to}"`);
+
   const fromHex   = tronAddrToHex(from);
   const toHex     = tronAddrToHex(to);
   const amountSun = toSun(amountTrx);  // safe integer
+
+  // ── Debug log ─────────────────────────────────────────────────────────────
+  console.log("[swap:buildTRXTx]", {
+    Wallet:    from,
+    Relayer:   to,
+    Amount:    amountTrx,
+    AmountSun: amountSun,
+    fromHex, toHex,
+  });
 
   await rateWait();
   const res = await tronFetch("/wallet/createtransaction", {
@@ -722,7 +771,24 @@ export async function executeSwap(
   quote:         SwapQuote,     // server-issued quote
 ): Promise<SwapResult> {
   const { direction, inputAmount, relayerAddress } = quote;
-  if (!relayerAddress) throw new Error("Relayer no configurado.");
+
+  // ── Pre-flight validation ─────────────────────────────────────────────────
+  if (!isValidTronAddr(from))
+    throw new Error(`Dirección de wallet inválida: "${from}"`);
+  if (!relayerAddress)
+    throw new Error("Relayer no configurado. Contacta a soporte.");
+  if (!isValidTronAddr(relayerAddress))
+    throw new Error(`Dirección del relayer inválida: "${relayerAddress}". El servicio de swap no está disponible.`);
+  if (!inputAmount || inputAmount <= 0)
+    throw new Error(`Monto de swap inválido: ${inputAmount}`);
+
+  console.log("[swap:executeSwap]", {
+    Wallet:    from,
+    Relayer:   relayerAddress,
+    Direction: direction,
+    Amount:    inputAmount,
+    QuoteId:   quote.quoteId,
+  });
 
   // Build + sign the user's input payment to the relayer
   let signedInputTx: any;

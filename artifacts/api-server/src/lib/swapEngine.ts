@@ -227,15 +227,37 @@ export async function createSwapQuote(
   return quote;
 }
 
+// ── Address validation helper (hex-specific, for backend use) ─────────────────
+function assertValidHex(addr: string, label: string): void {
+  if (!addr || !/^41[0-9a-fA-F]{40}$/.test(addr))
+    throw new Error(`${label} inválida: "${addr}" (debe ser hex 41-prefixed de 42 chars)`);
+}
+function assertValidRecipientHex(addr: string, label: string): void {
+  if (!addr || !/^[0-9a-fA-F]{42}$/.test(addr))
+    throw new Error(`${label} inválida: "${addr}" (debe ser hex de 42 chars)`);
+}
+
 // ── Send TRX from relayer ─────────────────────────────────────────────────────
 async function sendTRXFromRelayer(toHex: string, amountTRX: number): Promise<string> {
   if (!RELAY_KEY || !RELAY_ADDR) throw new Error("Relayer no configurado.");
-  const amountSun = toSun(amountTRX);                   // ← safe integer, no floats
+
+  // Validate both addresses before touching TronGrid
+  assertValidHex(RELAY_ADDR, "Dirección del relayer (owner)");
+  assertValidRecipientHex(toHex, "Dirección del destinatario (to_address)");
+
+  const amountSun = toSun(amountTRX);
+  console.log("[swap:sendTRXFromRelayer]", {
+    Router:   RELAY_ADDR,
+    To:       toHex,
+    Amount:   amountTRX,
+    AmountSun: amountSun,
+  });
+
   await rateWait();
   const res = await fetch(`${TRON_GRID}/wallet/createtransaction`, {
     method: "POST",
     headers: apiHeaders(),
-    // Both addresses must be the same format; RELAY_ADDR is always hex (normalizeToHex above)
+    // Both addresses in same hex format — RELAY_ADDR normalised at startup
     body: JSON.stringify({ owner_address: RELAY_ADDR, to_address: toHex, amount: amountSun }),
   });
   if (!res.ok) throw new Error(`Error creando tx TRX (${res.status})`);
@@ -250,12 +272,26 @@ async function sendTRXFromRelayer(toHex: string, amountTRX: number): Promise<str
 // ── Send USDT from relayer ────────────────────────────────────────────────────
 async function sendUSDTFromRelayer(toHex: string, amountUSDT: number): Promise<string> {
   if (!RELAY_KEY || !RELAY_ADDR) throw new Error("Relayer no configurado.");
+
+  // Validate all three hex addresses before touching TronGrid
+  assertValidHex(RELAY_ADDR, "Dirección del relayer (owner)");
+  assertValidRecipientHex(toHex, "Dirección del destinatario (to_address)");
+
   const contractHex = tronB58ToHex(USDT_CONTRACT_B58);
   const toHex20     = toHex.slice(2);
   const toParam     = toHex20.padStart(64, "0");
-  const amtRaw      = BigInt(toSun(amountUSDT));          // ← safe integer via toSun()
+  const amtRaw      = BigInt(toSun(amountUSDT));
   const amtParam    = amtRaw.toString(16).padStart(64, "0");
   const parameter   = toParam + amtParam;
+
+  console.log("[swap:sendUSDTFromRelayer]", {
+    Router:      RELAY_ADDR,
+    Token:       contractHex,
+    To:          toHex,
+    Amount:      amountUSDT,
+    AmountSun:   Number(amtRaw),
+    parameter,
+  });
 
   await rateWait();
   const res = await fetch(`${TRON_GRID}/wallet/triggersmartcontract`, {
@@ -303,7 +339,19 @@ export async function executeSwap(
   }
   _quotes.delete(quoteId); // consume it (one-time use)
 
+  // Validate user address before any network calls
+  if (!userAddress || (!userAddress.startsWith("T") && !/^41[0-9a-fA-F]{40}$/.test(userAddress)))
+    throw new Error(`Dirección del usuario inválida: "${userAddress}"`);
+
   const userHex = tronB58ToHex(userAddress);
+  console.log("[swap:executeSwap]", {
+    QuoteId:   quoteId,
+    Direction: quote.direction,
+    UserB58:   userAddress,
+    UserHex:   userHex,
+    Output:    quote.outputAmount,
+    Relayer:   RELAY_ADDR,
+  });
 
   // 1. Broadcast user's input tx (they pay into the relayer)
   const inputBcast = await broadcastTx(signedInputTx);
@@ -358,8 +406,18 @@ export function isSwapAvailable(): boolean {
 
 export function getRelayerB58(): string {
   if (!RELAY_ADDR) return "";
-  // If the env var was set as a Base58 address (starts with T, 34 chars), use directly
-  if (RELAY_ADDR.startsWith("T") && RELAY_ADDR.length === 34) return RELAY_ADDR;
-  try { return tronHexToB58(RELAY_ADDR); }
-  catch { return RELAY_ADDR; }
+  // RELAY_ADDR is already normalised to hex by normalizeToHex() at startup.
+  // Convert back to B58 so the frontend can use it as the "send here" address.
+  try {
+    const b58 = tronHexToB58(RELAY_ADDR);
+    // Sanity-check: result must look like a real TRON address
+    if (!b58.startsWith("T") || b58.length !== 34)
+      throw new Error(`tronHexToB58 produced invalid B58: "${b58}"`);
+    return b58;
+  } catch (e) {
+    // Log the failure clearly — don't silently return a raw hex string that
+    // would later cause "The string did not match the expected pattern" in TronGrid.
+    console.error("[swap] getRelayerB58 failed — RELAY_ADDR may be misconfigured:", e);
+    return "";   // empty → frontend will show "Relayer no configurado"
+  }
 }
