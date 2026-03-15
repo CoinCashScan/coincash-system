@@ -98,7 +98,7 @@ async function broadcastTx(signedTx: any): Promise<{ result: boolean; txID: stri
 let _priceCache: { usd: number; ts: number } | null = null;
 
 export async function fetchTRXPrice(): Promise<number> {
-  if (_priceCache && Date.now() - _priceCache.ts < 30_000) return _priceCache.usd;
+  if (_priceCache && Date.now() - _priceCache.ts < 10_000) return _priceCache.usd;
   try {
     const res = await fetch(
       "https://api.coingecko.com/api/v3/simple/price?ids=tron&vs_currencies=usd",

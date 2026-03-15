@@ -74,17 +74,44 @@ export default function SwapPage({ wallets }: Props) {
   const sendBalance  = sendToken === "USDT" ? (info?.usdtBalance ?? 0) : (info?.trxBalance ?? 0);
   const maxSend      = sendToken === "TRX" ? Math.max(0, sendBalance - 2) : sendBalance;
 
-  // ── Load live rate every 30 s ───────────────────────────────────────────────
-  const loadRate = useCallback(() => {
+  // ── Live TRX price — tries CoinGecko directly, falls back to backend ──────────
+  // Refresh every 10 seconds as requested.
+  const loadRate = useCallback(async () => {
     setRateLoading(true);
-    fetchSwapRate()
-      .then(r => { setRate(r); setRateLoading(false); })
-      .catch(() => setRateLoading(false));
+    try {
+      // Primary: hit CoinGecko directly from the browser (no API key needed)
+      const cgRes = await fetch(
+        "https://api.coingecko.com/api/v3/simple/price?ids=tron&vs_currencies=usd",
+        { signal: AbortSignal.timeout(5_000) }
+      );
+      if (cgRes.ok) {
+        const cgData = await cgRes.json();
+        const trxUsd: number = cgData?.tron?.usd;
+        if (trxUsd && trxUsd > 0) {
+          // Merge into the existing rate object (keep swapAvailable etc from last backend call)
+          setRate(prev => ({
+            trxUsd,
+            feeRate: prev?.feeRate ?? 0.02,
+            swapAvailable: prev?.swapAvailable ?? true,
+            relayerAddress: prev?.relayerAddress ?? "",
+          }));
+          setRateLoading(false);
+          return;
+        }
+      }
+    } catch { /* CoinGecko failed — fall through to backend */ }
+
+    // Fallback: backend relay (caches its own CoinGecko call)
+    try {
+      const r = await fetchSwapRate();
+      setRate(r);
+    } catch { /* silently ignore */ }
+    setRateLoading(false);
   }, []);
 
   useEffect(() => {
     loadRate();
-    const id = setInterval(loadRate, 30_000);
+    const id = setInterval(loadRate, 10_000);  // refresh every 10 s
     return () => clearInterval(id);
   }, [loadRate]);
 
@@ -184,14 +211,17 @@ export default function SwapPage({ wallets }: Props) {
               Convierte USDT ↔ TRX al instante
             </p>
           </div>
-          <button onClick={loadRate} disabled={rateLoading}
+          <button onClick={() => loadRate()} disabled={rateLoading}
             className="flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold"
             style={{ background: "rgba(255,255,255,0.05)", color: trxUsd > 0 ? GREEN : "rgba(255,255,255,0.4)" }}>
             {rateLoading
               ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
               : <RefreshCw className="h-3.5 w-3.5" />
             }
-            {trxUsd > 0 ? `1 TRX = $${trxUsd.toFixed(4)}` : "Cargando…"}
+            {trxUsd > 0
+              ? <span>TRX <span className="font-black">${trxUsd.toFixed(4)}</span></span>
+              : "Cargando…"
+            }
           </button>
         </div>
       </div>
@@ -484,49 +514,76 @@ export default function SwapPage({ wallets }: Props) {
             {/* Rate + estimate card */}
             <div className="rounded-2xl overflow-hidden" style={{ border: `1px solid ${BORDER}`, background: CARD2 }}>
 
-              {/* Header: live rate */}
+              {/* Header: live CoinGecko price */}
               <div className="flex items-center justify-between px-4 py-3"
-                style={{ borderBottom: `1px solid ${BORDER}`, background: `${PURPLE}08` }}>
-                <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: PURPLE }}>
-                  Tasa de cambio en vivo
-                </span>
-                {rateLoading
-                  ? <Loader2 className="h-3 w-3 animate-spin" style={{ color: PURPLE }} />
-                  : trxUsd > 0
-                    ? <span className="text-[11px] font-bold" style={{ color: PURPLE }}>
-                        1 TRX ≈ ${trxUsd.toFixed(4)} USD
-                      </span>
-                    : <span className="text-[10px]" style={{ color: "rgba(255,255,255,0.25)" }}>Sin conexión</span>
+                style={{ borderBottom: `1px solid ${BORDER}`, background: `${PURPLE}0A` }}>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: PURPLE }}>
+                    Precio TRX · CoinGecko
+                  </span>
+                  {rateLoading && <Loader2 className="h-3 w-3 animate-spin" style={{ color: PURPLE }} />}
+                </div>
+                {trxUsd > 0
+                  ? <span className="text-[12px] font-black" style={{ color: PURPLE }}>
+                      1 TRX = ${trxUsd.toFixed(4)} USD
+                    </span>
+                  : <span className="text-[10px]" style={{ color: "rgba(255,255,255,0.25)" }}>Cargando…</span>
                 }
               </div>
 
-              {/* Estimated received */}
-              <div className="flex items-center justify-between px-4 py-3"
+              {/* Formula row — shown when amount is entered */}
+              {hasAmt && trxUsd > 0 && (
+                <div className="px-4 py-2.5"
+                  style={{ borderBottom: `1px solid ${BORDER}`, background: "rgba(25,195,125,0.04)" }}>
+                  <p className="text-[10px] font-mono text-center" style={{ color: "rgba(255,255,255,0.35)" }}>
+                    {swapDir === "usdt_to_trx"
+                      ? `${inputAmt.toFixed(2)} USDT ÷ $${trxUsd.toFixed(4)} = ${grossOut.toFixed(4)} TRX`
+                      : `${inputAmt.toFixed(4)} TRX × $${trxUsd.toFixed(4)} = $${grossOut.toFixed(2)} USD`
+                    }
+                  </p>
+                </div>
+              )}
+
+              {/* Recibirás ≈ — the key result */}
+              <div className="flex items-center justify-between px-4 py-3.5"
                 style={{ borderBottom: `1px solid ${BORDER}` }}>
-                <span className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>Recibirás ≈</span>
-                <span className="text-sm font-black" style={{ color: hasAmt ? GREEN : "rgba(255,255,255,0.2)" }}>
-                  {hasAmt ? `${netOut.toFixed(receiveToken === "USDT" ? 2 : 4)} ${receiveToken}` : `0 ${receiveToken}`}
+                <div>
+                  <span className="text-xs font-bold text-white">Recibirás ≈</span>
+                  {hasAmt && (
+                    <p className="text-[10px] mt-0.5" style={{ color: "rgba(255,255,255,0.3)" }}>
+                      después de tarifa del 2%
+                    </p>
+                  )}
+                </div>
+                <span className="text-lg font-black" style={{ color: hasAmt ? GREEN : "rgba(255,255,255,0.15)" }}>
+                  {hasAmt
+                    ? `${netOut.toFixed(receiveToken === "USDT" ? 2 : 4)} ${receiveToken}`
+                    : `— ${receiveToken}`
+                  }
                 </span>
               </div>
 
               {/* Swap fee 2% */}
-              <div className="flex items-center justify-between px-4 py-3"
+              <div className="flex items-center justify-between px-4 py-2.5"
                 style={{ borderBottom: `1px solid ${BORDER}` }}>
                 <span className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>Tarifa swap (2%)</span>
                 <span className="text-xs font-semibold" style={{ color: AMBER }}>
-                  {hasAmt ? `${feeOut.toFixed(receiveToken === "USDT" ? 2 : 4)} ${receiveToken}` : `0 ${receiveToken}`}
+                  {hasAmt
+                    ? `−${feeOut.toFixed(receiveToken === "USDT" ? 2 : 4)} ${receiveToken}`
+                    : `0 ${receiveToken}`
+                  }
                 </span>
               </div>
 
               {/* CoinCash service fee */}
-              <div className="flex items-center justify-between px-4 py-3"
+              <div className="flex items-center justify-between px-4 py-2.5"
                 style={{ borderBottom: `1px solid ${BORDER}` }}>
                 <span className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>Comisión CoinCash</span>
-                <span className="text-xs font-semibold" style={{ color: AMBER }}>1 USDT</span>
+                <span className="text-xs font-semibold" style={{ color: AMBER }}>−1 USDT</span>
               </div>
 
               {/* Network fee */}
-              <div className="flex items-center justify-between px-4 py-3">
+              <div className="flex items-center justify-between px-4 py-2.5">
                 <span className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>Tarifa de red</span>
                 <span className="text-xs font-semibold" style={{ color: GREEN }}>Cubierta por CoinCash ✓</span>
               </div>
