@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   ArrowDownUp, Loader2, ChevronDown, AlertTriangle,
-  CheckCircle2, Copy, CheckCheck, Zap,
+  CheckCircle2, Copy, CheckCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -77,6 +77,7 @@ export default function SwapPage({ wallets }: Props) {
   const [copied,       setCopied]       = useState<string | null>(null);
   const [walletOpen,   setWalletOpen]   = useState(false);
   const [flipping,     setFlipping]     = useState(false);    // switch-button spin animation
+  const [showDetails,  setShowDetails]  = useState(false);    // collapsible breakdown
 
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -582,100 +583,97 @@ export default function SwapPage({ wallets }: Props) {
             </div>
 
             {/* ── SUMMARY PANEL ─────────────────────────────────────────────── */}
-            {hasAmt && enoughForFee && (
-              <div className="rounded-2xl overflow-hidden" style={{ border: `1px solid ${BORDER}`, background: CARD2 }}>
-                {/* Header */}
-                <div className="px-4 py-2.5 flex items-center justify-between"
-                  style={{ background: `${PURPLE}10`, borderBottom: `1px solid ${BORDER}` }}>
-                  <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: PURPLE }}>
-                    Resumen del swap
-                  </p>
-                  <Zap className="h-3 w-3" style={{ color: PURPLE }} />
-                </div>
+            <div className="rounded-2xl overflow-hidden" style={{ border: `1px solid ${BORDER}`, background: CARD2 }}>
 
-                {/* 5-line breakdown */}
-                {[
-                  {
-                    label: "Monto enviado",
-                    value: `${inputAmt.toFixed(sendToken === "USDT" ? 2 : 4)} ${sendToken}`,
-                    color: "white",
-                    bold: false,
-                  },
-                  {
-                    label: "Comisión CoinCash",
-                    value: `−${COINCASH_FEE_USDT.toFixed(2)} USDT`,
-                    color: AMBER,
-                    bold: false,
-                  },
-                  {
-                    label: "Monto convertido",
-                    value: swapDir === "usdt_to_trx"
-                      ? `${swapAmt.toFixed(2)} USDT`
-                      : `${inputAmt.toFixed(4)} TRX`,
-                    color: "rgba(255,255,255,0.7)",
-                    bold: false,
-                  },
-                  {
-                    label: "Tarifa swap (2%)",
-                    value: `−${swapFeeOut.toFixed(receiveToken === "USDT" ? 2 : 4)} ${receiveToken}`,
-                    color: AMBER,
-                    bold: false,
-                  },
-                  {
-                    label: "Recibirás ≈",
-                    value: `${netOut.toFixed(receiveToken === "USDT" ? 2 : 4)} ${receiveToken}`,
-                    color: GREEN,
-                    bold: true,
-                  },
-                ].map(({ label, value, color, bold }, i, arr) => (
-                  <div key={label} className="flex items-center justify-between px-4 py-2.5"
-                    style={{ borderBottom: i < arr.length - 1 ? `1px solid ${BORDER}` : "none" }}>
-                    <span className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>{label}</span>
-                    <span className={`text-xs ${bold ? "font-black text-sm" : "font-semibold"}`}
-                      style={{ color }}>{value}</span>
-                  </div>
-                ))}
-
-                {/* Network fee row */}
-                <div className="flex items-center justify-between px-4 py-2.5"
-                  style={{ borderTop: `1px solid ${BORDER}`, background: `${GREEN}06` }}>
-                  <span className="text-xs" style={{ color: "rgba(255,255,255,0.35)" }}>Tarifa de red</span>
-                  <span className="text-xs font-semibold" style={{ color: GREEN }}>
-                    Cubierta por CoinCash ✓
-                  </span>
-                </div>
+              {/* Always-visible rows */}
+              {/* Monto enviado */}
+              <div className="flex items-center justify-between px-4 py-3"
+                style={{ borderBottom: `1px solid ${BORDER}` }}>
+                <span className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>Monto enviado</span>
+                <span className="text-xs font-semibold text-white">
+                  {hasAmt && enoughForFee
+                    ? `${inputAmt.toFixed(sendToken === "USDT" ? 2 : 4)} ${sendToken}`
+                    : `— ${sendToken}`}
+                </span>
               </div>
-            )}
 
-            {/* ── SUMMARY PLACEHOLDER (no amount yet) ─────────────────────── */}
-            {(!hasAmt || !enoughForFee) && (
-              <div className="rounded-2xl overflow-hidden" style={{ border: `1px solid ${BORDER}`, background: CARD2 }}>
-                <div className="px-4 py-2.5 flex items-center justify-between"
-                  style={{ background: "rgba(255,255,255,0.02)", borderBottom: `1px solid ${BORDER}` }}>
-                  <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.2)" }}>
-                    Resumen del swap
-                  </p>
-                </div>
-                {[
-                  ["Monto enviado",    `— ${sendToken}`],
-                  ["Comisión CoinCash","−1.00 USDT"],
-                  ["Monto convertido", `— ${sendToken}`],
-                  ["Tarifa swap (2%)", `— ${receiveToken}`],
-                  ["Recibirás ≈",      `— ${receiveToken}`],
-                ].map(([label, value], i, arr) => (
-                  <div key={label} className="flex items-center justify-between px-4 py-2.5"
-                    style={{ borderBottom: i < arr.length - 1 ? `1px solid ${BORDER}` : "none" }}>
-                    <span className="text-xs" style={{ color: "rgba(255,255,255,0.25)" }}>{label}</span>
-                    <span className="text-xs font-semibold" style={{ color: "rgba(255,255,255,0.15)" }}>{value}</span>
-                  </div>
-                ))}
-                <div className="flex items-center justify-between px-4 py-2.5"
-                  style={{ borderTop: `1px solid ${BORDER}` }}>
-                  <span className="text-xs" style={{ color: "rgba(255,255,255,0.25)" }}>Tarifa de red</span>
-                  <span className="text-xs font-semibold" style={{ color: GREEN }}>Cubierta por CoinCash ✓</span>
-                </div>
+              {/* Recibirás ≈ */}
+              <div className="flex items-center justify-between px-4 py-3"
+                style={{ borderBottom: `1px solid ${BORDER}` }}>
+                <span className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>Recibirás ≈</span>
+                <span className="text-xs font-black" style={{ color: hasAmt && enoughForFee ? GREEN : "rgba(255,255,255,0.15)", fontSize: 13 }}>
+                  {hasAmt && enoughForFee
+                    ? `${netOut.toFixed(receiveToken === "USDT" ? 2 : 4)} ${receiveToken}`
+                    : `— ${receiveToken}`}
+                </span>
               </div>
-            )}
+
+              {/* Comisión CoinCash */}
+              <div className="flex items-center justify-between px-4 py-3"
+                style={{ borderBottom: `1px solid ${BORDER}` }}>
+                <span className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>Comisión CoinCash</span>
+                <span className="text-xs font-semibold" style={{ color: AMBER }}>−1.00 USDT</span>
+              </div>
+
+              {/* Tarifa de red */}
+              <div className="flex items-center justify-between px-4 py-3"
+                style={{ borderBottom: `1px solid ${BORDER}`, background: `${GREEN}06` }}>
+                <span className="text-xs" style={{ color: "rgba(255,255,255,0.35)" }}>Tarifa de red</span>
+                <span className="text-xs font-semibold" style={{ color: GREEN }}>Cubierta por CoinCash ✓</span>
+              </div>
+
+              {/* Collapsible details toggle */}
+              <button
+                onClick={() => setShowDetails(v => !v)}
+                className="w-full flex items-center justify-center gap-1.5 py-2.5 transition-colors hover:bg-white/5"
+                style={{ borderBottom: showDetails ? `1px solid ${BORDER}` : "none" }}>
+                <span className="text-[11px] font-semibold" style={{ color: PURPLE }}>
+                  {showDetails ? "Ocultar detalles" : "Ver detalles"}
+                </span>
+                <ChevronDown
+                  className="h-3.5 w-3.5 transition-transform duration-300"
+                  style={{ color: PURPLE, transform: showDetails ? "rotate(180deg)" : "rotate(0deg)" }}
+                />
+              </button>
+
+              {/* Expanded details */}
+              {showDetails && (
+                <>
+                  {[
+                    {
+                      label: "Monto convertido",
+                      value: hasAmt && enoughForFee
+                        ? swapDir === "usdt_to_trx"
+                          ? `${swapAmt.toFixed(2)} USDT`
+                          : `${inputAmt.toFixed(4)} TRX`
+                        : `— ${sendToken}`,
+                      color: "rgba(255,255,255,0.65)",
+                    },
+                    {
+                      label: "Tarifa swap (2%)",
+                      value: hasAmt && enoughForFee
+                        ? `−${swapFeeOut.toFixed(receiveToken === "USDT" ? 2 : 4)} ${receiveToken}`
+                        : `— ${receiveToken}`,
+                      color: hasAmt && enoughForFee ? AMBER : "rgba(255,255,255,0.15)",
+                    },
+                    {
+                      label: "Precio TRX",
+                      value: trxUsd > 0 ? `$${trxUsd.toFixed(4)} USD` : "Cargando…",
+                      color: "rgba(255,255,255,0.4)",
+                    },
+                  ].map(({ label, value, color }, i, arr) => (
+                    <div key={label} className="flex items-center justify-between px-4 py-2.5"
+                      style={{
+                        borderBottom: i < arr.length - 1 ? `1px solid ${BORDER}` : "none",
+                        background: "rgba(255,255,255,0.015)",
+                      }}>
+                      <span className="text-xs" style={{ color: "rgba(255,255,255,0.35)" }}>{label}</span>
+                      <span className="text-xs font-semibold" style={{ color }}>{value}</span>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
 
             {/* ── Swap unavailable banner ──────────────────────────────────── */}
             {rate && !rate.swapAvailable && (
