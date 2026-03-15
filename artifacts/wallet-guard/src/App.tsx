@@ -8,7 +8,7 @@ import BottomNav, { Tab } from "@/components/BottomNav";
 import DashboardPage from "@/pages/DashboardPage";
 import WalletsPage, { type SavedWallet } from "@/pages/WalletsPage";
 import ScannerPage from "@/pages/ScannerPage";
-import ConnectionsPage from "@/pages/ConnectionsPage";
+import SwapPage from "@/pages/SwapPage";
 import SettingsPage from "@/pages/SettingsPage";
 import BlacklistPage from "@/pages/BlacklistPage";
 import TRMPage from "@/pages/TRMPage";
@@ -81,14 +81,14 @@ function MainApp() {
         <div style={{ display: tab === "wallets"     ? "block" : "none" }}>
           <WalletsPage onScan={handleScanWallet} activeTab={tab} />
         </div>
+        <div style={{ display: tab === "swap"        ? "block" : "none" }}>
+          <SwapPage wallets={wallets} />
+        </div>
         <div style={{ display: tab === "scanner"     ? "block" : "none" }}>
           <ScannerPage
             prefillAddress={tab === "scanner" ? scanAddress : undefined}
             onAddressConsumed={() => setScanAddress(undefined)}
           />
-        </div>
-        <div style={{ display: tab === "connections" ? "block" : "none" }}>
-          <ConnectionsPage />
         </div>
         <div style={{ display: tab === "settings"   ? "block" : "none" }}>
           <SettingsPage />
