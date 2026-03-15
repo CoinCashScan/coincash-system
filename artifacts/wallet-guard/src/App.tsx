@@ -64,7 +64,7 @@ function MainApp() {
         />
       </div>
       <div style={{ display: tab === "wallets"     ? "block" : "none" }}>
-        <WalletsPage onScan={handleScanWallet} />
+        <WalletsPage onScan={handleScanWallet} activeTab={tab} />
       </div>
       <div style={{ display: tab === "scanner"     ? "block" : "none" }}>
         <ScannerPage

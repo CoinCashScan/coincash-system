@@ -41,7 +41,7 @@ const typeBadge   = (t: SavedWallet["type"]) =>
 type ModalType = "watch" | "import" | "create" | null;
 type ImportTab  = "phrase" | "privkey" | "keystore";
 
-interface Props { onScan: (address: string) => void }
+interface Props { onScan: (address: string) => void; activeTab?: string }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 function BottomSheet({ onClose, children }: { onClose:()=>void; children: React.ReactNode }) {
@@ -118,7 +118,7 @@ function ActionBtn({ label, color, onClick, disabled=false }:
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-export default function WalletsPage({ onScan }: Props) {
+export default function WalletsPage({ onScan, activeTab }: Props) {
   const [wallets, setWallets]     = useState<SavedWallet[]>(loadWallets);
   const [modal, setModal]         = useState<ModalType>(null);
   const [name, setName]           = useState("");
@@ -126,6 +126,14 @@ export default function WalletsPage({ onScan }: Props) {
   const [copied, setCopied]       = useState<string|null>(null);
   const [loading, setLoading]     = useState(false);
   const [detailWallet, setDetailWallet] = useState<SavedWallet|null>(null);
+
+  // Close the detail sheet and any open modal when the user navigates to another tab
+  useEffect(() => {
+    if (activeTab !== "wallets") {
+      setDetailWallet(null);
+      setModal(null);
+    }
+  }, [activeTab]);
 
   // Create wallet state
   const [generated, setGenerated] = useState<TronWallet|null>(null);
