@@ -966,3 +966,38 @@ export async function fetchRelayStatus(): Promise<RelayStatus> {
     };
   }
 }
+
+// ── External swap (no CoinCash wallet required) ───────────────────────────────
+// User provides amount + destination address. Backend creates an order with the
+// swap provider and returns a deposit address the user sends funds to directly.
+export interface ExternalOrderResult {
+  orderId:            string;
+  ffToken:            string;
+  depositAddress:     string;
+  expectedOutput:     number;
+  fromAmount:         string;
+  fromToken:          string;
+  toToken:            string;
+  destinationAddress: string;
+  direction:          SwapDirection;
+  trxUsd:             number;
+  trxPerUsdt:         number;
+  inputAmount:        number;
+}
+
+export async function createExternalOrder(
+  direction:          SwapDirection,
+  inputAmount:        number,
+  destinationAddress: string,
+): Promise<ExternalOrderResult> {
+  const res = await fetch("/api-server/api/swap/external-order", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ direction, inputAmount, destinationAddress }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Error de red" }));
+    throw new Error(err.error ?? `Error al crear orden externa: ${res.status}`);
+  }
+  return res.json();
+}

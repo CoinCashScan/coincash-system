@@ -3,6 +3,7 @@ import {
   fetchFFRate,
   createSwapQuote,
   executeSwap,
+  createExternalSwapOrder,
   isSwapAvailable,
   getRelayerB58,
   COINCASH_FEE_USDT,
@@ -97,6 +98,44 @@ swapRouter.post("/swap/execute", async (req, res) => {
   } catch (err: any) {
     console.error("[swap/execute] Error:", err?.message);
     res.status(500).json({ error: err?.message ?? "Error al ejecutar el swap." });
+  }
+});
+
+/**
+ * POST /swap/external-order
+ * Creates a swap order without requiring a CoinCash wallet or relayer.
+ * The user receives a deposit address to send funds from any external wallet.
+ * The swap provider delivers the output token directly to destinationAddress.
+ *
+ * Body: { direction: "usdt_to_trx" | "trx_to_usdt", inputAmount: number, destinationAddress: string }
+ */
+swapRouter.post("/swap/external-order", async (req, res) => {
+  const { direction, inputAmount, destinationAddress } = req.body;
+
+  if (!direction || !["usdt_to_trx", "trx_to_usdt"].includes(direction)) {
+    res.status(400).json({ error: "direction debe ser usdt_to_trx o trx_to_usdt." });
+    return;
+  }
+  const amt = parseFloat(String(inputAmount).replace(/,/g, "."));
+  if (!amt || amt <= 0) {
+    res.status(400).json({ error: "inputAmount debe ser un número positivo." });
+    return;
+  }
+  if (!destinationAddress || typeof destinationAddress !== "string" || destinationAddress.trim().length < 10) {
+    res.status(400).json({ error: "destinationAddress es requerida." });
+    return;
+  }
+
+  try {
+    const order = await createExternalSwapOrder(
+      direction as SwapDirection,
+      amt,
+      destinationAddress.trim(),
+    );
+    res.json(order);
+  } catch (err: any) {
+    console.error("[swap/external-order] Error:", err?.message);
+    res.status(503).json({ error: err?.message ?? "Error al crear la orden de intercambio." });
   }
 });
 

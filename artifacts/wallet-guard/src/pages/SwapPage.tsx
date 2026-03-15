@@ -6,8 +6,9 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import {
-  fetchSwapRate, getSwapQuote, executeSwap, fetchAccountInfo,
+  fetchSwapRate, getSwapQuote, executeSwap, createExternalOrder, fetchAccountInfo,
   type SwapDirection, type SwapQuote, type SwapResult, type SwapRate, type AccountInfo,
+  type ExternalOrderResult,
 } from "@/lib/tronApi";
 import { decryptPrivateKey, hasEncryptedKey } from "@/lib/security";
 import type { SavedWallet } from "@/pages/WalletsPage";
@@ -37,7 +38,8 @@ const CARD    = "#0e1520";
 const CARD2   = "#111827";
 const CARD3   = "#0D1423";
 
-type SwapStep = "form" | "confirm" | "signing" | "done";
+type SwapStep = "form" | "confirm" | "signing" | "done" | "deposit";
+type SwapMode = "wallet" | "external";
 
 function fmtAmt(n: number, dec = 4) {
   return n.toLocaleString("es-CO", { minimumFractionDigits: dec, maximumFractionDigits: dec });
@@ -74,10 +76,16 @@ export default function SwapPage({ wallets, activeTab }: Props) {
   const signableWallets = wallets.filter(w => hasEncryptedKey(w.id));
 
   // ── State ────────────────────────────────────────────────────────────────────
+  const [swapMode,     setSwapMode]     = useState<SwapMode>(signableWallets.length > 0 ? "wallet" : "external");
   const [selectedId,   setSelectedId]   = useState<string>(signableWallets[0]?.id ?? "");
   const [swapDir,      setSwapDir]      = useState<SwapDirection>("usdt_to_trx");
   const [amount,       setAmount]       = useState("");
   const [step,         setStep]         = useState<SwapStep>("form");
+
+  // External swap state
+  const [destAddr,     setDestAddr]     = useState("");
+  const [extOrder,     setExtOrder]     = useState<ExternalOrderResult | null>(null);
+  const [extLoading,   setExtLoading]   = useState(false);
 
   const [rate,         setRate]         = useState<SwapRate | null>(null);
   const [rateLoading,  setRateLoading]  = useState(false);
@@ -223,7 +231,10 @@ export default function SwapPage({ wallets, activeTab }: Props) {
     return () => clearInterval(id);
   }, [activeTab, selectedWallet?.address, loadBalance]);
 
-  const reset = () => { setStep("form"); setAmount(""); setQuote(null); setResult(null); };
+  const reset = () => {
+    setStep("form"); setAmount(""); setQuote(null); setResult(null);
+    setExtOrder(null); setDestAddr("");
+  };
 
   // ── Flip direction with animation ─────────────────────────────────────────────
   const flipDirection = () => {
@@ -235,6 +246,32 @@ export default function SwapPage({ wallets, activeTab }: Props) {
 
   const handleContinue = async () => {
     if (!hasAmt) { toast.error("Ingresa un monto válido."); return; }
+
+    // ── External swap mode: no wallet needed ─────────────────────────────────
+    if (swapMode === "external") {
+      const dest = destAddr.trim();
+      if (!dest || !dest.startsWith("T") || dest.length < 30) {
+        toast.error("Ingresa una dirección TRON de destino válida (empieza con T).");
+        return;
+      }
+      if (!rate?.ffConfigured) {
+        toast.error("El servicio de intercambio no está disponible en este momento.");
+        return;
+      }
+      setExtLoading(true);
+      try {
+        const order = await createExternalOrder(swapDir, inputAmt, dest);
+        setExtOrder(order);
+        setStep("deposit");
+      } catch (e: any) {
+        toast.error(e?.message ?? "Error al crear la orden de intercambio.");
+      } finally {
+        setExtLoading(false);
+      }
+      return;
+    }
+
+    // ── Wallet swap mode (existing flow) ─────────────────────────────────────
     if (!enoughForFee) {
       toast.error(`El monto mínimo para este swap es ${COINCASH_FEE_USDT + 0.01} USDT.`);
       return;
@@ -286,8 +323,8 @@ export default function SwapPage({ wallets, activeTab }: Props) {
     });
   };
 
-  // ── No signable wallets ───────────────────────────────────────────────────────
-  if (signableWallets.length === 0) {
+  // ── No signable wallets → auto-switch to external mode ──────────────────────
+  if (false && signableWallets.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen pb-24 px-6 text-center gap-4"
         style={{ background: "#080d14" }}>
@@ -477,13 +514,125 @@ export default function SwapPage({ wallets, activeTab }: Props) {
         )}
 
         {/* ════════════════════════════════════════════════════════════════════
+            DEPOSIT STEP  —  External swap: show deposit address to user
+        ════════════════════════════════════════════════════════════════════ */}
+        {step === "deposit" && extOrder && (
+          <div className="flex flex-col items-center gap-4 pt-2">
+            {/* Header */}
+            <div className="h-18 w-18 rounded-full flex items-center justify-center"
+              style={{ background: `${PURPLE}18`, border: `2px solid ${PURPLE}50`, width: 72, height: 72 }}>
+              <CheckCircle2 className="h-9 w-9" style={{ color: PURPLE }} />
+            </div>
+            <div className="text-center">
+              <p className="text-xl font-black text-white mb-1">¡Orden creada!</p>
+              <p className="text-xs leading-relaxed max-w-[260px]" style={{ color: "rgba(255,255,255,0.4)" }}>
+                Envía los fondos a la dirección de depósito para completar el intercambio.
+              </p>
+            </div>
+
+            {/* Deposit address card */}
+            <div className="w-full rounded-2xl overflow-hidden" style={{ border: `1px solid ${PURPLE}40`, background: CARD2 }}>
+              <div className="px-4 py-2.5" style={{ background: `${PURPLE}15`, borderBottom: `1px solid ${BORDER}` }}>
+                <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: PURPLE }}>
+                  Envía {extOrder.fromAmount} {extOrder.fromToken} a esta dirección
+                </p>
+              </div>
+              <div className="px-4 py-3.5 flex items-start justify-between gap-3">
+                <p className="text-xs font-mono break-all leading-relaxed flex-1" style={{ color: "rgba(255,255,255,0.85)" }}>
+                  {extOrder.depositAddress}
+                </p>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(extOrder.depositAddress);
+                    setCopied(extOrder.depositAddress);
+                    setTimeout(() => setCopied(null), 2000);
+                    toast.success("Dirección copiada");
+                  }}
+                  className="shrink-0 p-2 rounded-xl transition-colors"
+                  style={{ background: `${PURPLE}20`, border: `1px solid ${PURPLE}40` }}>
+                  {copied === extOrder.depositAddress
+                    ? <CheckCheck className="h-4 w-4" style={{ color: GREEN }} />
+                    : <Copy className="h-4 w-4" style={{ color: PURPLE }} />}
+                </button>
+              </div>
+            </div>
+
+            {/* Order details */}
+            <div className="w-full rounded-2xl overflow-hidden" style={{ border: `1px solid ${BORDER}`, background: CARD2 }}>
+              <div className="px-4 py-2.5" style={{ background: `${PURPLE}08`, borderBottom: `1px solid ${BORDER}` }}>
+                <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: PURPLE }}>Detalles del intercambio</p>
+              </div>
+              {[
+                ["Enviando",        `${extOrder.fromAmount} ${extOrder.fromToken}`,                                          "white"],
+                ["Recibirás ≈",    extOrder.expectedOutput > 0 ? `${extOrder.expectedOutput.toFixed(extOrder.toToken === "USDT" ? 2 : 4)} ${extOrder.toToken}` : `— ${extOrder.toToken}`, GREEN],
+                ["Tasa",           extOrder.trxUsd > 0 ? `1 USDT ≈ ${(1/extOrder.trxUsd).toFixed(2)} TRX` : "—",           "rgba(255,255,255,0.4)"],
+                ["ID de orden",    extOrder.orderId,                                                                          "rgba(255,255,255,0.5)"],
+              ].map(([lbl, val, col], i, arr) => (
+                <div key={lbl} className="flex items-center justify-between px-4 py-2.5"
+                  style={{ borderBottom: i < arr.length - 1 ? `1px solid ${BORDER}` : "none" }}>
+                  <span className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>{lbl}</span>
+                  <span className={`text-xs font-semibold ${lbl === "ID de orden" ? "font-mono" : ""} max-w-[180px] text-right truncate`} style={{ color: col as string }}>{val}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Destination card */}
+            <div className="w-full rounded-2xl p-3.5" style={{ background: `${GREEN}08`, border: `1px solid ${GREEN}25` }}>
+              <p className="text-[10px] font-semibold uppercase tracking-widest mb-1.5" style={{ color: GREEN }}>
+                TRX será enviado a
+              </p>
+              <p className="text-xs font-mono break-all leading-relaxed" style={{ color: "rgba(255,255,255,0.7)" }}>
+                {extOrder.destinationAddress}
+              </p>
+            </div>
+
+            {/* Info banner */}
+            <div className="w-full rounded-2xl p-3.5 flex gap-3" style={{ background: `${AMBER}08`, border: `1px solid ${AMBER}25` }}>
+              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" style={{ color: AMBER }} />
+              <p className="text-[11px] leading-relaxed" style={{ color: "rgba(255,255,255,0.5)" }}>
+                Una vez que envíes los fondos, el intercambio se procesará automáticamente en pocos minutos.
+                Las operaciones en blockchain son <span className="font-semibold" style={{ color: AMBER }}>irreversibles</span>.
+              </p>
+            </div>
+
+            <button onClick={reset} className="w-full rounded-2xl py-4 text-sm font-bold mt-1"
+              style={{ background: `linear-gradient(135deg, ${PURPLE}, ${PURPLE2})`, color: "white", boxShadow: `0 0 24px ${PURPLE}50` }}>
+              Nuevo intercambio
+            </button>
+          </div>
+        )}
+
+        {/* ════════════════════════════════════════════════════════════════════
             FORM STEP  —  Professional Exchange Layout
         ════════════════════════════════════════════════════════════════════ */}
         {step === "form" && (
           <div className="flex flex-col gap-3">
 
-            {/* ── Wallet selector (compact) ─────────────────────────────────── */}
-            <div className="relative">
+            {/* ── Mode toggle ───────────────────────────────────────────────── */}
+            <div className="flex rounded-2xl overflow-hidden" style={{ background: CARD2, border: `1px solid ${BORDER}` }}>
+              <button
+                onClick={() => { setSwapMode("wallet"); setDestAddr(""); }}
+                className="flex-1 py-2.5 text-xs font-bold transition-all"
+                style={{
+                  background: swapMode === "wallet" ? `${PURPLE}25` : "transparent",
+                  color: swapMode === "wallet" ? PURPLE : "rgba(255,255,255,0.35)",
+                  borderRight: `1px solid ${BORDER}`,
+                }}>
+                Mi billetera CoinCash
+              </button>
+              <button
+                onClick={() => setSwapMode("external")}
+                className="flex-1 py-2.5 text-xs font-bold transition-all"
+                style={{
+                  background: swapMode === "external" ? `${PURPLE}25` : "transparent",
+                  color: swapMode === "external" ? PURPLE : "rgba(255,255,255,0.35)",
+                }}>
+                Intercambio externo
+              </button>
+            </div>
+
+            {/* ── Wallet selector (only in wallet mode) ─────────────────────── */}
+            {swapMode === "wallet" && <div className="relative">
               <button onClick={() => setWalletOpen(o => !o)}
                 className="w-full flex items-center justify-between rounded-xl px-3.5 py-2.5"
                 style={{ background: CARD2, border: `1px solid ${BORDER}` }}>
@@ -531,7 +680,28 @@ export default function SwapPage({ wallets, activeTab }: Props) {
                   ))}
                 </div>
               )}
-            </div>
+            </div>}
+
+            {/* ── Destination address (only in external mode) ─────────────── */}
+            {swapMode === "external" && (
+              <div className="rounded-2xl overflow-hidden" style={{ background: CARD2, border: `1px solid ${BORDER}` }}>
+                <div className="px-4 py-2.5" style={{ background: `${PURPLE}10`, borderBottom: `1px solid ${BORDER}` }}>
+                  <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: PURPLE }}>
+                    Dirección TRON de destino
+                  </p>
+                </div>
+                <div className="px-4 py-3">
+                  <input
+                    type="text"
+                    value={destAddr}
+                    onChange={e => setDestAddr(e.target.value.trim())}
+                    placeholder="T..."
+                    className="w-full bg-transparent text-sm font-mono outline-none placeholder:text-white/20"
+                    style={{ color: "rgba(255,255,255,0.85)" }}
+                  />
+                </div>
+              </div>
+            )}
 
             {/* ══════════════════════════════════════════════════════════════
                 EXCHANGE INPUT CARDS
@@ -675,19 +845,32 @@ export default function SwapPage({ wallets, activeTab }: Props) {
                 </span>
               </div>
 
-              {/* Comisión CoinCash */}
-              <div className="flex items-center justify-between px-4 py-3"
-                style={{ borderBottom: `1px solid ${BORDER}` }}>
-                <span className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>Comisión CoinCash</span>
-                <span className="text-xs font-semibold" style={{ color: AMBER }}>−1.00 USDT</span>
-              </div>
+              {/* Comisión CoinCash (wallet mode only) */}
+              {swapMode === "wallet" && (
+                <div className="flex items-center justify-between px-4 py-3"
+                  style={{ borderBottom: `1px solid ${BORDER}` }}>
+                  <span className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>Comisión CoinCash</span>
+                  <span className="text-xs font-semibold" style={{ color: AMBER }}>−1.00 USDT</span>
+                </div>
+              )}
 
               {/* Tarifa de red */}
-              <div className="flex items-center justify-between px-4 py-3"
-                style={{ borderBottom: `1px solid ${BORDER}`, background: `${GREEN}06` }}>
-                <span className="text-xs" style={{ color: "rgba(255,255,255,0.35)" }}>Tarifa de red</span>
-                <span className="text-xs font-semibold" style={{ color: GREEN }}>Cubierta por CoinCash ✓</span>
-              </div>
+              {swapMode === "wallet" && (
+                <div className="flex items-center justify-between px-4 py-3"
+                  style={{ borderBottom: `1px solid ${BORDER}`, background: `${GREEN}06` }}>
+                  <span className="text-xs" style={{ color: "rgba(255,255,255,0.35)" }}>Tarifa de red</span>
+                  <span className="text-xs font-semibold" style={{ color: GREEN }}>Cubierta por CoinCash ✓</span>
+                </div>
+              )}
+
+              {/* External mode info row */}
+              {swapMode === "external" && (
+                <div className="flex items-center justify-between px-4 py-3"
+                  style={{ borderBottom: `1px solid ${BORDER}`, background: `${GREEN}06` }}>
+                  <span className="text-xs" style={{ color: "rgba(255,255,255,0.35)" }}>Sin comisión CoinCash</span>
+                  <span className="text-xs font-semibold" style={{ color: GREEN }}>Intercambio directo ✓</span>
+                </div>
+              )}
 
               {/* Collapsible details toggle */}
               <button
@@ -754,23 +937,33 @@ export default function SwapPage({ wallets, activeTab }: Props) {
             )}
 
             {/* ── CTA ─────────────────────────────────────────────────────── */}
-            <button
-              onClick={handleContinue}
-              disabled={quoteLoading || !hasAmt || !enoughForFee || !rate?.swapAvailable}
-              className="w-full rounded-2xl py-4 text-base font-black disabled:opacity-40 transition-all flex items-center justify-center gap-2.5"
-              style={{
-                background: `linear-gradient(135deg, ${PURPLE}, ${PURPLE2})`,
-                color: "white",
-                boxShadow: hasAmt && enoughForFee && rate?.swapAvailable
-                  ? `0 4px 32px ${PURPLE}55`
-                  : "none",
-                transition: "box-shadow 0.3s",
-              }}>
-              {quoteLoading
-                ? <><Loader2 className="h-4 w-4 animate-spin" /> Obteniendo cotización…</>
-                : <><ArrowDownUp className="h-4 w-4" /> Convertir ahora</>
-              }
-            </button>
+            {(() => {
+              const externalDisabled = extLoading || !hasAmt || !rate?.ffConfigured;
+              const walletDisabled   = quoteLoading || !hasAmt || !enoughForFee || !rate?.swapAvailable;
+              const isDisabled       = swapMode === "external" ? externalDisabled : walletDisabled;
+              const isActive         = !isDisabled;
+              return (
+                <button
+                  onClick={handleContinue}
+                  disabled={isDisabled}
+                  className="w-full rounded-2xl py-4 text-base font-black disabled:opacity-40 transition-all flex items-center justify-center gap-2.5"
+                  style={{
+                    background: `linear-gradient(135deg, ${PURPLE}, ${PURPLE2})`,
+                    color: "white",
+                    boxShadow: isActive ? `0 4px 32px ${PURPLE}55` : "none",
+                    transition: "box-shadow 0.3s",
+                  }}>
+                  {(quoteLoading || extLoading)
+                    ? <><Loader2 className="h-4 w-4 animate-spin" />
+                        {swapMode === "external" ? "Creando orden…" : "Obteniendo cotización…"}
+                      </>
+                    : <><ArrowDownUp className="h-4 w-4" />
+                        {swapMode === "external" ? "Crear orden de intercambio" : "Convertir ahora"}
+                      </>
+                  }
+                </button>
+              );
+            })()}
 
             {/* CoinCash disclaimer */}
             <p className="text-center text-[10px] leading-relaxed pb-1"

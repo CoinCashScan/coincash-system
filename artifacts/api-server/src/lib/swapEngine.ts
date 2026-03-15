@@ -561,3 +561,76 @@ export function getRelayerB58(): string {
     return "";
   }
 }
+
+// ── External swap order (no relayer — user sends directly to FF deposit addr) ──
+// The user provides their destination address; we create the FF order and return
+// the deposit address so the user can send funds directly from any wallet/exchange.
+export interface ExternalSwapOrder {
+  orderId:            string;
+  ffToken:            string;
+  depositAddress:     string;
+  expectedOutput:     number;
+  fromAmount:         string;
+  fromToken:          string;
+  toToken:            string;
+  destinationAddress: string;
+  direction:          SwapDirection;
+  trxUsd:             number;
+  trxPerUsdt:         number;
+  inputAmount:        number;
+}
+
+export async function createExternalSwapOrder(
+  direction:          SwapDirection,
+  inputAmount:        number,
+  destinationAddress: string,
+): Promise<ExternalSwapOrder> {
+  if (!isFFConfigured())
+    throw new Error("El servicio de intercambio no está disponible en este momento.");
+
+  // Validate destination address — must be a TRON B58 address
+  const dest = (destinationAddress ?? "").trim();
+  if (!dest || !dest.startsWith("T") || dest.length < 30 || dest.length > 36)
+    throw new Error("Dirección TRON de destino inválida. Debe empezar con T y tener entre 30 y 36 caracteres.");
+
+  const amt = parseFloat(String(inputAmount).replace(/,/g, "."));
+  if (!amt || amt <= 0)
+    throw new Error("El monto debe ser un número positivo.");
+
+  const ffFrom = direction === "usdt_to_trx" ? FF_USDT : FF_TRX;
+  const ffTo   = direction === "usdt_to_trx" ? FF_TRX   : FF_USDT;
+
+  assertValidFFCurrency(ffFrom, "fromCurrency");
+  assertValidFFCurrency(ffTo,   "toCurrency");
+
+  const amtStr = cleanAmount(amt);
+
+  console.log("[swap:external] Creating order", { direction, amt, amtStr, dest, ffFrom, ffTo });
+
+  const { trxUsd, trxPerUsdt } = await fetchFFRate();
+
+  const ffOrder = await ffCreateOrder(ffFrom, ffTo, amtStr, dest, "float");
+  if (!ffOrder.depositAddress)
+    throw new Error("El proveedor de swap no devolvió una dirección de depósito.");
+
+  console.log("[swap:external] Order created:", {
+    id:      ffOrder.id,
+    deposit: ffOrder.depositAddress,
+    expect:  ffOrder.expectedOutput,
+  });
+
+  return {
+    orderId:            ffOrder.id,
+    ffToken:            ffOrder.token,
+    depositAddress:     ffOrder.depositAddress,
+    expectedOutput:     parseFloat(ffOrder.expectedOutput) || 0,
+    fromAmount:         ffOrder.fromAmount || amtStr,
+    fromToken:          direction === "usdt_to_trx" ? "USDT" : "TRX",
+    toToken:            direction === "usdt_to_trx" ? "TRX"  : "USDT",
+    destinationAddress: dest,
+    direction,
+    trxUsd,
+    trxPerUsdt,
+    inputAmount:        amt,
+  };
+}
