@@ -9,10 +9,12 @@
 import { createHash } from "node:crypto";
 import { sign as secp256k1Sign } from "@noble/secp256k1";
 
-const TRON_GRID = "https://api.trongrid.io";
-const API_KEY   = process.env.VITE_TRON_API_KEY ?? "";
-const RELAY_KEY = process.env.TRON_RELAYER_PRIVATE_KEY ?? "";
-const RELAY_ADDR = process.env.TRON_RELAYER_ADDRESS ?? "";     // hex 41-prefixed
+const TRON_GRID       = "https://api.trongrid.io";
+const API_KEY         = process.env.VITE_TRON_API_KEY          ?? "";
+const RELAY_KEY       = process.env.TRON_RELAYER_PRIVATE_KEY   ?? "";
+const RELAY_ADDR      = process.env.TRON_RELAYER_ADDRESS       ?? "";   // hex 41-prefix
+const TREASURY_ADDR   = process.env.TREASURY_ADDRESS           ?? "";   // Base58 TRON address
+export const SERVICE_FEE_USDT = 1;
 
 // ── Rate limiter (shared, 120ms gap) ──────────────────────────────────────────
 let _next = 0;
@@ -203,18 +205,38 @@ async function delegateEnergy(toHex: string): Promise<boolean> {
 // ── Main relay function ───────────────────────────────────────────────────────
 export interface RelayResult {
   txId:      string;
-  sponsored: boolean;    // true = relayer covered the energy cost
+  feeTxId?:  string;         // treasury fee collection tx (may be absent)
+  sponsored: boolean;        // true = relayer covered the energy cost
   feeMode:   "free" | "rental" | "burn";
 }
 
 export async function relayUSDTTransfer(
-  signedTx: any,
-  userAddress: string       // TRON Base58 address of sender
+  signedTx:    any,
+  userAddress: string,       // TRON Base58 address of sender
+  feeTx?:      any | null,   // pre-signed 1 USDT service fee tx (optional)
 ): Promise<RelayResult> {
   const ENERGY_NEEDED = 65_000;
   const userHex = tronAddrToHex(userAddress);
 
-  // 1. Check whether the user already has enough energy
+  // 1. Broadcast the service fee transaction first (1 USDT → CoinCash treasury)
+  let feeTxId: string | undefined;
+  if (feeTx && feeTx.txID && feeTx.raw_data && Array.isArray(feeTx.signature)) {
+    try {
+      console.log("[relay] Broadcasting service fee tx…");
+      const feeResult = await broadcastTx(feeTx);
+      if (feeResult.result) {
+        feeTxId = feeTx.txID;
+        console.log("[relay] Service fee collected, txID:", feeTxId);
+      } else {
+        // Log but don't abort — still deliver the main transfer
+        console.warn("[relay] Service fee tx rejected:", feeResult.message);
+      }
+    } catch (err: any) {
+      console.warn("[relay] Service fee broadcast error:", err?.message);
+    }
+  }
+
+  // 2. Check whether the user already has enough energy for the main tx
   const availableEnergy = await getUserEnergy(userHex);
   console.log(`[relay] User energy: ${availableEnergy} / ${ENERGY_NEEDED} needed`);
 
@@ -222,18 +244,16 @@ export async function relayUSDTTransfer(
   let feeMode: RelayResult["feeMode"] = "burn";
 
   if (availableEnergy >= ENERGY_NEEDED) {
-    // User's own stake covers the tx — no delegation needed
     sponsored = true;
     feeMode   = "free";
     console.log("[relay] User has sufficient energy — skipping delegation.");
   } else {
-    // Energy insufficient — attempt delegation / dynamic rental
     console.log("[relay] Insufficient energy — attempting energy provision…");
     sponsored = await delegateEnergy(userHex);
     feeMode   = sponsored ? "rental" : "burn";
   }
 
-  // 2. Broadcast the user's already-signed USDT transaction
+  // 3. Broadcast the user's main USDT transfer
   await rateWait();
   const result = await broadcastTx(signedTx);
 
@@ -241,11 +261,19 @@ export async function relayUSDTTransfer(
     throw new Error(result.message ?? "La red TRON rechazó la transacción.");
   }
 
-  console.log(`[relay] Broadcast OK — txID: ${signedTx.txID}, feeMode: ${feeMode}`);
-  return { txId: signedTx.txID, sponsored, feeMode };
+  console.log(`[relay] Main tx OK — txID: ${signedTx.txID}, feeMode: ${feeMode}`);
+  return { txId: signedTx.txID, feeTxId, sponsored, feeMode };
 }
 
-// ── Check if relayer is configured ───────────────────────────────────────────
+// ── Helpers for relay metadata ────────────────────────────────────────────────
 export function isRelayerConfigured(): boolean {
   return !!(RELAY_KEY && RELAY_ADDR);
+}
+
+export function getTreasuryAddress(): string {
+  return TREASURY_ADDR;
+}
+
+export function getServiceFeeUSDT(): number {
+  return SERVICE_FEE_USDT;
 }

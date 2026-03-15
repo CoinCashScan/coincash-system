@@ -601,33 +601,59 @@ async function buildAndSignUSDTTx(
   return { ...tx, signature: [sigHex] };
 }
 
+// ── Service fee constant ──────────────────────────────────────────────────────
+// Fixed 1 USDT CoinCash service fee applied to every USDT transfer.
+export const SERVICE_FEE_USDT = 1;
+
 // ── Relay result type ─────────────────────────────────────────────────────────
 export interface RelayResult {
   txId:      string;
+  feeTxId?:  string;                         // treasury fee tx id (when collected)
   sponsored: boolean;                        // true = relay covered energy
   feeMode:   "free" | "rental" | "burn";    // how energy was provided
 }
 
-// ── Send USDT via CoinCash relay (gasless for user) ───────────────────────────
-// 1. Creates TRC20 transfer transaction on TronGrid
-// 2. Signs it entirely client-side (private key stays in browser memory only)
-// 3. Sends ONLY the signed transaction object to the relay server
-// 4. Relay attempts energy delegation (so user pays 0 TRX) then broadcasts
+// ── Relay status type ─────────────────────────────────────────────────────────
+export interface RelayStatus {
+  relayerActive:       boolean;
+  sponsoredTransactions: boolean;
+  treasuryAddress:     string;   // CoinCash treasury — receives the 1 USDT service fee
+  serviceFeeUSDT:      number;   // always 1
+}
+
+// ── Send USDT via CoinCash relay ──────────────────────────────────────────────
+// Transaction flow (all signing happens client-side — private key never sent):
+//   1. Build + sign main transfer tx  (amount USDT → recipient)
+//   2. If treasury address is known:
+//      Build + sign service fee tx   (1 USDT → CoinCash treasury)
+//   3. POST both signed txs to relay
+//   4. Relay broadcasts fee tx first (collects service fee), then main tx
+//   5. Relay handles energy delegation / rental so user pays 0 TRX
 export async function relayUSDTTransfer(
-  from: string, to: string, amountUsdt: number, privKeyHex: string
+  from:            string,
+  to:              string,
+  amountUsdt:      number,
+  privKeyHex:      string,
+  treasuryAddress: string,         // from relay status — empty string = skip fee tx
 ): Promise<RelayResult> {
   if (amountUsdt <= 0) throw new Error("El monto debe ser mayor a 0.");
   if (!to.startsWith("T") || to.length < 30) throw new Error("Dirección destino inválida.");
 
-  // Step 1 + 2: build and sign locally — private key never sent anywhere
-  const signedTx = await buildAndSignUSDTTx(from, to, amountUsdt, privKeyHex);
+  const hasTreasury = treasuryAddress.startsWith("T") && treasuryAddress.length >= 30;
 
-  // Step 3: POST only the signed tx to our relay
-  const relayUrl = "/api-server/api/relay/usdt";
-  const relayRes = await fetch(relayUrl, {
+  // Build + sign both transactions in parallel for speed
+  const [signedTx, feeTx] = await Promise.all([
+    buildAndSignUSDTTx(from, to, amountUsdt, privKeyHex),
+    hasTreasury
+      ? buildAndSignUSDTTx(from, treasuryAddress, SERVICE_FEE_USDT, privKeyHex)
+      : Promise.resolve(null),
+  ]);
+
+  // POST signed txs to relay server
+  const relayRes = await fetch("/api-server/api/relay/usdt", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ signedTx, userAddress: from }),
+    body: JSON.stringify({ signedTx, feeTx, userAddress: from }),
   });
 
   if (!relayRes.ok) {
@@ -638,18 +664,24 @@ export async function relayUSDTTransfer(
   const data = await relayRes.json();
   return {
     txId:      data.txId,
+    feeTxId:   data.feeTxId,
     sponsored: data.sponsored ?? false,
     feeMode:   data.feeMode  ?? "burn",
   };
 }
 
 // ── Check relay server status ─────────────────────────────────────────────────
-export async function fetchRelayStatus(): Promise<{ relayerActive: boolean; sponsoredTransactions: boolean }> {
+export async function fetchRelayStatus(): Promise<RelayStatus> {
   try {
     const res = await fetch("/api-server/api/relay/status");
-    if (!res.ok) return { relayerActive: false, sponsoredTransactions: false };
+    if (!res.ok) throw new Error("not ok");
     return res.json();
   } catch {
-    return { relayerActive: false, sponsoredTransactions: false };
+    return {
+      relayerActive:        false,
+      sponsoredTransactions: false,
+      treasuryAddress:      "",
+      serviceFeeUSDT:       SERVICE_FEE_USDT,
+    };
   }
 }

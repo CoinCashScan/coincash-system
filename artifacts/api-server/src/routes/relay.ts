@@ -1,18 +1,30 @@
 import { Router } from "express";
-import { relayUSDTTransfer, isRelayerConfigured } from "../lib/tronRelayer.js";
+import {
+  relayUSDTTransfer,
+  isRelayerConfigured,
+  getTreasuryAddress,
+  getServiceFeeUSDT,
+} from "../lib/tronRelayer.js";
 
 const relayRouter = Router();
 
 /**
  * POST /relay/usdt
- * Body: { signedTx: object, userAddress: string }
+ * Body: { signedTx: object, feeTx?: object, userAddress: string }
  *
- * Receives a user-signed TRC20 USDT transaction.
- * Attempts energy delegation (sponsored) and broadcasts the tx.
+ * Receives user-signed USDT transaction(s).
+ * - feeTx (optional): pre-signed 1 USDT service fee transfer to CoinCash treasury
+ * - signedTx: the main USDT transfer to the recipient
+ *
+ * Flow:
+ *   1. Broadcast feeTx (service fee → treasury) if present
+ *   2. Attempt energy delegation / rental for the user
+ *   3. Broadcast signedTx (main transfer)
+ *
  * The user's private key is never sent to or stored on this server.
  */
 relayRouter.post("/relay/usdt", async (req, res) => {
-  const { signedTx, userAddress } = req.body;
+  const { signedTx, feeTx, userAddress } = req.body;
 
   if (!signedTx || typeof signedTx !== "object") {
     res.status(400).json({ error: "signedTx is required and must be an object." });
@@ -27,12 +39,23 @@ relayRouter.post("/relay/usdt", async (req, res) => {
     return;
   }
 
+  // feeTx validation — optional but must be well-formed if provided
+  const validFeeTx =
+    feeTx &&
+    typeof feeTx === "object" &&
+    feeTx.txID &&
+    feeTx.raw_data &&
+    Array.isArray(feeTx.signature)
+      ? feeTx
+      : null;
+
   try {
-    const result = await relayUSDTTransfer(signedTx, userAddress);
+    const result = await relayUSDTTransfer(signedTx, userAddress, validFeeTx);
     res.json({
-      txId:         result.txId,
-      sponsored:    result.sponsored,
-      feeMode:      result.feeMode,
+      txId:          result.txId,
+      feeTxId:       result.feeTxId,
+      sponsored:     result.sponsored,
+      feeMode:       result.feeMode,
       relayerActive: isRelayerConfigured(),
     });
   } catch (err: any) {
@@ -43,12 +66,14 @@ relayRouter.post("/relay/usdt", async (req, res) => {
 
 /**
  * GET /relay/status
- * Returns whether the relayer is configured and capable of sponsoring transactions.
+ * Returns relayer configuration, treasury address, and service fee amount.
  */
 relayRouter.get("/relay/status", (_req, res) => {
   res.json({
-    relayerActive: isRelayerConfigured(),
+    relayerActive:         isRelayerConfigured(),
     sponsoredTransactions: isRelayerConfigured(),
+    treasuryAddress:       getTreasuryAddress(),
+    serviceFeeUSDT:        getServiceFeeUSDT(),
   });
 });
 
