@@ -32,3 +32,15 @@ channel = "stable-25_05"
 
 [userenv.shared]
 VITE_TRON_API_KEY = "3602311a-f31c-4ad0-b351-647e8cd9d11a"
+
+[[ports]]
+localPort = 8080
+externalPort = 8080
+
+[[ports]]
+localPort = 8081
+externalPort = 8081
+
+[[ports]]
+localPort = 25766
+externalPort = 80
