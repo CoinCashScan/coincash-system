@@ -52,6 +52,7 @@ interface ReportData {
   exchangeInteractions: number;
   suspiciousInteractions: number;
   riskyCounterparties: RiskyCounterparty[];
+  detectedViaTRC20?: boolean;
 }
 
 // Risk database: address → { label, level }
@@ -247,26 +248,72 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
       checkBlacklistDB(),
     ]);
     const account = accountData.data?.[0];
-    if (!account) throw new Error("Dirección no encontrada en la red TRON");
 
-    // Account type
+    // Helper: query TRC20 balanceOf via triggerconstantcontract
+    const fetchTRC20BalanceFallback = async (contractAddr: string): Promise<number> => {
+      try {
+        const param = tronBase58ToAbiParam(addr);
+        const data = await tronRequest(
+          "https://api.trongrid.io/wallet/triggerconstantcontract",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              owner_address: addr,
+              contract_address: contractAddr,
+              function_selector: "balanceOf(address)",
+              parameter: param,
+              visible: true,
+            }),
+          },
+          setRateLimitMessage,
+        );
+        const hex: string = data?.constant_result?.[0] ?? "";
+        if (!hex || hex.length !== 64) return 0;
+        return Number(BigInt("0x" + hex)) / 1_000_000;
+      } catch {
+        return 0;
+      }
+    };
+
     const accountTypeMap: Record<number, string> = {
       0: "Normal",
       1: "Emisor de Token",
       2: "Contrato",
     };
-    const accountType = accountTypeMap[account.account_type as number] ?? "Normal";
 
-    // USDT balance from trc20 map: { [contractAddress]: "amount_string" }
-    const trc20Map: Record<string, string> = {};
-    if (Array.isArray(account.trc20)) {
-      account.trc20.forEach((entry: Record<string, string>) => {
-        Object.assign(trc20Map, entry);
-      });
+    let accountType  = "Normal";
+    let balanceUSDT  = 0;
+    let dateCreated: number = Date.now();
+    let detectedViaTRC20 = false;
+
+    if (account) {
+      // Standard path — account found via TronGrid /v1/accounts
+      accountType = accountTypeMap[account.account_type as number] ?? "Normal";
+      dateCreated = account.create_time || Date.now();
+
+      const trc20Map: Record<string, string> = {};
+      if (Array.isArray(account.trc20)) {
+        account.trc20.forEach((entry: Record<string, string>) => {
+          Object.assign(trc20Map, entry);
+        });
+      }
+      const rawUsdt = trc20Map[usdtContract];
+      balanceUSDT = rawUsdt ? parseFloat(rawUsdt) / 1e6 : 0;
+    } else {
+      // Fallback — wallet may hold USDT without any TRX history.
+      // Query both known USDT contracts directly.
+      const [b1, b2] = await Promise.all([
+        fetchTRC20BalanceFallback("TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"),
+        fetchTRC20BalanceFallback("TXLAQ63Xg1NAzckPwKHvzw7CSEmLMEqcdj"),
+      ]);
+      balanceUSDT = Math.max(b1, b2);
+
+      if (balanceUSDT <= 0) {
+        throw new Error("Dirección no encontrada en la red TRON");
+      }
+      detectedViaTRC20 = true;
     }
-    const rawUsdt = trc20Map[usdtContract];
-    const balanceUSDT = rawUsdt ? parseFloat(rawUsdt) / 1e6 : 0;
-    const dateCreated: number = account.create_time || Date.now();
 
     // 2. Transaction counts via TronGrid
     //    txIn  = transactions where addr is RECEIVER (only_to=true)
@@ -410,6 +457,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
       exchangeInteractions,
       suspiciousInteractions: riskyCounterparties.length,
       riskyCounterparties,
+      detectedViaTRC20,
     };
   };
 

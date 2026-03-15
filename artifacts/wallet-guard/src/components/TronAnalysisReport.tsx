@@ -23,6 +23,7 @@ interface ReportData {
   exchangeInteractions: number;
   suspiciousInteractions: number;
   riskyCounterparties: RiskyCounterparty[];
+  detectedViaTRC20?: boolean;
 }
 
 const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
@@ -44,6 +45,7 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
     exchangeInteractions = 0,
     suspiciousInteractions = 0,
     riskyCounterparties = [],
+    detectedViaTRC20 = false,
   } = reportData || {};
 
   const creationDate = dateCreated ? new Date(dateCreated) : new Date();
@@ -219,10 +221,14 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
           <ShieldCheck className="h-7 w-7 shrink-0 text-green-400 mt-0.5" />
           <div className="flex-1 space-y-0.5">
             <p className="font-semibold text-green-300 text-sm">
-              ✅ Wallet activa
+              {detectedViaTRC20
+                ? "✅ Wallet activa — tokens detectados en la red TRON"
+                : "✅ Wallet activa"}
             </p>
             <p className="text-sm text-green-400/80">
-              No está en la lista negra de USDT.
+              {detectedViaTRC20
+                ? "Saldo USDT confirmado vía contrato TRC20. Sin historial de TRX."
+                : "No está en la lista negra de USDT."}
             </p>
           </div>
         </motion.div>
