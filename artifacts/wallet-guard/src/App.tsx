@@ -6,7 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import BottomNav, { Tab } from "@/components/BottomNav";
 import DashboardPage from "@/pages/DashboardPage";
-import WalletsPage from "@/pages/WalletsPage";
+import WalletsPage, { type SavedWallet } from "@/pages/WalletsPage";
 import ScannerPage from "@/pages/ScannerPage";
 import ConnectionsPage from "@/pages/ConnectionsPage";
 import SettingsPage from "@/pages/SettingsPage";
@@ -14,28 +14,39 @@ import BlacklistPage from "@/pages/BlacklistPage";
 import PinLockScreen from "@/components/PinLockScreen";
 import NotFound from "@/pages/not-found";
 import { isPinEnabled } from "@/lib/security";
+import { useTransactionMonitor } from "@/hooks/useTransactionMonitor";
 
 const queryClient = new QueryClient();
+
+// ── Wallet loader (mirrors WalletsPage logic) ─────────────────────────────────
+function loadWallets(): SavedWallet[] {
+  try { return JSON.parse(localStorage.getItem("wg_wallets") || "[]"); }
+  catch { return []; }
+}
 
 function MainApp() {
   const [tab, setTab]             = useState<Tab>("scanner");
   const [scanAddress, setScanAddress] = useState<string | undefined>();
   const [locked, setLocked]       = useState(() => isPinEnabled());
   const [frozenOpen, setFrozenOpen] = useState(false);
+  const [wallets, setWallets]     = useState<SavedWallet[]>(() => loadWallets());
 
+  // Keep wallets in sync with localStorage changes (user adds/removes wallets)
   useEffect(() => {
-    // Re-check lock state whenever PIN setting changes (e.g. user enables PIN in Settings)
-    const onStorage = () => {
-      if (isPinEnabled() && !locked) { /* stay unlocked for current session */ }
-    };
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, [locked]);
+    const sync = () => setWallets(loadWallets());
+    window.addEventListener("storage", sync);
+    // Also poll every 5 seconds so changes from the same tab are picked up
+    const t = setInterval(sync, 5_000);
+    return () => { window.removeEventListener("storage", sync); clearInterval(t); };
+  }, []);
 
   const handleScanWallet = (address: string) => {
     setScanAddress(address);
     setTab("scanner");
   };
+
+  // ── Transaction monitor (only runs when unlocked and wallets exist) ──────────
+  useTransactionMonitor(locked ? [] : wallets, handleScanWallet);
 
   if (locked) return <PinLockScreen onUnlock={() => setLocked(false)} />;
 
@@ -83,7 +94,7 @@ export default function App() {
           <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
             <Router />
           </WouterRouter>
-          <Toaster />
+          <Toaster richColors position="top-center" />
         </ThemeProvider>
       </TooltipProvider>
     </QueryClientProvider>
