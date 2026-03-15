@@ -1,4 +1,4 @@
-import { Shield, AlertTriangle, Ban, ScanSearch, Bell, ChevronRight, Wifi } from "lucide-react";
+import { Ban, ScanSearch, Bell, Wifi } from "lucide-react";
 
 const BG   = "#0B0F14";
 const CARD = "#121821";
@@ -138,31 +138,6 @@ const DashboardPage = ({ onScanWallet, onOpenFrozen }: DashboardPageProps) => {
           <span className="text-xs font-medium" style={{ color: GREEN }}>Live</span>
         </div>
       </div>
-
-      {/* ── Saved wallets preview ── */}
-      {wallets.length > 0 && (
-        <>
-          <p className="px-5 text-xs font-semibold mb-3 uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.35)" }}>Mis wallets</p>
-          <div className="mx-4 rounded-2xl overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}`, boxShadow: SHADOW }}>
-            {wallets.slice(0, 3).map((w: { id: string; name: string; address: string; type: string }, i: number) => (
-              <div key={w.id} className="flex items-center gap-3 px-4 py-3.5"
-                style={{ borderBottom: i < Math.min(wallets.length, 3) - 1 ? `1px solid ${BORDER}` : "none" }}>
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold"
-                  style={{ background: `${BLUE}22`, color: BLUE }}>
-                  {w.name.slice(0, 1).toUpperCase()}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-white truncate">{w.name}</p>
-                  <p className="text-[11px] font-mono truncate" style={{ color: "rgba(255,255,255,0.35)" }}>
-                    {w.address.slice(0, 10)}…{w.address.slice(-6)}
-                  </p>
-                </div>
-                <ChevronRight className="h-4 w-4 shrink-0" style={{ color: "rgba(255,255,255,0.2)" }} />
-              </div>
-            ))}
-          </div>
-        </>
-      )}
     </div>
   );
 };
