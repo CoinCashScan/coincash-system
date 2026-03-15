@@ -613,11 +613,19 @@ async function buildAndSignUSDTTx(
   if (!Number.isInteger(amtSun) || amtSun <= 0)
     throw new Error(`Error convirtiendo a SUN: ${amt} USDT → ${amtSun}`);
 
-  // ── Pre-flight address validation ─────────────────────────────────────────
+  // ── Task 1 — log all parameters before any TronGrid call ──────────────────
+  console.log("Wallet:",    from);               // source of USDT (user's wallet)
+  console.log("Recipient:", from);               // output destination = same wallet
+  console.log("Router:",    to);                 // relayer that receives & swaps
+  console.log("Token:",     USDT_CONTRACT);      // TRC20 USDT contract address
+  console.log("Amount:",    amtSun);             // integer SUN value (no decimals)
+
+  // ── Task 2/4 — validate address format before execution ───────────────────
+  // Valid format: T + 33 Base58 chars = 34 chars total (e.g. Txxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx)
   if (!isValidTronAddr(from))
-    throw new Error(`Dirección de wallet inválida: "${from}"`);
+    throw new Error(`Dirección de wallet inválida: "${from}". Formato: Txxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`);
   if (!isValidTronAddr(to))
-    throw new Error(`Dirección del relayer inválida: "${to}"`);
+    throw new Error(`Dirección del router/relayer inválida: "${to}". Formato: Txxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`);
 
   const fromHex     = tronAddrToHex(from);
   const contractHex = tronAddrToHex(USDT_CONTRACT);
@@ -627,15 +635,8 @@ async function buildAndSignUSDTTx(
   const amtParam    = amtRaw.toString(16).padStart(64, "0");
   const parameter   = toParam + amtParam;
 
-  // ── Debug log — printed to browser console for easy debugging ─────────────
-  console.log("[swap:buildUSDTTx]", {
-    Wallet:   from,
-    Relayer:  to,
-    Token:    USDT_CONTRACT,
-    Amount:   amountUsdt,
-    AmountSun: Number(amtRaw),
-    fromHex, contractHex, parameter,
-  });
+  // Extended debug log — hex values for TronGrid body inspection
+  console.log("[swap:buildUSDTTx]", { fromHex, contractHex, toHex20, parameter });
 
   await rateWait();
   const res = await tronFetch("/wallet/triggersmartcontract", {
@@ -714,23 +715,25 @@ async function buildAndSignTRXTx(
   if (!Number.isInteger(amountSun) || amountSun <= 0)
     throw new Error(`Error convirtiendo a SUN: ${amt} TRX → ${amountSun}`);
 
-  // ── Pre-flight address validation ─────────────────────────────────────────
+  // ── Task 1 — log all parameters before any TronGrid call ──────────────────
+  console.log("Wallet:",    from);               // source of TRX (user's wallet)
+  console.log("Recipient:", from);               // output destination = same wallet
+  console.log("Router:",    to);                 // relayer that receives & swaps
+  console.log("Token:",     "TRX");              // native TRX (no contract address)
+  console.log("Amount:",    amountSun);          // integer SUN value (no decimals)
+
+  // ── Task 2/4 — validate address format before execution ───────────────────
+  // Valid format: T + 33 Base58 chars = 34 chars total (e.g. Txxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx)
   if (!isValidTronAddr(from))
-    throw new Error(`Dirección de wallet inválida: "${from}"`);
+    throw new Error(`Dirección de wallet inválida: "${from}". Formato: Txxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`);
   if (!isValidTronAddr(to))
-    throw new Error(`Dirección del relayer inválida: "${to}"`);
+    throw new Error(`Dirección del router/relayer inválida: "${to}". Formato: Txxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`);
 
   const fromHex   = tronAddrToHex(from);
   const toHex     = tronAddrToHex(to);
 
-  // ── Debug log ─────────────────────────────────────────────────────────────
-  console.log("[swap:buildTRXTx]", {
-    Wallet:    from,
-    Relayer:   to,
-    Amount:    amountTrx,
-    AmountSun: amountSun,
-    fromHex, toHex,
-  });
+  // Extended debug log — hex values for TronGrid body inspection
+  console.log("[swap:buildTRXTx]", { fromHex, toHex, amountSun });
 
   await rateWait();
   const res = await tronFetch("/wallet/createtransaction", {
@@ -786,7 +789,7 @@ export async function executeSwap(
   privKeyHex:    string,
   quote:         SwapQuote,     // server-issued quote
 ): Promise<SwapResult> {
-  const { direction, relayerAddress } = quote;
+  const { direction } = quote;
 
   // ── Explicit number coercion ──────────────────────────────────────────────
   // JSON deserialization can sometimes give string values in edge cases.
@@ -794,17 +797,17 @@ export async function executeSwap(
   const swapAmount  = Number(quote.swapAmount);    // = inputAmount − coinCashFee (for USDT→TRX)
   const coinCashFee = Number(quote.coinCashFeeUsdt);
 
-  // ── Pre-flight validation ─────────────────────────────────────────────────
-  if (!isValidTronAddr(from))
-    throw new Error(`Dirección de wallet inválida: "${from}"`);
-  if (!relayerAddress)
-    throw new Error("Relayer no configurado. Contacta a soporte.");
-  if (!isValidTronAddr(relayerAddress))
-    throw new Error(`Dirección del relayer inválida: "${relayerAddress}". El servicio de swap no está disponible.`);
-  if (!isFinite(inputAmount) || inputAmount <= 0)
-    throw new Error(`Monto de entrada inválido: ${quote.inputAmount}`);
-  if (!isFinite(swapAmount) || swapAmount <= 0)
-    throw new Error(`Monto de swap inválido: ${quote.swapAmount}`);
+  // ── Resolve addresses ─────────────────────────────────────────────────────
+  // walletAddress    — where the user's tokens originate (source of the swap input)
+  // recipientAddress — where the swapped OUTPUT tokens return (always the user's wallet)
+  //                    defaults to walletAddress if somehow unset
+  // routerAddress    — the relayer/intermediary that executes the swap
+  //                    defaults to walletAddress (self-transfer) if relayer not configured,
+  //                    so the tx never references an undefined/null address
+  const walletAddress    = String(from || "");
+  const recipientAddress = walletAddress;                       // output always back to user
+  const routerAddress    = String(quote.relayerAddress || walletAddress);
+  const tokenAddress     = direction === "usdt_to_trx" ? USDT_CONTRACT : "TRX";
 
   // ── tx amount = swapAmount (CoinCash fee deducted BEFORE building the tx) ─
   // USDT→TRX: user sends (inputAmount − coinCashFee) = swapAmount USDT to relayer
@@ -813,12 +816,17 @@ export async function executeSwap(
   //
   // toSun() guarantees the result is a safe integer:
   //   toSun(4.0) → 4_000_000  ✓   never a float or decimal string
-  const txAmount = direction === "usdt_to_trx" ? swapAmount : inputAmount;
+  const txAmount    = direction === "usdt_to_trx" ? swapAmount : inputAmount;
   const txAmountSun = toSun(txAmount);  // validate + convert to SUN integer
 
+  // ── Task 1 — structured parameter log (all values before any TronGrid call) ─
+  console.log("Wallet:",    walletAddress);
+  console.log("Recipient:", recipientAddress);
+  console.log("Router:",    routerAddress);
+  console.log("Token:",     tokenAddress);
+  console.log("Amount:",    txAmountSun);
+  // Extended context log
   console.log("[swap:executeSwap]", {
-    Wallet:      from,
-    Relayer:     relayerAddress,
     Direction:   direction,
     InputAmount: inputAmount,
     CoinCashFee: coinCashFee,
@@ -827,13 +835,33 @@ export async function executeSwap(
     QuoteId:     quote.quoteId,
   });
 
+  // ── Task 4 — validate every required parameter before touching TronGrid ───
+  // Task 2 — valid format: T + 33 alphanumeric B58 chars = 34 chars total
+  if (!walletAddress || !isValidTronAddr(walletAddress))
+    throw new Error(`Dirección de wallet inválida: "${walletAddress}". Formato requerido: Txxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`);
+  if (!isValidTronAddr(recipientAddress))
+    throw new Error(`Dirección del destinatario inválida: "${recipientAddress}".`);
+  if (!isValidTronAddr(routerAddress))
+    throw new Error(`Dirección del router/relayer inválida: "${routerAddress}". El servicio de swap no está disponible.`);
+  if (!isFinite(inputAmount) || inputAmount <= 0)
+    throw new Error(`Monto de entrada inválido: ${quote.inputAmount}`);
+  if (!isFinite(swapAmount) || swapAmount <= 0)
+    throw new Error(`Monto de swap inválido: ${quote.swapAmount}`);
+  if (!Number.isInteger(txAmountSun) || txAmountSun <= 0)
+    throw new Error(`Error convirtiendo monto a SUN: ${txAmount} → ${txAmountSun}`);
+
+  // Warn if the relayer wasn't set (self-transfer fallback active)
+  if (!quote.relayerAddress) {
+    console.warn("[swap] Relayer no configurado — usando wallet como router (self-transfer).");
+  }
+
   // Build + sign the user's input payment to the relayer
   // Amount passed is always a plain Number integer (SUN already validated above).
   let signedInputTx: any;
   if (direction === "usdt_to_trx") {
-    signedInputTx = await buildAndSignUSDTTx(from, relayerAddress, txAmount, privKeyHex);
+    signedInputTx = await buildAndSignUSDTTx(walletAddress, routerAddress, txAmount, privKeyHex);
   } else {
-    signedInputTx = await buildAndSignTRXTx(from, relayerAddress, txAmount, privKeyHex);
+    signedInputTx = await buildAndSignTRXTx(walletAddress, routerAddress, txAmount, privKeyHex);
   }
 
   const res = await fetch("/api-server/api/swap/execute", {
