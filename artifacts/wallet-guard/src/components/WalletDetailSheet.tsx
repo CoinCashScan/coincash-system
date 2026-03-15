@@ -94,8 +94,12 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
   const [txs, setTxs]             = useState<TxRecord[]>([]);
   // refreshing = pulsing dot shown while background fetch is running
   const [refreshing, setRefreshing] = useState(false);
-  // loadError = true only after ALL fallback nodes failed; never shown with cached data unless user triggers manual retry
+  // loadError = true after ALL fallback nodes failed; used only for retry logic (never displayed)
   const [loadError, setLoadError]   = useState(false);
+  // showOffline = true only after 30 continuous seconds of failure — the only visible indicator
+  const [showOffline, setShowOffline] = useState(false);
+  // ref to the pending 30-second timer; cleared on any successful fetch
+  const offlineTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // ts of the last successful live fetch (shown as "Actualizado ahora / Hace X min")
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState("");
@@ -136,12 +140,13 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
 
   // ── Background live fetch — always runs silently ───────────────────────────
   // Shows only the subtle refresh dot. Retries up to 3× with fallback nodes.
-  // On success: updates state + writes to cache. On full failure: sets loadError.
+  // On success: clears error state and cancels any pending 30s offline timer.
+  // On full failure: sets loadError for retry loop; starts 30s timer before
+  //   showing the offline banner — so brief blips are never visible to users.
   const loadWalletData = useCallback(async () => {
     if (fetchingRef.current) return;     // don't overlap fetches
     fetchingRef.current = true;
     setRefreshing(true);
-    setLoadError(false);
 
     const MAX_ATTEMPTS = 3;
     let attempt = 0;
@@ -158,6 +163,12 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
         setLastUpdated(Date.now());
         setRefreshing(false);
         setLoadError(false);
+        setShowOffline(false);
+        // Cancel the pending 30-second offline banner timer
+        if (offlineTimerRef.current !== null) {
+          clearTimeout(offlineTimerRef.current);
+          offlineTimerRef.current = null;
+        }
         fetchingRef.current = false;
         return;
       } catch {
@@ -167,6 +178,13 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
         } else {
           setRefreshing(false);
           setLoadError(true);
+          // Start the 30-second timer only once per failure streak
+          if (offlineTimerRef.current === null) {
+            offlineTimerRef.current = setTimeout(() => {
+              setShowOffline(true);
+              offlineTimerRef.current = null;
+            }, 30_000);
+          }
           fetchingRef.current = false;
         }
       }
@@ -177,6 +195,12 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
   useEffect(() => {
     fetchingRef.current = false;
 
+    // Cancel any pending offline timer from a previous wallet
+    if (offlineTimerRef.current !== null) {
+      clearTimeout(offlineTimerRef.current);
+      offlineTimerRef.current = null;
+    }
+
     // Restore last known state from cache — renders in the same frame, no spinner
     const cached = readCache(wallet.address);
     if (cached) {
@@ -184,18 +208,19 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
       setTxs(cached.txs);
       setLastUpdated(cached.ts);
     }
-    // Reset error so stale error from a previous wallet doesn't show
+    // Reset all error state so stale error from a previous wallet never shows
     setLoadError(false);
+    setShowOffline(false);
 
     // Background live sync — always runs, never blocks the UI
     loadWalletData();
     fetchRelayStatus().then(s => setRelayActive(s.relayerActive)).catch(() => {});
   }, [wallet.address, loadWalletData]);
 
-  // ── Auto-retry every 3 seconds on connection failure ──────────────────────
+  // ── Silent auto-retry every 7 seconds on connection failure ─────────────
   useEffect(() => {
     if (!loadError) return;
-    const id = setTimeout(() => loadWalletData(), 3_000);
+    const id = setTimeout(() => loadWalletData(), 7_000);
     return () => clearTimeout(id);
   }, [loadError, loadWalletData]);
 
@@ -396,20 +421,15 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
         {view === "overview" && (
           <div className="px-4 pb-6">
 
-            {/* Offline notice — only shown when every fallback node has failed */}
-            {loadError && (
+            {/* Offline notice — only shown after 30+ seconds of continuous failure */}
+            {showOffline && (
               <div className="flex items-center gap-2 rounded-xl px-3 py-2 mb-3"
                 style={{ background: "rgba(255,255,255,0.04)", border: `1px solid ${AMBER}25` }}>
                 <span className="h-1.5 w-1.5 rounded-full shrink-0 animate-pulse"
                   style={{ background: AMBER }} />
                 <p className="text-[10px] flex-1" style={{ color: "rgba(255,255,255,0.35)" }}>
-                  Sin conexión — reintentando…
+                  Sin conexión — reconectando en segundo plano…
                 </p>
-                <button onClick={() => loadWalletData()}
-                  className="text-[9px] font-semibold px-1.5 py-0.5 rounded-md shrink-0"
-                  style={{ color: AMBER }}>
-                  Reintentar
-                </button>
               </div>
             )}
 
