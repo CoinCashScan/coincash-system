@@ -12,7 +12,7 @@ import {
   fetchAccountInfo, fetchAllTransactions,
   sendTRX, sendUSDT, relayUSDTTransfer, fetchRelayStatus,
   estimateUSDTTransferFee,
-  type AccountInfo, type TxRecord, type RelayResult, type FeeEstimate,
+  type AccountInfo, type TxRecord, type RelayResult, type FeeEstimate, type FeeMode,
 } from "@/lib/tronApi";
 import { decryptPrivateKey, hasEncryptedKey } from "@/lib/security";
 import type { SavedWallet } from "@/pages/WalletsPage";
@@ -119,9 +119,10 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
   const [sendTo, setSendTo]       = useState("");
   const [sendAmt, setSendAmt]     = useState("");
   const [sendLoading, setSendLoading] = useState(false);
-  const [sentTxId, setSentTxId]         = useState("");
+  const [sentTxId, setSentTxId]           = useState("");
   const [sentSponsored, setSentSponsored] = useState(false);
-  const [relayActive, setRelayActive]   = useState(false);
+  const [sentFeeMode, setSentFeeMode]     = useState<FeeMode>("burn");
+  const [relayActive, setRelayActive]     = useState(false);
 
   // Fee abstraction state (USDT transfers only)
   const [feeEstimate, setFeeEstimate]   = useState<FeeEstimate | null>(null);
@@ -235,12 +236,12 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
     if (view !== "send" || sendToken !== "USDT") { setFeeEstimate(null); return; }
     let cancelled = false;
     setFeeLoading(true);
-    // Pass wallet.address so the estimate also fetches real energy/bandwidth
-    estimateUSDTTransferFee(wallet.address)
+    // Pass wallet.address + relayActive so estimate knows the correct fee mode
+    estimateUSDTTransferFee(wallet.address, relayActive)
       .then(f => { if (!cancelled) { setFeeEstimate(f); setFeeLoading(false); } })
       .catch(() => { if (!cancelled) setFeeLoading(false); });
     return () => { cancelled = true; };
-  }, [view, sendToken, wallet.address]);
+  }, [view, sendToken, wallet.address, relayActive]);
 
   // ── Risk analysis — triggers automatically when transactions are loaded ─────
   // Refreshes the risk map from cache, then queues analyses for any incoming
@@ -338,6 +339,7 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
         const result: RelayResult = await relayUSDTTransfer(wallet.address, sendTo, amt, privKey);
         setSentTxId(result.txId);
         setSentSponsored(result.sponsored);
+        setSentFeeMode(result.feeMode);
       }
       setSendStep("done");
       toast.success("Transacción enviada a la red TRON.");
@@ -352,7 +354,8 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
   };
 
   const resetSend = () => {
-    setSendStep("form"); setSendTo(""); setSendAmt(""); setSentTxId(""); setSentSponsored(false);
+    setSendStep("form"); setSendTo(""); setSendAmt(""); setSentTxId("");
+    setSentSponsored(false); setSentFeeMode("burn");
   };
 
   // ── Back navigation ────────────────────────────────────────────────────────
@@ -650,26 +653,58 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
 
                 {/* USDT send receipt — shown after a successful USDT send */}
                 {sendToken === "USDT" && feeEstimate && (
+                  <>
                   <div className="w-full rounded-2xl overflow-hidden"
                     style={{ border: `1px solid ${BORDER}` }}>
                     {[
-                      ["Destinatario recibió", `${parseFloat(sendAmt).toFixed(2)} USDT`, GREEN],
-                      ["Tarifa de red pagada", `~${feeEstimate.feeTRX.toFixed(1)} TRX`, AMBER],
-                      ["Total requerido", `${parseFloat(sendAmt).toFixed(2)} USDT + ~${feeEstimate.feeTRX.toFixed(1)} TRX`, BLUE],
+                      ["Destinatario recibió",
+                        `${parseFloat(sendAmt).toFixed(2)} USDT`, GREEN],
+                      ["Tarifa de red",
+                        sentFeeMode === "free"
+                          ? "Gratis (energía propia)"
+                          : `≈${feeEstimate.displayFeeUSDT.toFixed(2)} USDT`,
+                        sentFeeMode === "free" ? GREEN : AMBER],
+                      ["Método de energía",
+                        sentFeeMode === "free"   ? "Energía estacada"
+                        : sentFeeMode === "rental" ? "Renta automática"
+                        : "Quema de TRX",
+                        sentFeeMode === "rental" ? BLUE : "white"],
                     ].map(([label, value, color], i, arr) => (
                       <div key={label} className="flex items-center justify-between px-4 py-2.5"
-                        style={{
-                          borderBottom: i < arr.length - 1 ? `1px solid ${BORDER}` : "none",
-                          background: i === arr.length - 1 ? `${BLUE}08` : "transparent",
-                        }}>
+                        style={{ borderBottom: i < arr.length - 1 ? `1px solid ${BORDER}` : "none" }}>
                         <span className="text-[10px]" style={{ color: "rgba(255,255,255,0.4)" }}>{label}</span>
                         <span className="text-[10px] font-bold" style={{ color }}>{value}</span>
                       </div>
                     ))}
                   </div>
+
+                  {/* Energy rental badge */}
+                  {sentFeeMode === "rental" && (
+                    <div className="w-full rounded-2xl px-4 py-3 flex items-center gap-3"
+                      style={{ background: `${BLUE}0A`, border: `1px solid ${BLUE}25` }}>
+                      <ShieldAlert className="h-3.5 w-3.5 shrink-0" style={{ color: BLUE }} />
+                      <div className="text-left">
+                        <p className="text-[11px] font-bold" style={{ color: BLUE }}>Energía rentada automáticamente</p>
+                        <p className="text-[10px]" style={{ color: "rgba(255,255,255,0.4)" }}>
+                          Se rentaron {feeEstimate.energyNeeded.toLocaleString()} unidades de energía · ≈{feeEstimate.displayFeeUSDT.toFixed(2)} USDT
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  {sentFeeMode === "free" && (
+                    <div className="w-full rounded-2xl px-4 py-3 flex items-center gap-3"
+                      style={{ background: `${GREEN}0A`, border: `1px solid ${GREEN}25` }}>
+                      <ShieldAlert className="h-3.5 w-3.5 shrink-0" style={{ color: GREEN }} />
+                      <div className="text-left">
+                        <p className="text-[11px] font-bold" style={{ color: GREEN }}>Tarifa cero — energía propia</p>
+                        <p className="text-[10px]" style={{ color: "rgba(255,255,255,0.4)" }}>Tu energía estacada cubrió esta transacción.</p>
+                      </div>
+                    </div>
+                  )}
+                  </>
                 )}
 
-                {/* TRX energy sponsorship badge */}
+                {/* TRX sponsorship badge — only for TRX sends */}
                 {sentSponsored && sendToken !== "USDT" && (
                   <div className="w-full rounded-2xl px-4 py-3 flex items-center gap-3"
                     style={{ background: `${GREEN}0A`, border: `1px solid ${GREEN}25` }}>
@@ -727,9 +762,19 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
                         ["Hacia", short(sendTo), "white"],
                       ]
                     : [
-                        ["Monto a enviar", `${parseFloat(sendAmt).toFixed(2)} USDT`, "white"],
-                        ["Tarifa de red", feeEstimate ? `~${feeEstimate.feeTRX.toFixed(1)} TRX` : "—", AMBER],
-                        ["Total requerido", feeEstimate ? `${parseFloat(sendAmt).toFixed(2)} USDT + ~${feeEstimate.feeTRX.toFixed(1)} TRX` : `${parseFloat(sendAmt).toFixed(2)} USDT`, BLUE],
+                        ["Monto a enviar",    `${parseFloat(sendAmt).toFixed(2)} USDT`, "white"],
+                        ["Tarifa de red",
+                          feeEstimate
+                            ? (feeEstimate.feeMode === "free"
+                                ? "Gratis (energía propia)"
+                                : `≈${feeEstimate.displayFeeUSDT.toFixed(2)} USDT`)
+                            : "—",
+                          feeEstimate?.feeMode === "free" ? GREEN : AMBER],
+                        ["Tipo de tarifa",
+                          feeEstimate?.feeMode === "free"   ? "Energía estacada"
+                          : feeEstimate?.feeMode === "rental" ? "Renta de energía"
+                          : "Quema de TRX",
+                          "white"],
                         ["Destinatario recibe", `${parseFloat(sendAmt).toFixed(2)} USDT`, GREEN],
                         ["Hacia", short(sendTo), "white"],
                       ]
@@ -851,7 +896,8 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
                         {parseFloat(sendAmt) > 0 ? `${parseFloat(sendAmt).toFixed(2)} USDT` : "—"}
                       </span>
                     </div>
-                    {/* Tarifa de red — always in TRX */}
+
+                    {/* ── Tarifa de red — primary display in USDT ── */}
                     <div className="flex items-center justify-between px-4 py-3"
                       style={{ borderBottom: `1px solid ${BORDER}` }}>
                       <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.4)" }}>
@@ -860,29 +906,41 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
                       {feeLoading ? (
                         <Loader2 className="h-3 w-3 animate-spin" style={{ color: "rgba(255,255,255,0.3)" }} />
                       ) : feeEstimate ? (
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[11px] font-bold" style={{ color: AMBER }}>
-                            ~{feeEstimate.feeTRX.toFixed(1)} TRX
-                          </span>
-                          <span className="text-[9px] font-mono" style={{ color: "rgba(255,255,255,0.25)" }}>
-                            (~${feeEstimate.feeUSDT.toFixed(2)} USD)
-                          </span>
+                        <div className="flex flex-col items-end gap-0.5">
+                          {feeEstimate.feeMode === "free" ? (
+                            <span className="text-[11px] font-bold" style={{ color: GREEN }}>Gratis ✓</span>
+                          ) : (
+                            <>
+                              <span className="text-[12px] font-bold" style={{ color: AMBER }}>
+                                ≈{feeEstimate.displayFeeUSDT.toFixed(2)} USDT
+                              </span>
+                              <span className="text-[9px] font-mono" style={{ color: "rgba(255,255,255,0.25)" }}>
+                                {feeEstimate.feeMode === "rental"
+                                  ? `~${feeEstimate.rentalFeeTRX.toFixed(2)} TRX rentado`
+                                  : `~${feeEstimate.feeTRX.toFixed(1)} TRX quemado`}
+                              </span>
+                            </>
+                          )}
                         </div>
                       ) : (
                         <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.25)" }}>—</span>
                       )}
                     </div>
-                    {/* Total requerido */}
+
+                    {/* Total en USDT */}
                     <div className="flex items-center justify-between px-4 py-3"
                       style={{ background: `${BLUE}0A` }}>
                       <span className="text-[11px] font-semibold" style={{ color: "rgba(255,255,255,0.6)" }}>
-                        Total requerido
+                        Total
                       </span>
                       {feeLoading || !feeEstimate ? (
                         <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.25)" }}>—</span>
                       ) : parseFloat(sendAmt) > 0 ? (
                         <span className="text-[11px] font-bold" style={{ color: BLUE }}>
-                          {parseFloat(sendAmt).toFixed(2)} USDT + ~{feeEstimate.feeTRX.toFixed(1)} TRX
+                          {parseFloat(sendAmt).toFixed(2)} USDT
+                          {feeEstimate.feeMode !== "free"
+                            ? ` + ≈${feeEstimate.displayFeeUSDT.toFixed(2)} USDT fee`
+                            : " (sin comisión)"}
                         </span>
                       ) : (
                         <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.25)" }}>—</span>
@@ -894,22 +952,36 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
                   {feeEstimate && (
                     <div className="rounded-2xl px-4 py-3 mb-1 flex items-start gap-2.5"
                       style={{
-                        background: feeEstimate.hasEnoughEnergy ? `${GREEN}0A` : `${AMBER}0A`,
-                        border: `1px solid ${feeEstimate.hasEnoughEnergy ? GREEN : AMBER}28`,
+                        background: feeEstimate.feeMode === "free"
+                          ? `${GREEN}0A`
+                          : feeEstimate.feeMode === "rental"
+                            ? `${BLUE}0A`
+                            : `${AMBER}0A`,
+                        border: `1px solid ${
+                          feeEstimate.feeMode === "free" ? GREEN
+                          : feeEstimate.feeMode === "rental" ? BLUE
+                          : AMBER}28`,
                       }}>
                       <span className="mt-0.5 h-1.5 w-1.5 rounded-full flex-shrink-0"
-                        style={{ background: feeEstimate.hasEnoughEnergy ? GREEN : AMBER }} />
+                        style={{ background:
+                          feeEstimate.feeMode === "free" ? GREEN
+                          : feeEstimate.feeMode === "rental" ? BLUE
+                          : AMBER }} />
                       <div className="flex flex-col gap-0.5">
                         <p className="text-[10px] font-semibold"
-                          style={{ color: feeEstimate.hasEnoughEnergy ? GREEN : AMBER }}>
-                          {feeEstimate.hasEnoughEnergy
-                            ? "Energía disponible — tarifa de red reducida."
-                            : "Sin energía disponible — se quemará TRX para pagar la tarifa."}
+                          style={{ color:
+                            feeEstimate.feeMode === "free" ? GREEN
+                            : feeEstimate.feeMode === "rental" ? BLUE
+                            : AMBER }}>
+                          {feeEstimate.feeMode === "free"
+                            ? "Energía propia disponible — tarifa cero."
+                            : feeEstimate.feeMode === "rental"
+                              ? "Sin energía propia — se rentará automáticamente."
+                              : "Sin energía y sin relay — se quemará TRX."}
                         </p>
                         <p className="text-[9px]" style={{ color: "rgba(255,255,255,0.3)" }}>
-                          Energía usada: {feeEstimate.energyNeeded.toLocaleString()} ·
-                          Bandwidth: {feeEstimate.bandwidthNeeded} bytes ·
-                          Disponible: {feeEstimate.availableEnergy.toLocaleString()}
+                          Energía disponible: {feeEstimate.availableEnergy.toLocaleString()} /
+                          requerida: {feeEstimate.energyNeeded.toLocaleString()}
                         </p>
                       </div>
                     </div>

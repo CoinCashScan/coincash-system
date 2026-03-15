@@ -364,26 +364,44 @@ export async function getAccountResources(address: string): Promise<AccountResou
 }
 
 // ── Gas abstraction — fee estimation ─────────────────────────────────────────
-// Estimates the USDT equivalent of the TRX energy cost for a USDT TRC20 transfer.
-// Optionally fetches live account resources to determine energy optimization status.
+// Fee model:
+//  • "free"   — user has enough staked energy; only bandwidth cost (~0)
+//  • "rental" — relay will rent energy; user pays the rental rate (~0.5 USDT)
+//  • "burn"   — relay unavailable; TRX is burned at network rate (~27 TRX)
+
+export type FeeMode = "free" | "rental" | "burn";
 
 export interface FeeEstimate {
-  feeTRX: number;             // TRX cost if burning (energy × energyPrice)
-  feeUSDT: number;            // USDT equivalent deducted from transfer
-  trxPriceUSDT: number;       // current TRX/USDT price
-  energyUsed: number;         // kept for backwards compat
-  energyNeeded: number;       // energy units required for a USDT transfer
-  bandwidthNeeded: number;    // bandwidth bytes required
-  availableEnergy: number;    // account's available staked energy (0 if not fetched)
-  availableBandwidth: number; // account's available bandwidth (0 if not fetched)
-  hasEnoughEnergy: boolean;   // availableEnergy >= energyNeeded
-  hasEnoughBandwidth: boolean;// availableBandwidth >= bandwidthNeeded
+  // Primary user-facing fee (USDT) — always set
+  displayFeeUSDT: number;
+  feeMode:        FeeMode;
+
+  // Raw burn cost (shown as secondary / worst-case)
+  feeTRX:  number;
+  feeUSDT: number;
+
+  // Rental cost (shown when feeMode === "rental")
+  rentalFeeTRX:  number;
+  rentalFeeUSDT: number;
+
+  trxPriceUSDT:    number;
+  energyUsed:      number;   // backwards compat
+  energyNeeded:    number;
+  bandwidthNeeded: number;
+  availableEnergy:    number;
+  availableBandwidth: number;
+  hasEnoughEnergy:    boolean;
+  hasEnoughBandwidth: boolean;
 }
 
 // Conservative energy estimate covering cold + warm USDT contract calls
 const ENERGY_ESTIMATE    = 65_000;
 // Typical bandwidth for a TRC20 triggerSmartContract tx
 const BANDWIDTH_ESTIMATE = 268;
+
+// Energy rental market rate as a fraction of the burn rate.
+// Rental platforms typically charge ~20 % of the burn rate (≈ 80-100 SUN/energy).
+const RENTAL_RATE = 0.20;
 
 // In-memory cache for live prices (30-second TTL)
 let _priceCache: { trxUsdt: number; energySun: number; ts: number } | null = null;
@@ -425,30 +443,65 @@ async function fetchLivePrices(): Promise<{ trxUsdt: number; energySun: number }
 
 // Estimate the USDT network fee for a TRC20 USDT transfer.
 // Pass the sender address to also check real-time energy/bandwidth availability.
-export async function estimateUSDTTransferFee(address?: string): Promise<FeeEstimate> {
+// Pass relayAvailable=true when the relay server is configured (can auto-rent energy).
+export async function estimateUSDTTransferFee(
+  address?: string,
+  relayAvailable = true,
+): Promise<FeeEstimate> {
   const [prices, resources] = await Promise.all([
     fetchLivePrices(),
     address ? getAccountResources(address).catch(() => null) : Promise.resolve(null),
   ]);
 
   const { trxUsdt, energySun } = prices;
-  const feeTRX  = (ENERGY_ESTIMATE * energySun) / 1_000_000;   // energy → SUN → TRX
-  const feeUSDT = parseFloat((feeTRX * trxUsdt).toFixed(2));   // TRX → USDT
+
+  // Full burn cost (worst-case, no energy)
+  const feeTRX  = (ENERGY_ESTIMATE * energySun) / 1_000_000;
+  const feeUSDT = parseFloat((feeTRX * trxUsdt).toFixed(2));
+
+  // Rental cost (20 % of burn cost — typical energy market rate)
+  const rentalSunPerEnergy = energySun * RENTAL_RATE;
+  const rentalFeeTRX  = parseFloat(((ENERGY_ESTIMATE * rentalSunPerEnergy) / 1_000_000).toFixed(4));
+  const rentalFeeUSDT = parseFloat((rentalFeeTRX * trxUsdt).toFixed(2));
 
   const availableEnergy    = resources?.availableEnergy    ?? 0;
   const availableBandwidth = resources?.availableBandwidth ?? 0;
+  const hasEnoughEnergy    = availableEnergy    >= ENERGY_ESTIMATE;
+  const hasEnoughBandwidth = availableBandwidth >= BANDWIDTH_ESTIMATE;
+
+  // Determine fee mode
+  let feeMode: FeeMode;
+  let displayFeeUSDT: number;
+
+  if (hasEnoughEnergy) {
+    // User's own staked energy covers this tx — only bandwidth (negligible)
+    feeMode        = "free";
+    displayFeeUSDT = 0.00;
+  } else if (relayAvailable) {
+    // Relay will rent energy automatically — user pays the rental rate
+    feeMode        = "rental";
+    displayFeeUSDT = Math.max(0.01, rentalFeeUSDT);
+  } else {
+    // No relay — TRX will be burned from the user's wallet
+    feeMode        = "burn";
+    displayFeeUSDT = Math.max(0.01, feeUSDT);
+  }
 
   return {
+    displayFeeUSDT,
+    feeMode,
     feeTRX,
     feeUSDT: Math.max(0.01, feeUSDT),
+    rentalFeeTRX,
+    rentalFeeUSDT: Math.max(0.01, rentalFeeUSDT),
     trxPriceUSDT: trxUsdt,
-    energyUsed:         ENERGY_ESTIMATE,   // backwards compat alias
+    energyUsed:         ENERGY_ESTIMATE,
     energyNeeded:       ENERGY_ESTIMATE,
     bandwidthNeeded:    BANDWIDTH_ESTIMATE,
     availableEnergy,
     availableBandwidth,
-    hasEnoughEnergy:    availableEnergy    >= ENERGY_ESTIMATE,
-    hasEnoughBandwidth: availableBandwidth >= BANDWIDTH_ESTIMATE,
+    hasEnoughEnergy,
+    hasEnoughBandwidth,
   };
 }
 
@@ -550,8 +603,9 @@ async function buildAndSignUSDTTx(
 
 // ── Relay result type ─────────────────────────────────────────────────────────
 export interface RelayResult {
-  txId: string;
-  sponsored: boolean;  // true = CoinCash covered the TRX energy cost
+  txId:      string;
+  sponsored: boolean;                        // true = relay covered energy
+  feeMode:   "free" | "rental" | "burn";    // how energy was provided
 }
 
 // ── Send USDT via CoinCash relay (gasless for user) ───────────────────────────
@@ -582,7 +636,11 @@ export async function relayUSDTTransfer(
   }
 
   const data = await relayRes.json();
-  return { txId: data.txId, sponsored: data.sponsored ?? false };
+  return {
+    txId:      data.txId,
+    sponsored: data.sponsored ?? false,
+    feeMode:   data.feeMode  ?? "burn",
+  };
 }
 
 // ── Check relay server status ─────────────────────────────────────────────────

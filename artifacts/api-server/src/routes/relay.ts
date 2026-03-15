@@ -30,8 +30,9 @@ relayRouter.post("/relay/usdt", async (req, res) => {
   try {
     const result = await relayUSDTTransfer(signedTx, userAddress);
     res.json({
-      txId: result.txId,
-      sponsored: result.sponsored,
+      txId:         result.txId,
+      sponsored:    result.sponsored,
+      feeMode:      result.feeMode,
       relayerActive: isRelayerConfigured(),
     });
   } catch (err: any) {
