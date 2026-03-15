@@ -295,12 +295,8 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
   };
 
   // ── Send flow ──────────────────────────────────────────────────────────────
-  // For USDT: recipient gets exactly sendAmt; wallet pays sendAmt + fee
-  const totalAmount = (() => {
-    if (sendToken !== "USDT" || !feeEstimate) return null;
-    const amt = parseFloat(sendAmt) || 0;
-    return parseFloat((amt + feeEstimate.feeUSDT).toFixed(6));
-  })();
+  // USDT: recipient gets exactly sendAmt. The TRX fee is separate (relay covers it).
+  // TRX: fee is ~1 TRX for bandwidth, reserved from balance.
 
   const validateSend = () => {
     if (!sendTo.startsWith("T") || sendTo.length < 30) {
@@ -308,16 +304,18 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
     }
     const amt = parseFloat(sendAmt);
     if (!amt || amt <= 0) { toast.error("Monto inválido."); return false; }
-    const bal = sendToken === "TRX" ? (info?.trxBalance ?? 0) : (info?.usdtBalance ?? 0);
-    // For USDT, validate against total (amount + fee)
-    const required = sendToken === "USDT" && feeEstimate ? amt + feeEstimate.feeUSDT : amt;
-    if (required > bal) {
-      if (sendToken === "USDT" && feeEstimate) {
-        toast.error(`Saldo insuficiente. Necesitas ${required.toFixed(2)} USDT (incluye tarifa de ${feeEstimate.feeUSDT.toFixed(2)} USDT).`);
-      } else {
-        toast.error("Saldo insuficiente.");
+    if (sendToken === "USDT") {
+      const usdtBal = info?.usdtBalance ?? 0;
+      if (amt > usdtBal) {
+        toast.error(`Saldo USDT insuficiente. Disponible: ${usdtBal.toFixed(2)} USDT.`);
+        return false;
       }
-      return false;
+    } else {
+      const trxBal = info?.trxBalance ?? 0;
+      if (amt + 1 > trxBal) {
+        toast.error("Saldo TRX insuficiente (se reserva 1 TRX para la tarifa de red).");
+        return false;
+      }
     }
     return true;
   };
@@ -650,14 +648,14 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
                   </p>
                 </div>
 
-                {/* USDT fee receipt — shown after a successful USDT send */}
+                {/* USDT send receipt — shown after a successful USDT send */}
                 {sendToken === "USDT" && feeEstimate && (
                   <div className="w-full rounded-2xl overflow-hidden"
                     style={{ border: `1px solid ${BORDER}` }}>
                     {[
                       ["Destinatario recibió", `${parseFloat(sendAmt).toFixed(2)} USDT`, GREEN],
-                      ["Tarifa estimada de red", `≈ ${feeEstimate.feeUSDT.toFixed(2)} USDT`, AMBER],
-                      ["Total descontado", totalAmount !== null ? `${totalAmount.toFixed(2)} USDT` : "—", BLUE],
+                      ["Tarifa de red pagada", `~${feeEstimate.feeTRX.toFixed(1)} TRX`, AMBER],
+                      ["Total requerido", `${parseFloat(sendAmt).toFixed(2)} USDT + ~${feeEstimate.feeTRX.toFixed(1)} TRX`, BLUE],
                     ].map(([label, value, color], i, arr) => (
                       <div key={label} className="flex items-center justify-between px-4 py-2.5"
                         style={{
@@ -730,8 +728,8 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
                       ]
                     : [
                         ["Monto a enviar", `${parseFloat(sendAmt).toFixed(2)} USDT`, "white"],
-                        ["Tarifa estimada", feeEstimate ? `≈ ${feeEstimate.feeUSDT.toFixed(2)} USDT` : "—", AMBER],
-                        ["Total a descontar", totalAmount !== null ? `${totalAmount.toFixed(2)} USDT` : "—", BLUE],
+                        ["Tarifa de red", feeEstimate ? `~${feeEstimate.feeTRX.toFixed(1)} TRX` : "—", AMBER],
+                        ["Total requerido", feeEstimate ? `${parseFloat(sendAmt).toFixed(2)} USDT + ~${feeEstimate.feeTRX.toFixed(1)} TRX` : `${parseFloat(sendAmt).toFixed(2)} USDT`, BLUE],
                         ["Destinatario recibe", `${parseFloat(sendAmt).toFixed(2)} USDT`, GREEN],
                         ["Hacia", short(sendTo), "white"],
                       ]
@@ -797,9 +795,8 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
                   <button onClick={() => {
                     const b = sendToken === "TRX" ? (info?.trxBalance ?? 0) : (info?.usdtBalance ?? 0);
                     // TRX: reserve 1 TRX for bandwidth fee
-                    // USDT: reserve feeUSDT so total (amount + fee) doesn't exceed balance
-                    const fee = sendToken === "USDT" && feeEstimate ? feeEstimate.feeUSDT : 0;
-                    const max = sendToken === "TRX" ? Math.max(0, b - 1) : Math.max(0, b - fee);
+                    // USDT: fee is paid in TRX by the relay — send the full USDT balance
+                    const max = sendToken === "TRX" ? Math.max(0, b - 1) : b;
                     setSendAmt(max > 0 ? fmtAmt(max, 6) : "0");
                   }} className="text-[11px] font-semibold px-2 py-0.5 rounded-lg"
                     style={{ background: `${GREEN}18`, color: GREEN }}>
@@ -844,7 +841,7 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
                   <>
                   <div className="rounded-2xl overflow-hidden mb-4"
                     style={{ border: `1px solid ${BORDER}`, background: CARD }}>
-                    {/* Amount to send */}
+                    {/* Monto a enviar */}
                     <div className="flex items-center justify-between px-4 py-3"
                       style={{ borderBottom: `1px solid ${BORDER}` }}>
                       <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.4)" }}>
@@ -854,120 +851,67 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
                         {parseFloat(sendAmt) > 0 ? `${parseFloat(sendAmt).toFixed(2)} USDT` : "—"}
                       </span>
                     </div>
-                    {/* Network fee */}
+                    {/* Tarifa de red — always in TRX */}
                     <div className="flex items-center justify-between px-4 py-3"
                       style={{ borderBottom: `1px solid ${BORDER}` }}>
                       <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.4)" }}>
-                        Tarifa estimada de red
+                        Tarifa de red
                       </span>
                       {feeLoading ? (
                         <Loader2 className="h-3 w-3 animate-spin" style={{ color: "rgba(255,255,255,0.3)" }} />
                       ) : feeEstimate ? (
                         <div className="flex items-center gap-1.5">
                           <span className="text-[11px] font-bold" style={{ color: AMBER }}>
-                            ≈ {feeEstimate.feeUSDT.toFixed(2)} USDT
+                            ~{feeEstimate.feeTRX.toFixed(1)} TRX
                           </span>
                           <span className="text-[9px] font-mono" style={{ color: "rgba(255,255,255,0.25)" }}>
-                            ({feeEstimate.feeTRX.toFixed(1)} TRX)
+                            (~${feeEstimate.feeUSDT.toFixed(2)} USD)
                           </span>
                         </div>
                       ) : (
                         <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.25)" }}>—</span>
                       )}
                     </div>
-                    {/* Total charged */}
+                    {/* Total requerido */}
                     <div className="flex items-center justify-between px-4 py-3"
                       style={{ background: `${BLUE}0A` }}>
                       <span className="text-[11px] font-semibold" style={{ color: "rgba(255,255,255,0.6)" }}>
-                        Total a pagar
+                        Total requerido
                       </span>
                       {feeLoading || !feeEstimate ? (
                         <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.25)" }}>—</span>
-                      ) : (
+                      ) : parseFloat(sendAmt) > 0 ? (
                         <span className="text-[11px] font-bold" style={{ color: BLUE }}>
-                          {totalAmount !== null && totalAmount > 0
-                            ? `${totalAmount.toFixed(2)} USDT`
-                            : "—"}
+                          {parseFloat(sendAmt).toFixed(2)} USDT + ~{feeEstimate.feeTRX.toFixed(1)} TRX
                         </span>
+                      ) : (
+                        <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.25)" }}>—</span>
                       )}
                     </div>
                   </div>
 
-                  {/* ── Energy & bandwidth resource panel ───────────────── */}
+                  {/* ── Energy status banner ─────────────────────────────── */}
                   {feeEstimate && (
-                    <div className="rounded-2xl px-4 py-3 mb-1 flex flex-col gap-2.5"
-                      style={{ background: "rgba(255,255,255,0.03)", border: `1px solid ${BORDER}` }}>
-                      <p className="text-[9px] font-bold uppercase tracking-widest"
-                        style={{ color: "rgba(255,255,255,0.25)" }}>
-                        Recursos TRON
-                      </p>
-
-                      {/* Energy row */}
-                      {(() => {
-                        const has = feeEstimate.hasEnoughEnergy;
-                        const avail = feeEstimate.availableEnergy;
-                        const need  = feeEstimate.energyNeeded;
-                        const pct   = avail > 0 ? Math.min(1, avail / Math.max(avail, need)) : 0;
-                        return (
-                          <div className="flex flex-col gap-1">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-1.5">
-                                <span className="h-1.5 w-1.5 rounded-full flex-shrink-0"
-                                  style={{ background: has ? "#00E0A1" : "#F59E0B" }} />
-                                <span className="text-[10px]" style={{ color: "rgba(255,255,255,0.45)" }}>
-                                  Energía usada
-                                </span>
-                              </div>
-                              <span className="text-[10px] font-mono"
-                                style={{ color: has ? "#00E0A1" : "#F59E0B" }}>
-                                {need.toLocaleString()} / {avail > 0 ? avail.toLocaleString() : "—"} disponibles
-                              </span>
-                            </div>
-                            {avail > 0 && (
-                              <div className="h-1 rounded-full overflow-hidden"
-                                style={{ background: "rgba(255,255,255,0.06)" }}>
-                                <div className="h-full rounded-full transition-all"
-                                  style={{
-                                    width: `${pct * 100}%`,
-                                    background: has ? "#00E0A1" : "#F59E0B",
-                                  }} />
-                              </div>
-                            )}
-                            {!has && avail === 0 && (
-                              <p className="text-[9px]" style={{ color: "rgba(255,255,255,0.3)" }}>
-                                Sin energía estacada — se quemará TRX para pagar el fee
-                              </p>
-                            )}
-                            {!has && avail > 0 && (
-                              <p className="text-[9px]" style={{ color: "#F59E0B" }}>
-                                Energía insuficiente — el relay cubrirá el déficit
-                              </p>
-                            )}
-                          </div>
-                        );
-                      })()}
-
-                      {/* Bandwidth row */}
-                      {(() => {
-                        const has = feeEstimate.hasEnoughBandwidth;
-                        const avail = feeEstimate.availableBandwidth;
-                        const need  = feeEstimate.bandwidthNeeded;
-                        return (
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-1.5">
-                              <span className="h-1.5 w-1.5 rounded-full flex-shrink-0"
-                                style={{ background: has ? "#00E0A1" : "#F59E0B" }} />
-                              <span className="text-[10px]" style={{ color: "rgba(255,255,255,0.45)" }}>
-                                Bandwidth usado
-                              </span>
-                            </div>
-                            <span className="text-[10px] font-mono"
-                              style={{ color: has ? "#00E0A1" : "#F59E0B" }}>
-                              {need} bytes / {avail > 0 ? avail.toLocaleString() : "—"} disponibles
-                            </span>
-                          </div>
-                        );
-                      })()}
+                    <div className="rounded-2xl px-4 py-3 mb-1 flex items-start gap-2.5"
+                      style={{
+                        background: feeEstimate.hasEnoughEnergy ? `${GREEN}0A` : `${AMBER}0A`,
+                        border: `1px solid ${feeEstimate.hasEnoughEnergy ? GREEN : AMBER}28`,
+                      }}>
+                      <span className="mt-0.5 h-1.5 w-1.5 rounded-full flex-shrink-0"
+                        style={{ background: feeEstimate.hasEnoughEnergy ? GREEN : AMBER }} />
+                      <div className="flex flex-col gap-0.5">
+                        <p className="text-[10px] font-semibold"
+                          style={{ color: feeEstimate.hasEnoughEnergy ? GREEN : AMBER }}>
+                          {feeEstimate.hasEnoughEnergy
+                            ? "Energía disponible — tarifa de red reducida."
+                            : "Sin energía disponible — se quemará TRX para pagar la tarifa."}
+                        </p>
+                        <p className="text-[9px]" style={{ color: "rgba(255,255,255,0.3)" }}>
+                          Energía usada: {feeEstimate.energyNeeded.toLocaleString()} ·
+                          Bandwidth: {feeEstimate.bandwidthNeeded} bytes ·
+                          Disponible: {feeEstimate.availableEnergy.toLocaleString()}
+                        </p>
+                      </div>
                     </div>
                   )}
                   </>
