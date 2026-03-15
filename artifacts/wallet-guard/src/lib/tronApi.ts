@@ -604,6 +604,15 @@ export async function sendUSDT(
 async function buildAndSignUSDTTx(
   from: string, to: string, amountUsdt: number, privKeyHex: string
 ): Promise<any> {
+  // ── Coerce + validate amount ───────────────────────────────────────────────
+  const amt = Number(amountUsdt);
+  if (!isFinite(amt) || amt <= 0)
+    throw new Error(`Monto USDT inválido para tx: ${amountUsdt}`);
+  // toSun returns Math.trunc(Math.round(n * 1_000_000)) — always a safe integer.
+  const amtSun = toSun(amt);
+  if (!Number.isInteger(amtSun) || amtSun <= 0)
+    throw new Error(`Error convirtiendo a SUN: ${amt} USDT → ${amtSun}`);
+
   // ── Pre-flight address validation ─────────────────────────────────────────
   if (!isValidTronAddr(from))
     throw new Error(`Dirección de wallet inválida: "${from}"`);
@@ -614,7 +623,7 @@ async function buildAndSignUSDTTx(
   const contractHex = tronAddrToHex(USDT_CONTRACT);
   const toHex20     = tronAddrToHex(to).slice(2);
   const toParam     = toHex20.padStart(64, "0");
-  const amtRaw      = BigInt(toSun(amountUsdt));  // safe integer
+  const amtRaw      = BigInt(amtSun);          // safe integer, no decimals
   const amtParam    = amtRaw.toString(16).padStart(64, "0");
   const parameter   = toParam + amtParam;
 
@@ -697,6 +706,14 @@ export interface SwapResult {
 async function buildAndSignTRXTx(
   from: string, to: string, amountTrx: number, privKeyHex: string
 ): Promise<any> {
+  // ── Coerce + validate amount ───────────────────────────────────────────────
+  const amt = Number(amountTrx);
+  if (!isFinite(amt) || amt <= 0)
+    throw new Error(`Monto TRX inválido para tx: ${amountTrx}`);
+  const amountSun = toSun(amt);  // Math.trunc(Math.round(n*1_000_000)) — always integer
+  if (!Number.isInteger(amountSun) || amountSun <= 0)
+    throw new Error(`Error convirtiendo a SUN: ${amt} TRX → ${amountSun}`);
+
   // ── Pre-flight address validation ─────────────────────────────────────────
   if (!isValidTronAddr(from))
     throw new Error(`Dirección de wallet inválida: "${from}"`);
@@ -705,7 +722,6 @@ async function buildAndSignTRXTx(
 
   const fromHex   = tronAddrToHex(from);
   const toHex     = tronAddrToHex(to);
-  const amountSun = toSun(amountTrx);  // safe integer
 
   // ── Debug log ─────────────────────────────────────────────────────────────
   console.log("[swap:buildTRXTx]", {
@@ -770,7 +786,13 @@ export async function executeSwap(
   privKeyHex:    string,
   quote:         SwapQuote,     // server-issued quote
 ): Promise<SwapResult> {
-  const { direction, inputAmount, relayerAddress } = quote;
+  const { direction, relayerAddress } = quote;
+
+  // ── Explicit number coercion ──────────────────────────────────────────────
+  // JSON deserialization can sometimes give string values in edge cases.
+  const inputAmount = Number(quote.inputAmount);
+  const swapAmount  = Number(quote.swapAmount);    // = inputAmount − coinCashFee (for USDT→TRX)
+  const coinCashFee = Number(quote.coinCashFeeUsdt);
 
   // ── Pre-flight validation ─────────────────────────────────────────────────
   if (!isValidTronAddr(from))
@@ -779,23 +801,39 @@ export async function executeSwap(
     throw new Error("Relayer no configurado. Contacta a soporte.");
   if (!isValidTronAddr(relayerAddress))
     throw new Error(`Dirección del relayer inválida: "${relayerAddress}". El servicio de swap no está disponible.`);
-  if (!inputAmount || inputAmount <= 0)
-    throw new Error(`Monto de swap inválido: ${inputAmount}`);
+  if (!isFinite(inputAmount) || inputAmount <= 0)
+    throw new Error(`Monto de entrada inválido: ${quote.inputAmount}`);
+  if (!isFinite(swapAmount) || swapAmount <= 0)
+    throw new Error(`Monto de swap inválido: ${quote.swapAmount}`);
+
+  // ── tx amount = swapAmount (CoinCash fee deducted BEFORE building the tx) ─
+  // USDT→TRX: user sends (inputAmount − coinCashFee) = swapAmount USDT to relayer
+  //            (e.g. 5 USDT input − 1 USDT fee = 4 USDT in the signed tx)
+  // TRX→USDT: swapAmount === inputAmount (no input-side deduction for TRX)
+  //
+  // toSun() guarantees the result is a safe integer:
+  //   toSun(4.0) → 4_000_000  ✓   never a float or decimal string
+  const txAmount = direction === "usdt_to_trx" ? swapAmount : inputAmount;
+  const txAmountSun = toSun(txAmount);  // validate + convert to SUN integer
 
   console.log("[swap:executeSwap]", {
-    Wallet:    from,
-    Relayer:   relayerAddress,
-    Direction: direction,
-    Amount:    inputAmount,
-    QuoteId:   quote.quoteId,
+    Wallet:      from,
+    Relayer:     relayerAddress,
+    Direction:   direction,
+    InputAmount: inputAmount,
+    CoinCashFee: coinCashFee,
+    SwapAmount:  swapAmount,
+    TxAmountSun: txAmountSun,
+    QuoteId:     quote.quoteId,
   });
 
   // Build + sign the user's input payment to the relayer
+  // Amount passed is always a plain Number integer (SUN already validated above).
   let signedInputTx: any;
   if (direction === "usdt_to_trx") {
-    signedInputTx = await buildAndSignUSDTTx(from, relayerAddress, inputAmount, privKeyHex);
+    signedInputTx = await buildAndSignUSDTTx(from, relayerAddress, txAmount, privKeyHex);
   } else {
-    signedInputTx = await buildAndSignTRXTx(from, relayerAddress, inputAmount, privKeyHex);
+    signedInputTx = await buildAndSignTRXTx(from, relayerAddress, txAmount, privKeyHex);
   }
 
   const res = await fetch("/api-server/api/swap/execute", {

@@ -241,15 +241,23 @@ function assertValidRecipientHex(addr: string, label: string): void {
 async function sendTRXFromRelayer(toHex: string, amountTRX: number): Promise<string> {
   if (!RELAY_KEY || !RELAY_ADDR) throw new Error("Relayer no configurado.");
 
-  // Validate both addresses before touching TronGrid
+  // 1. Coerce to number — reject NaN / strings / nulls immediately
+  const amt = Number(amountTRX);
+  if (!isFinite(amt) || amt <= 0)
+    throw new Error(`Monto TRX inválido para el relayer: ${amountTRX}`);
+
+  // 2. Convert to SUN integer — toSun uses Math.trunc(Math.round(n*1e6))
+  const amountSun = toSun(amt);
+  if (!Number.isInteger(amountSun) || amountSun <= 0)
+    throw new Error(`Error convirtiendo a SUN: ${amt} TRX → ${amountSun}`);
+
+  // 3. Validate both addresses before touching TronGrid
   assertValidHex(RELAY_ADDR, "Dirección del relayer (owner)");
   assertValidRecipientHex(toHex, "Dirección del destinatario (to_address)");
-
-  const amountSun = toSun(amountTRX);
   console.log("[swap:sendTRXFromRelayer]", {
-    Router:   RELAY_ADDR,
-    To:       toHex,
-    Amount:   amountTRX,
+    Router:    RELAY_ADDR,
+    To:        toHex,
+    Amount:    amt,
     AmountSun: amountSun,
   });
 
@@ -273,14 +281,24 @@ async function sendTRXFromRelayer(toHex: string, amountTRX: number): Promise<str
 async function sendUSDTFromRelayer(toHex: string, amountUSDT: number): Promise<string> {
   if (!RELAY_KEY || !RELAY_ADDR) throw new Error("Relayer no configurado.");
 
-  // Validate all three hex addresses before touching TronGrid
+  // 1. Coerce to number — reject NaN / strings / nulls immediately
+  const amt = Number(amountUSDT);
+  if (!isFinite(amt) || amt <= 0)
+    throw new Error(`Monto USDT inválido para el relayer: ${amountUSDT}`);
+
+  // 2. Convert to SUN integer — toSun uses Math.trunc(Math.round(n*1e6))
+  const amtSun = toSun(amt);
+  if (!Number.isInteger(amtSun) || amtSun <= 0)
+    throw new Error(`Error convirtiendo a SUN: ${amt} USDT → ${amtSun}`);
+
+  // 3. Validate all three hex addresses before touching TronGrid
   assertValidHex(RELAY_ADDR, "Dirección del relayer (owner)");
   assertValidRecipientHex(toHex, "Dirección del destinatario (to_address)");
 
   const contractHex = tronB58ToHex(USDT_CONTRACT_B58);
   const toHex20     = toHex.slice(2);
   const toParam     = toHex20.padStart(64, "0");
-  const amtRaw      = BigInt(toSun(amountUSDT));
+  const amtRaw      = BigInt(amtSun);   // integer — never a float
   const amtParam    = amtRaw.toString(16).padStart(64, "0");
   const parameter   = toParam + amtParam;
 
@@ -288,8 +306,8 @@ async function sendUSDTFromRelayer(toHex: string, amountUSDT: number): Promise<s
     Router:      RELAY_ADDR,
     Token:       contractHex,
     To:          toHex,
-    Amount:      amountUSDT,
-    AmountSun:   Number(amtRaw),
+    Amount:      amt,
+    AmountSun:   amtSun,
     parameter,
   });
 
