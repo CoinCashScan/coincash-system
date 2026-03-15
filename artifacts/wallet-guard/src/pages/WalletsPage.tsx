@@ -240,6 +240,17 @@ export default function WalletsPage({ onScan, activeTab }: Props) {
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
+  // When viewing wallet details, render the full-screen detail page
+  if (detailWallet) {
+    return (
+      <WalletDetailSheet
+        wallet={detailWallet}
+        onClose={() => setDetailWallet(null)}
+        onRename={name => renameWallet(detailWallet.id, name)}
+      />
+    );
+  }
+
   return (
     <div style={{ background:BG, minHeight:"100vh" }} className="flex flex-col pb-28">
 
@@ -610,16 +621,6 @@ export default function WalletsPage({ onScan, activeTab }: Props) {
         </BottomSheet>
       )}
 
-      {/* ═══════════════════════════════════════════════
-          WALLET DETAIL SHEET
-      ═══════════════════════════════════════════════ */}
-      {detailWallet && (
-        <WalletDetailSheet
-          wallet={detailWallet}
-          onClose={() => setDetailWallet(null)}
-          onRename={name => renameWallet(detailWallet.id, name)}
-        />
-      )}
     </div>
   );
 }

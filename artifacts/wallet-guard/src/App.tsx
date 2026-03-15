@@ -25,26 +25,33 @@ function loadWallets(): SavedWallet[] {
   catch { return []; }
 }
 
+type SubView = "blacklist" | "trm" | null;
+
 function MainApp() {
   const [tab, setTab]             = useState<Tab>("dashboard");
+  const [subView, setSubView]     = useState<SubView>(null);
   const [scanAddress, setScanAddress] = useState<string | undefined>();
   const [locked, setLocked]       = useState(() => isPinEnabled());
-  const [frozenOpen, setFrozenOpen] = useState(false);
-  const [trmOpen, setTrmOpen]       = useState(false);
   const [wallets, setWallets]     = useState<SavedWallet[]>(() => loadWallets());
 
   // Keep wallets in sync with localStorage changes (user adds/removes wallets)
   useEffect(() => {
     const sync = () => setWallets(loadWallets());
     window.addEventListener("storage", sync);
-    // Also poll every 5 seconds so changes from the same tab are picked up
     const t = setInterval(sync, 5_000);
     return () => { window.removeEventListener("storage", sync); clearInterval(t); };
   }, []);
 
   const handleScanWallet = (address: string) => {
+    setSubView(null);
     setScanAddress(address);
     setTab("scanner");
+  };
+
+  // Close any open sub-view and switch tab
+  const handleNavChange = (newTab: Tab) => {
+    setSubView(null);
+    setTab(newTab);
   };
 
   // ── Transaction monitor (only runs when unlocked and wallets exist) ──────────
@@ -54,31 +61,41 @@ function MainApp() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      {frozenOpen && <BlacklistPage onClose={() => setFrozenOpen(false)} />}
-      {trmOpen    && <TRMPage      onClose={() => setTrmOpen(false)}    />}
-      <div style={{ display: tab === "dashboard"   ? "block" : "none" }}>
-        <DashboardPage
-          onScanWallet={handleScanWallet}
-          onOpenFrozen={() => setFrozenOpen(true)}
-          onOpenTRM={() => setTrmOpen(true)}
-        />
+      {/* ── Sub-views: render as full-screen pages in the content flow ── */}
+      {subView === "blacklist" && (
+        <BlacklistPage onClose={() => setSubView(null)} />
+      )}
+      {subView === "trm" && (
+        <TRMPage onClose={() => setSubView(null)} />
+      )}
+
+      {/* ── Main tab content: hidden while a sub-view is active ── */}
+      <div style={{ display: subView ? "none" : "block" }}>
+        <div style={{ display: tab === "dashboard"   ? "block" : "none" }}>
+          <DashboardPage
+            onScanWallet={handleScanWallet}
+            onOpenFrozen={() => setSubView("blacklist")}
+            onOpenTRM={() => setSubView("trm")}
+          />
+        </div>
+        <div style={{ display: tab === "wallets"     ? "block" : "none" }}>
+          <WalletsPage onScan={handleScanWallet} activeTab={tab} />
+        </div>
+        <div style={{ display: tab === "scanner"     ? "block" : "none" }}>
+          <ScannerPage
+            prefillAddress={tab === "scanner" ? scanAddress : undefined}
+            onAddressConsumed={() => setScanAddress(undefined)}
+          />
+        </div>
+        <div style={{ display: tab === "connections" ? "block" : "none" }}>
+          <ConnectionsPage />
+        </div>
+        <div style={{ display: tab === "settings"   ? "block" : "none" }}>
+          <SettingsPage />
+        </div>
       </div>
-      <div style={{ display: tab === "wallets"     ? "block" : "none" }}>
-        <WalletsPage onScan={handleScanWallet} activeTab={tab} />
-      </div>
-      <div style={{ display: tab === "scanner"     ? "block" : "none" }}>
-        <ScannerPage
-          prefillAddress={tab === "scanner" ? scanAddress : undefined}
-          onAddressConsumed={() => setScanAddress(undefined)}
-        />
-      </div>
-      <div style={{ display: tab === "connections" ? "block" : "none" }}>
-        <ConnectionsPage />
-      </div>
-      <div style={{ display: tab === "settings"   ? "block" : "none" }}>
-        <SettingsPage />
-      </div>
-      <BottomNav active={tab} onChange={setTab} />
+
+      <BottomNav active={tab} onChange={handleNavChange} />
     </div>
   );
 }

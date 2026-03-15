@@ -344,24 +344,14 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
 
   // ── Layout wrapper ─────────────────────────────────────────────────────────
   return (
-    <div className="fixed inset-0 z-50 flex items-end"
-      style={{ background: "rgba(0,0,0,0.78)", backdropFilter: "blur(4px)" }}
-      onClick={onClose}>
-      <div className="w-full rounded-t-[22px]"
-        style={{
-          height: "92vh", background: SHEET, borderTop: `1px solid ${BORDER}`,
-          overflowY: "auto", WebkitOverflowScrolling: "touch" as any,
-          paddingBottom: "env(safe-area-inset-bottom, 12px)",
-        }}
-        onClick={e => e.stopPropagation()}>
-
-        {/* ── Drag handle ── */}
-        <div className="flex justify-center pt-3 pb-1">
-          <div className="h-1 w-10 rounded-full" style={{ background: "rgba(255,255,255,0.15)" }} />
-        </div>
+    <div className="flex flex-col"
+      style={{
+        background: SHEET, minHeight: "100dvh", paddingBottom: "80px",
+        overflowY: "auto", WebkitOverflowScrolling: "touch" as any,
+      }}>
 
         {/* ── Header ── */}
-        <div className="flex items-center justify-between px-5 pt-2 pb-3">
+        <div className="flex items-center justify-between px-5 pt-10 pb-3">
           {view !== "overview" ? (
             <button onClick={goBack} className="flex items-center gap-1.5 text-sm font-medium"
               style={{ color: "rgba(255,255,255,0.55)" }}>
@@ -923,15 +913,14 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
             )}
           </div>
         )}
-      </div>
 
       {/* ══════════════════════════════════════════════
           RENAME MODAL
       ══════════════════════════════════════════════ */}
       {renameOpen && (
         <div
-          className="absolute inset-0 flex items-center justify-center px-6"
-          style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(6px)", zIndex: 60 }}
+          className="fixed inset-0 flex items-center justify-center px-6"
+          style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(6px)", zIndex: 200 }}
           onClick={() => setRenameOpen(false)}
         >
           <div
