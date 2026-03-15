@@ -329,19 +329,61 @@ async function broadcastSigned(tx: any, privKeyHex: string): Promise<string> {
   return tx.txID;
 }
 
-// ── Gas abstraction — fee estimation ─────────────────────────────────────────
-// Estimates the USDT equivalent of the TRX energy cost for a USDT TRC20 transfer.
-// The fee is deducted from the transfer amount so the user never needs TRX.
+// ── Account resources ─────────────────────────────────────────────────────────
+// Fetches live energy and bandwidth availability for a TRON address.
 
-export interface FeeEstimate {
-  feeTRX: number;       // TRX cost of the transfer (energy × price)
-  feeUSDT: number;      // USDT equivalent, deducted from sent amount
-  trxPriceUSDT: number; // current TRX/USDT price used for conversion
-  energyUsed: number;   // energy estimate used in calculation
+export interface AccountResources {
+  availableEnergy: number;    // staked energy not yet consumed today
+  totalEnergy: number;        // total staked energy limit
+  availableBandwidth: number; // free + staked bandwidth not yet consumed
+  totalBandwidth: number;     // free + staked bandwidth limit
 }
 
-// Energy estimate — conservative value covering cold+warm USDT contract calls
-const ENERGY_ESTIMATE = 65_000; // energy units
+export async function getAccountResources(address: string): Promise<AccountResources> {
+  await rateWait();
+  const res = await tronFetch("/wallet/getaccountresource", {
+    method: "POST",
+    body: JSON.stringify({ address }),
+  });
+  if (!res.ok) throw new Error(`getaccountresource ${res.status}`);
+  const d = await res.json();
+
+  const energyLimit = d.EnergyLimit     ?? 0;
+  const energyUsed  = d.EnergyUsed      ?? 0;
+  const freeNet     = d.freeNetLimit    ?? 1_500; // TRON gives 1500 free bandwidth/day
+  const freeNetUsed = d.freeNetUsed     ?? 0;
+  const netLimit    = d.NetLimit        ?? 0;
+  const netUsed     = d.NetUsed         ?? 0;
+
+  return {
+    availableEnergy:    Math.max(0, energyLimit - energyUsed),
+    totalEnergy:        energyLimit,
+    availableBandwidth: Math.max(0, (freeNet + netLimit) - (freeNetUsed + netUsed)),
+    totalBandwidth:     freeNet + netLimit,
+  };
+}
+
+// ── Gas abstraction — fee estimation ─────────────────────────────────────────
+// Estimates the USDT equivalent of the TRX energy cost for a USDT TRC20 transfer.
+// Optionally fetches live account resources to determine energy optimization status.
+
+export interface FeeEstimate {
+  feeTRX: number;             // TRX cost if burning (energy × energyPrice)
+  feeUSDT: number;            // USDT equivalent deducted from transfer
+  trxPriceUSDT: number;       // current TRX/USDT price
+  energyUsed: number;         // kept for backwards compat
+  energyNeeded: number;       // energy units required for a USDT transfer
+  bandwidthNeeded: number;    // bandwidth bytes required
+  availableEnergy: number;    // account's available staked energy (0 if not fetched)
+  availableBandwidth: number; // account's available bandwidth (0 if not fetched)
+  hasEnoughEnergy: boolean;   // availableEnergy >= energyNeeded
+  hasEnoughBandwidth: boolean;// availableBandwidth >= bandwidthNeeded
+}
+
+// Conservative energy estimate covering cold + warm USDT contract calls
+const ENERGY_ESTIMATE    = 65_000;
+// Typical bandwidth for a TRC20 triggerSmartContract tx
+const BANDWIDTH_ESTIMATE = 268;
 
 // In-memory cache for live prices (30-second TTL)
 let _priceCache: { trxUsdt: number; energySun: number; ts: number } | null = null;
@@ -382,18 +424,31 @@ async function fetchLivePrices(): Promise<{ trxUsdt: number; energySun: number }
 }
 
 // Estimate the USDT network fee for a TRC20 USDT transfer.
-// Returns the fee in USDT that will be deducted from the transfer amount.
-export async function estimateUSDTTransferFee(): Promise<FeeEstimate> {
-  const { trxUsdt, energySun } = await fetchLivePrices();
+// Pass the sender address to also check real-time energy/bandwidth availability.
+export async function estimateUSDTTransferFee(address?: string): Promise<FeeEstimate> {
+  const [prices, resources] = await Promise.all([
+    fetchLivePrices(),
+    address ? getAccountResources(address).catch(() => null) : Promise.resolve(null),
+  ]);
 
+  const { trxUsdt, energySun } = prices;
   const feeTRX  = (ENERGY_ESTIMATE * energySun) / 1_000_000;   // energy → SUN → TRX
-  const feeUSDT = parseFloat((feeTRX * trxUsdt).toFixed(2));   // TRX → USDT, 2 decimals
+  const feeUSDT = parseFloat((feeTRX * trxUsdt).toFixed(2));   // TRX → USDT
+
+  const availableEnergy    = resources?.availableEnergy    ?? 0;
+  const availableBandwidth = resources?.availableBandwidth ?? 0;
 
   return {
     feeTRX,
-    feeUSDT: Math.max(0.01, feeUSDT), // floor at 1 cent
+    feeUSDT: Math.max(0.01, feeUSDT),
     trxPriceUSDT: trxUsdt,
-    energyUsed: ENERGY_ESTIMATE,
+    energyUsed:         ENERGY_ESTIMATE,   // backwards compat alias
+    energyNeeded:       ENERGY_ESTIMATE,
+    bandwidthNeeded:    BANDWIDTH_ESTIMATE,
+    availableEnergy,
+    availableBandwidth,
+    hasEnoughEnergy:    availableEnergy    >= ENERGY_ESTIMATE,
+    hasEnoughBandwidth: availableBandwidth >= BANDWIDTH_ESTIMATE,
   };
 }
 

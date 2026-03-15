@@ -230,16 +230,17 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
     return () => clearInterval(id);
   }, [loadWalletData]);
 
-  // ── Load fee estimate when USDT is selected or send view opens ────────────
+  // ── Load fee estimate + live account resources when USDT send view opens ───
   useEffect(() => {
     if (view !== "send" || sendToken !== "USDT") { setFeeEstimate(null); return; }
     let cancelled = false;
     setFeeLoading(true);
-    estimateUSDTTransferFee()
+    // Pass wallet.address so the estimate also fetches real energy/bandwidth
+    estimateUSDTTransferFee(wallet.address)
       .then(f => { if (!cancelled) { setFeeEstimate(f); setFeeLoading(false); } })
       .catch(() => { if (!cancelled) setFeeLoading(false); });
     return () => { cancelled = true; };
-  }, [view, sendToken]);
+  }, [view, sendToken, wallet.address]);
 
   // ── Risk analysis — triggers automatically when transactions are loaded ─────
   // Refreshes the risk map from cache, then queues analyses for any incoming
@@ -655,7 +656,7 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
                     style={{ border: `1px solid ${BORDER}` }}>
                     {[
                       ["Destinatario recibió", `${parseFloat(sendAmt).toFixed(2)} USDT`, GREEN],
-                      ["Tarifa de red", `${feeEstimate.feeUSDT.toFixed(2)} USDT`, AMBER],
+                      ["Tarifa estimada de red", `≈ ${feeEstimate.feeUSDT.toFixed(2)} USDT`, AMBER],
                       ["Total descontado", totalAmount !== null ? `${totalAmount.toFixed(2)} USDT` : "—", BLUE],
                     ].map(([label, value, color], i, arr) => (
                       <div key={label} className="flex items-center justify-between px-4 py-2.5"
@@ -729,7 +730,7 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
                       ]
                     : [
                         ["Monto a enviar", `${parseFloat(sendAmt).toFixed(2)} USDT`, "white"],
-                        ["Tarifa de red", feeEstimate ? `+ ${feeEstimate.feeUSDT.toFixed(2)} USDT` : "—", AMBER],
+                        ["Tarifa estimada", feeEstimate ? `≈ ${feeEstimate.feeUSDT.toFixed(2)} USDT` : "—", AMBER],
                         ["Total a descontar", totalAmount !== null ? `${totalAmount.toFixed(2)} USDT` : "—", BLUE],
                         ["Destinatario recibe", `${parseFloat(sendAmt).toFixed(2)} USDT`, GREEN],
                         ["Hacia", short(sendTo), "white"],
@@ -840,6 +841,7 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
                 />
 
                 {sendToken === "USDT" && (
+                  <>
                   <div className="rounded-2xl overflow-hidden mb-4"
                     style={{ border: `1px solid ${BORDER}`, background: CARD }}>
                     {/* Amount to send */}
@@ -856,17 +858,17 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
                     <div className="flex items-center justify-between px-4 py-3"
                       style={{ borderBottom: `1px solid ${BORDER}` }}>
                       <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.4)" }}>
-                        Tarifa de red
+                        Tarifa estimada de red
                       </span>
                       {feeLoading ? (
                         <Loader2 className="h-3 w-3 animate-spin" style={{ color: "rgba(255,255,255,0.3)" }} />
                       ) : feeEstimate ? (
                         <div className="flex items-center gap-1.5">
                           <span className="text-[11px] font-bold" style={{ color: AMBER }}>
-                            + {feeEstimate.feeUSDT.toFixed(2)} USDT
+                            ≈ {feeEstimate.feeUSDT.toFixed(2)} USDT
                           </span>
                           <span className="text-[9px] font-mono" style={{ color: "rgba(255,255,255,0.25)" }}>
-                            ≈ {feeEstimate.feeTRX.toFixed(1)} TRX
+                            ({feeEstimate.feeTRX.toFixed(1)} TRX)
                           </span>
                         </div>
                       ) : (
@@ -890,6 +892,85 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
                       )}
                     </div>
                   </div>
+
+                  {/* ── Energy & bandwidth resource panel ───────────────── */}
+                  {feeEstimate && (
+                    <div className="rounded-2xl px-4 py-3 mb-1 flex flex-col gap-2.5"
+                      style={{ background: "rgba(255,255,255,0.03)", border: `1px solid ${BORDER}` }}>
+                      <p className="text-[9px] font-bold uppercase tracking-widest"
+                        style={{ color: "rgba(255,255,255,0.25)" }}>
+                        Recursos TRON
+                      </p>
+
+                      {/* Energy row */}
+                      {(() => {
+                        const has = feeEstimate.hasEnoughEnergy;
+                        const avail = feeEstimate.availableEnergy;
+                        const need  = feeEstimate.energyNeeded;
+                        const pct   = avail > 0 ? Math.min(1, avail / Math.max(avail, need)) : 0;
+                        return (
+                          <div className="flex flex-col gap-1">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-1.5">
+                                <span className="h-1.5 w-1.5 rounded-full flex-shrink-0"
+                                  style={{ background: has ? "#00E0A1" : "#F59E0B" }} />
+                                <span className="text-[10px]" style={{ color: "rgba(255,255,255,0.45)" }}>
+                                  Energía usada
+                                </span>
+                              </div>
+                              <span className="text-[10px] font-mono"
+                                style={{ color: has ? "#00E0A1" : "#F59E0B" }}>
+                                {need.toLocaleString()} / {avail > 0 ? avail.toLocaleString() : "—"} disponibles
+                              </span>
+                            </div>
+                            {avail > 0 && (
+                              <div className="h-1 rounded-full overflow-hidden"
+                                style={{ background: "rgba(255,255,255,0.06)" }}>
+                                <div className="h-full rounded-full transition-all"
+                                  style={{
+                                    width: `${pct * 100}%`,
+                                    background: has ? "#00E0A1" : "#F59E0B",
+                                  }} />
+                              </div>
+                            )}
+                            {!has && avail === 0 && (
+                              <p className="text-[9px]" style={{ color: "rgba(255,255,255,0.3)" }}>
+                                Sin energía estacada — se quemará TRX para pagar el fee
+                              </p>
+                            )}
+                            {!has && avail > 0 && (
+                              <p className="text-[9px]" style={{ color: "#F59E0B" }}>
+                                Energía insuficiente — el relay cubrirá el déficit
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })()}
+
+                      {/* Bandwidth row */}
+                      {(() => {
+                        const has = feeEstimate.hasEnoughBandwidth;
+                        const avail = feeEstimate.availableBandwidth;
+                        const need  = feeEstimate.bandwidthNeeded;
+                        return (
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5">
+                              <span className="h-1.5 w-1.5 rounded-full flex-shrink-0"
+                                style={{ background: has ? "#00E0A1" : "#F59E0B" }} />
+                              <span className="text-[10px]" style={{ color: "rgba(255,255,255,0.45)" }}>
+                                Bandwidth usado
+                              </span>
+                            </div>
+                            <span className="text-[10px] font-mono"
+                              style={{ color: has ? "#00E0A1" : "#F59E0B" }}>
+                              {need} bytes / {avail > 0 ? avail.toLocaleString() : "—"} disponibles
+                            </span>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+                  </>
                 )}
 
                 <button onClick={() => { if (validateSend()) setSendStep("confirm"); }}
