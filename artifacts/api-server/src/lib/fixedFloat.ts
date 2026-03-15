@@ -115,6 +115,48 @@ export interface FFOrderResult {
   raw:            unknown;
 }
 
+// ── GET /order ────────────────────────────────────────────────────────────────
+// Returns the current status of an existing order.
+// id: FixedFloat order ID, token: order auth token (returned at creation time)
+
+export interface FFOrderStatus {
+  id:             string;
+  status:         string;   // NEW | PENDING | EXCHANGE | WITHDRAW | DONE | EXPIRED | EMERGENCY
+  fromAmount:     string;
+  toAmount:       string;
+  depositAddress: string;
+  toAddress:      string;
+  fromCurrency:   string;
+  toCurrency:     string;
+  raw:            unknown;
+}
+
+export async function ffGetOrder(id: string, token: string): Promise<FFOrderStatus> {
+  if (!isFFConfigured()) throw new Error("FixedFloat no configurado.");
+  const qs  = `id=${id}&token=${token}`;
+  const res = await fetch(`${FF_BASE}/order?${qs}`, {
+    headers: ffHeaders(qs),
+    signal:  AbortSignal.timeout(10_000),
+  });
+  if (!res.ok) throw new Error(`FixedFloat /order HTTP ${res.status}`);
+  const json = await res.json() as any;
+  if (String(json?.code) !== "0") ffError(json, "order");
+  const d  = json.data ?? {};
+  const fr = d.from ?? {};
+  const to = d.to   ?? {};
+  return {
+    id:             String(d.id             ?? id),
+    status:         String(d.status         ?? "UNKNOWN"),
+    fromAmount:     String(fr.amount        ?? "0"),
+    toAmount:       String(to.amount        ?? "0"),
+    depositAddress: String(fr.address       ?? ""),
+    toAddress:      String(to.address       ?? ""),
+    fromCurrency:   String(fr.currency      ?? ""),
+    toCurrency:     String(to.currency      ?? ""),
+    raw:            json.data,
+  };
+}
+
 export async function ffCreateOrder(
   from:    string,
   to:      string,

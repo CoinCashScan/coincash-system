@@ -2,13 +2,15 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   ArrowDownUp, Loader2, ChevronDown, AlertTriangle,
-  CheckCircle2, Copy, CheckCheck,
+  CheckCircle2, Copy, CheckCheck, Clock, RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
+import QRCode from "qrcode";
 import {
-  fetchSwapRate, getSwapQuote, executeSwap, createExternalOrder, fetchAccountInfo,
-  type SwapDirection, type SwapQuote, type SwapResult, type SwapRate, type AccountInfo,
-  type ExternalOrderResult,
+  fetchSwapRate, getSwapQuote, executeSwap, createExternalOrder,
+  fetchOrderStatus, fetchAccountInfo,
+  type SwapDirection, type SwapQuote, type SwapResult, type SwapRate,
+  type AccountInfo, type ExternalOrderResult, type OrderStatus,
 } from "@/lib/tronApi";
 import { decryptPrivateKey, hasEncryptedKey } from "@/lib/security";
 import type { SavedWallet } from "@/pages/WalletsPage";
@@ -86,6 +88,9 @@ export default function SwapPage({ wallets, activeTab }: Props) {
   const [destAddr,     setDestAddr]     = useState("");
   const [extOrder,     setExtOrder]     = useState<ExternalOrderResult | null>(null);
   const [extLoading,   setExtLoading]   = useState(false);
+  const [orderStatus,  setOrderStatus]  = useState<OrderStatus | null>(null);
+  const [qrDataUrl,    setQrDataUrl]    = useState<string>("");
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [rate,         setRate]         = useState<SwapRate | null>(null);
   const [rateLoading,  setRateLoading]  = useState(false);
@@ -231,9 +236,39 @@ export default function SwapPage({ wallets, activeTab }: Props) {
     return () => clearInterval(id);
   }, [activeTab, selectedWallet?.address, loadBalance]);
 
+  // ── QR code generation when deposit step opens ───────────────────────────────
+  useEffect(() => {
+    if (step !== "deposit" || !extOrder?.depositAddress) { setQrDataUrl(""); return; }
+    QRCode.toDataURL(extOrder.depositAddress, {
+      width:  180, margin: 1,
+      color: { dark: "#7C3AED", light: "#111827" },
+    }).then(setQrDataUrl).catch(() => setQrDataUrl(""));
+  }, [step, extOrder?.depositAddress]);
+
+  // ── Order status polling (every 12 s while deposit step is open) ─────────────
+  useEffect(() => {
+    if (step !== "deposit" || !extOrder?.orderId || !extOrder?.ffToken) {
+      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+      return;
+    }
+    const poll = async () => {
+      try {
+        const s = await fetchOrderStatus(extOrder.orderId, extOrder.ffToken);
+        setOrderStatus(s);
+        if (s.status === "DONE" || s.status === "EXPIRED" || s.status === "EMERGENCY") {
+          if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+        }
+      } catch { /* silent — don't spam error toasts on polling failures */ }
+    };
+    poll(); // immediate first poll
+    pollRef.current = setInterval(poll, 12_000);
+    return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
+  }, [step, extOrder?.orderId, extOrder?.ffToken]);
+
   const reset = () => {
     setStep("form"); setAmount(""); setQuote(null); setResult(null);
-    setExtOrder(null); setDestAddr("");
+    setExtOrder(null); setDestAddr(""); setOrderStatus(null); setQrDataUrl("");
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
   };
 
   // ── Flip direction with animation ─────────────────────────────────────────────
@@ -271,28 +306,28 @@ export default function SwapPage({ wallets, activeTab }: Props) {
       return;
     }
 
-    // ── Wallet swap mode (existing flow) ─────────────────────────────────────
-    if (!enoughForFee) {
-      toast.error(`El monto mínimo para este swap es ${COINCASH_FEE_USDT + 0.01} USDT.`);
+    // ── Wallet swap mode: create FF order using wallet address as destination ──
+    if (!selectedWallet) {
+      toast.error("Selecciona una billetera CoinCash.");
       return;
     }
     if (inputAmt > maxSend) {
       toast.error(`Saldo insuficiente. Disponible: ${fmtAmt(maxSend, sendToken === "USDT" ? 2 : 4)} ${sendToken}`);
       return;
     }
-    if (!rate?.swapAvailable) {
-      toast.error("El servicio de swap no está disponible en este momento.");
+    if (!rate?.ffConfigured) {
+      toast.error("El servicio de intercambio no está disponible en este momento.");
       return;
     }
-    setQuoteLoading(true);
+    setExtLoading(true);
     try {
-      const q = await getSwapQuote(swapDir, inputAmt);
-      setQuote(q);
-      setStep("confirm");
+      const order = await createExternalOrder(swapDir, inputAmt, selectedWallet.address);
+      setExtOrder(order);
+      setStep("deposit");
     } catch (e: any) {
-      toast.error(e?.message ?? "Error al obtener cotización.");
+      toast.error(e?.message ?? "Error al crear la orden de intercambio.");
     } finally {
-      setQuoteLoading(false);
+      setExtLoading(false);
     }
   };
 
@@ -516,91 +551,145 @@ export default function SwapPage({ wallets, activeTab }: Props) {
         {/* ════════════════════════════════════════════════════════════════════
             DEPOSIT STEP  —  External swap: show deposit address to user
         ════════════════════════════════════════════════════════════════════ */}
-        {step === "deposit" && extOrder && (
-          <div className="flex flex-col items-center gap-4 pt-2">
-            {/* Header */}
-            <div className="h-18 w-18 rounded-full flex items-center justify-center"
-              style={{ background: `${PURPLE}18`, border: `2px solid ${PURPLE}50`, width: 72, height: 72 }}>
-              <CheckCircle2 className="h-9 w-9" style={{ color: PURPLE }} />
-            </div>
-            <div className="text-center">
-              <p className="text-xl font-black text-white mb-1">¡Orden creada!</p>
-              <p className="text-xs leading-relaxed max-w-[260px]" style={{ color: "rgba(255,255,255,0.4)" }}>
-                Envía los fondos a la dirección de depósito para completar el intercambio.
-              </p>
-            </div>
+        {step === "deposit" && extOrder && (() => {
+          // ── Status badge helper ───────────────────────────────────────────────
+          const statusMeta: Record<string, { label: string; color: string; bg: string }> = {
+            NEW:       { label: "Esperando depósito", color: "#60A5FA", bg: "#1E3A5F" },
+            PENDING:   { label: "Depósito recibido",  color: AMBER,      bg: "#3B2800" },
+            EXCHANGE:  { label: "Procesando",         color: PURPLE2,    bg: "#2D1760" },
+            WITHDRAW:  { label: "Enviando fondos",    color: PURPLE2,    bg: "#2D1760" },
+            DONE:      { label: "¡Completado!",       color: GREEN,      bg: "#0A2E1E" },
+            EXPIRED:   { label: "Expirada",           color: RED,        bg: "#2E0A0A" },
+            EMERGENCY: { label: "Requiere atención",  color: RED,        bg: "#2E0A0A" },
+          };
+          const live       = orderStatus?.status ?? "NEW";
+          const meta       = statusMeta[live] ?? { label: live, color: "rgba(255,255,255,0.5)", bg: "transparent" };
+          const isDone     = live === "DONE";
+          const isExpired  = live === "EXPIRED" || live === "EMERGENCY";
+          const outputAmt  = orderStatus?.toAmount
+            ? parseFloat(orderStatus.toAmount)
+            : extOrder.expectedOutput;
 
-            {/* Deposit address card */}
-            <div className="w-full rounded-2xl overflow-hidden" style={{ border: `1px solid ${PURPLE}40`, background: CARD2 }}>
-              <div className="px-4 py-2.5" style={{ background: `${PURPLE}15`, borderBottom: `1px solid ${BORDER}` }}>
-                <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: PURPLE }}>
-                  Envía {extOrder.fromAmount} {extOrder.fromToken} a esta dirección
-                </p>
-              </div>
-              <div className="px-4 py-3.5 flex items-start justify-between gap-3">
-                <p className="text-xs font-mono break-all leading-relaxed flex-1" style={{ color: "rgba(255,255,255,0.85)" }}>
-                  {extOrder.depositAddress}
-                </p>
-                <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(extOrder.depositAddress);
-                    setCopied(extOrder.depositAddress);
-                    setTimeout(() => setCopied(null), 2000);
-                    toast.success("Dirección copiada");
-                  }}
-                  className="shrink-0 p-2 rounded-xl transition-colors"
-                  style={{ background: `${PURPLE}20`, border: `1px solid ${PURPLE}40` }}>
-                  {copied === extOrder.depositAddress
-                    ? <CheckCheck className="h-4 w-4" style={{ color: GREEN }} />
-                    : <Copy className="h-4 w-4" style={{ color: PURPLE }} />}
-                </button>
-              </div>
-            </div>
-
-            {/* Order details */}
-            <div className="w-full rounded-2xl overflow-hidden" style={{ border: `1px solid ${BORDER}`, background: CARD2 }}>
-              <div className="px-4 py-2.5" style={{ background: `${PURPLE}08`, borderBottom: `1px solid ${BORDER}` }}>
-                <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: PURPLE }}>Detalles del intercambio</p>
-              </div>
-              {[
-                ["Enviando",        `${extOrder.fromAmount} ${extOrder.fromToken}`,                                          "white"],
-                ["Recibirás ≈",    extOrder.expectedOutput > 0 ? `${extOrder.expectedOutput.toFixed(extOrder.toToken === "USDT" ? 2 : 4)} ${extOrder.toToken}` : `— ${extOrder.toToken}`, GREEN],
-                ["Tasa",           extOrder.trxUsd > 0 ? `1 USDT ≈ ${(1/extOrder.trxUsd).toFixed(2)} TRX` : "—",           "rgba(255,255,255,0.4)"],
-                ["ID de orden",    extOrder.orderId,                                                                          "rgba(255,255,255,0.5)"],
-              ].map(([lbl, val, col], i, arr) => (
-                <div key={lbl} className="flex items-center justify-between px-4 py-2.5"
-                  style={{ borderBottom: i < arr.length - 1 ? `1px solid ${BORDER}` : "none" }}>
-                  <span className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>{lbl}</span>
-                  <span className={`text-xs font-semibold ${lbl === "ID de orden" ? "font-mono" : ""} max-w-[180px] text-right truncate`} style={{ color: col as string }}>{val}</span>
+          return (
+            <div className="flex flex-col items-center gap-4 pt-2">
+              {/* Header icon + title + live status badge */}
+              <div className="flex flex-col items-center gap-2">
+                <div className="rounded-full flex items-center justify-center"
+                  style={{ background: isDone ? `${GREEN}18` : `${PURPLE}18`, border: `2px solid ${isDone ? GREEN : PURPLE}50`, width: 72, height: 72 }}>
+                  {isDone
+                    ? <CheckCircle2 className="h-9 w-9" style={{ color: GREEN }} />
+                    : <Clock className="h-9 w-9" style={{ color: PURPLE }} />}
                 </div>
-              ))}
-            </div>
+                <p className="text-xl font-black text-white">
+                  {isDone ? "¡Completado!" : "¡Orden creada!"}
+                </p>
+                <div className="flex items-center gap-1.5 rounded-xl px-3 py-1.5"
+                  style={{ background: meta.bg, border: `1px solid ${meta.color}30` }}>
+                  {!isDone && !isExpired && <RefreshCw className="h-3 w-3 animate-spin" style={{ color: meta.color }} />}
+                  {isDone && <CheckCircle2 className="h-3 w-3" style={{ color: meta.color }} />}
+                  {isExpired && <AlertTriangle className="h-3 w-3" style={{ color: meta.color }} />}
+                  <span className="text-xs font-bold" style={{ color: meta.color }}>{meta.label}</span>
+                </div>
+              </div>
 
-            {/* Destination card */}
-            <div className="w-full rounded-2xl p-3.5" style={{ background: `${GREEN}08`, border: `1px solid ${GREEN}25` }}>
-              <p className="text-[10px] font-semibold uppercase tracking-widest mb-1.5" style={{ color: GREEN }}>
-                TRX será enviado a
-              </p>
-              <p className="text-xs font-mono break-all leading-relaxed" style={{ color: "rgba(255,255,255,0.7)" }}>
-                {extOrder.destinationAddress}
-              </p>
-            </div>
+              {/* QR code */}
+              {qrDataUrl && !isDone && (
+                <div className="rounded-2xl p-3 flex flex-col items-center gap-2"
+                  style={{ background: CARD2, border: `1px solid ${BORDER}` }}>
+                  <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.3)" }}>
+                    Escanea para enviar
+                  </p>
+                  <img src={qrDataUrl} alt="QR depósito" width={160} height={160}
+                    style={{ borderRadius: 10, imageRendering: "pixelated" }} />
+                </div>
+              )}
 
-            {/* Info banner */}
-            <div className="w-full rounded-2xl p-3.5 flex gap-3" style={{ background: `${AMBER}08`, border: `1px solid ${AMBER}25` }}>
-              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" style={{ color: AMBER }} />
-              <p className="text-[11px] leading-relaxed" style={{ color: "rgba(255,255,255,0.5)" }}>
-                Una vez que envíes los fondos, el intercambio se procesará automáticamente en pocos minutos.
-                Las operaciones en blockchain son <span className="font-semibold" style={{ color: AMBER }}>irreversibles</span>.
-              </p>
-            </div>
+              {/* Deposit address card */}
+              {!isDone && (
+                <div className="w-full rounded-2xl overflow-hidden" style={{ border: `1px solid ${PURPLE}40`, background: CARD2 }}>
+                  <div className="px-4 py-2.5" style={{ background: `${PURPLE}15`, borderBottom: `1px solid ${BORDER}` }}>
+                    <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: PURPLE }}>
+                      Envía exactamente {extOrder.fromAmount} {extOrder.fromToken} a:
+                    </p>
+                  </div>
+                  <div className="px-4 py-3.5 flex items-start justify-between gap-3">
+                    <p className="text-xs font-mono break-all leading-relaxed flex-1" style={{ color: "rgba(255,255,255,0.85)" }}>
+                      {extOrder.depositAddress}
+                    </p>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(extOrder.depositAddress);
+                        setCopied(extOrder.depositAddress);
+                        setTimeout(() => setCopied(null), 2000);
+                        toast.success("Dirección copiada");
+                      }}
+                      className="shrink-0 p-2 rounded-xl transition-colors"
+                      style={{ background: `${PURPLE}20`, border: `1px solid ${PURPLE}40` }}>
+                      {copied === extOrder.depositAddress
+                        ? <CheckCheck className="h-4 w-4" style={{ color: GREEN }} />
+                        : <Copy className="h-4 w-4" style={{ color: PURPLE }} />}
+                    </button>
+                  </div>
+                </div>
+              )}
 
-            <button onClick={reset} className="w-full rounded-2xl py-4 text-sm font-bold mt-1"
-              style={{ background: `linear-gradient(135deg, ${PURPLE}, ${PURPLE2})`, color: "white", boxShadow: `0 0 24px ${PURPLE}50` }}>
-              Nuevo intercambio
-            </button>
-          </div>
-        )}
+              {/* Order details */}
+              <div className="w-full rounded-2xl overflow-hidden" style={{ border: `1px solid ${BORDER}`, background: CARD2 }}>
+                <div className="px-4 py-2.5" style={{ background: `${PURPLE}08`, borderBottom: `1px solid ${BORDER}` }}>
+                  <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: PURPLE }}>Detalles del intercambio</p>
+                </div>
+                {[
+                  ["Enviando",       `${extOrder.fromAmount} ${extOrder.fromToken}`,                                                    "white"],
+                  ["Recibirás ≈",   outputAmt > 0 ? `${outputAmt.toFixed(extOrder.toToken === "USDT" ? 2 : 2)} ${extOrder.toToken}` : `— ${extOrder.toToken}`, GREEN],
+                  ["Tasa",          extOrder.trxUsd > 0 ? `1 USDT ≈ ${(1/extOrder.trxUsd).toFixed(2)} TRX` : "—",                     "rgba(255,255,255,0.4)"],
+                  ["ID de orden",   extOrder.orderId,                                                                                    "rgba(255,255,255,0.5)"],
+                ].map(([lbl, val, col], i, arr) => (
+                  <div key={lbl} className="flex items-center justify-between px-4 py-2.5"
+                    style={{ borderBottom: i < arr.length - 1 ? `1px solid ${BORDER}` : "none" }}>
+                    <span className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>{lbl}</span>
+                    <span className={`text-xs font-semibold ${lbl === "ID de orden" ? "font-mono" : ""} max-w-[180px] text-right truncate`}
+                      style={{ color: col as string }}>{val}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Destination card */}
+              <div className="w-full rounded-2xl p-3.5" style={{ background: `${GREEN}08`, border: `1px solid ${GREEN}25` }}>
+                <p className="text-[10px] font-semibold uppercase tracking-widest mb-1.5" style={{ color: GREEN }}>
+                  {extOrder.toToken} será enviado a
+                </p>
+                <p className="text-xs font-mono break-all leading-relaxed" style={{ color: "rgba(255,255,255,0.7)" }}>
+                  {extOrder.destinationAddress}
+                </p>
+              </div>
+
+              {/* Warning / completion banner */}
+              {!isDone && !isExpired && (
+                <div className="w-full rounded-2xl p-3.5 flex gap-3" style={{ background: `${AMBER}08`, border: `1px solid ${AMBER}25` }}>
+                  <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" style={{ color: AMBER }} />
+                  <p className="text-[11px] leading-relaxed" style={{ color: "rgba(255,255,255,0.5)" }}>
+                    Una vez que envíes exactamente <span className="font-semibold text-white">{extOrder.fromAmount} {extOrder.fromToken}</span>,
+                    el intercambio se procesará automáticamente.
+                    Las operaciones en blockchain son <span className="font-semibold" style={{ color: AMBER }}>irreversibles</span>.
+                  </p>
+                </div>
+              )}
+              {isDone && (
+                <div className="w-full rounded-2xl p-3.5 flex gap-3" style={{ background: `${GREEN}08`, border: `1px solid ${GREEN}30` }}>
+                  <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" style={{ color: GREEN }} />
+                  <p className="text-[11px] leading-relaxed" style={{ color: "rgba(255,255,255,0.6)" }}>
+                    El intercambio fue completado exitosamente. Los fondos han sido enviados a tu dirección de destino.
+                  </p>
+                </div>
+              )}
+
+              <button onClick={reset} className="w-full rounded-2xl py-4 text-sm font-bold mt-1"
+                style={{ background: `linear-gradient(135deg, ${PURPLE}, ${PURPLE2})`, color: "white", boxShadow: `0 0 24px ${PURPLE}50` }}>
+                Nuevo intercambio
+              </button>
+            </div>
+          );
+        })()}
 
         {/* ════════════════════════════════════════════════════════════════════
             FORM STEP  —  Professional Exchange Layout
@@ -845,32 +934,12 @@ export default function SwapPage({ wallets, activeTab }: Props) {
                 </span>
               </div>
 
-              {/* Comisión CoinCash (wallet mode only) */}
-              {swapMode === "wallet" && (
-                <div className="flex items-center justify-between px-4 py-3"
-                  style={{ borderBottom: `1px solid ${BORDER}` }}>
-                  <span className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>Comisión CoinCash</span>
-                  <span className="text-xs font-semibold" style={{ color: AMBER }}>−1.00 USDT</span>
-                </div>
-              )}
-
-              {/* Tarifa de red */}
-              {swapMode === "wallet" && (
-                <div className="flex items-center justify-between px-4 py-3"
-                  style={{ borderBottom: `1px solid ${BORDER}`, background: `${GREEN}06` }}>
-                  <span className="text-xs" style={{ color: "rgba(255,255,255,0.35)" }}>Tarifa de red</span>
-                  <span className="text-xs font-semibold" style={{ color: GREEN }}>Cubierta por CoinCash ✓</span>
-                </div>
-              )}
-
-              {/* External mode info row */}
-              {swapMode === "external" && (
-                <div className="flex items-center justify-between px-4 py-3"
-                  style={{ borderBottom: `1px solid ${BORDER}`, background: `${GREEN}06` }}>
-                  <span className="text-xs" style={{ color: "rgba(255,255,255,0.35)" }}>Sin comisión CoinCash</span>
-                  <span className="text-xs font-semibold" style={{ color: GREEN }}>Intercambio directo ✓</span>
-                </div>
-              )}
+              {/* Sin comisión CoinCash — both modes use FF directly */}
+              <div className="flex items-center justify-between px-4 py-3"
+                style={{ borderBottom: `1px solid ${BORDER}`, background: `${GREEN}06` }}>
+                <span className="text-xs" style={{ color: "rgba(255,255,255,0.35)" }}>Sin comisión CoinCash</span>
+                <span className="text-xs font-semibold" style={{ color: GREEN }}>Intercambio directo ✓</span>
+              </div>
 
               {/* Collapsible details toggle */}
               <button
@@ -938,10 +1007,8 @@ export default function SwapPage({ wallets, activeTab }: Props) {
 
             {/* ── CTA ─────────────────────────────────────────────────────── */}
             {(() => {
-              const externalDisabled = extLoading || !hasAmt || !rate?.ffConfigured;
-              const walletDisabled   = quoteLoading || !hasAmt || !enoughForFee || !rate?.swapAvailable;
-              const isDisabled       = swapMode === "external" ? externalDisabled : walletDisabled;
-              const isActive         = !isDisabled;
+              const isDisabled = extLoading || !hasAmt || !rate?.ffConfigured ||
+                (swapMode === "wallet" && !selectedWallet);
               return (
                 <button
                   onClick={handleContinue}
@@ -950,13 +1017,11 @@ export default function SwapPage({ wallets, activeTab }: Props) {
                   style={{
                     background: `linear-gradient(135deg, ${PURPLE}, ${PURPLE2})`,
                     color: "white",
-                    boxShadow: isActive ? `0 4px 32px ${PURPLE}55` : "none",
+                    boxShadow: !isDisabled ? `0 4px 32px ${PURPLE}55` : "none",
                     transition: "box-shadow 0.3s",
                   }}>
-                  {(quoteLoading || extLoading)
-                    ? <><Loader2 className="h-4 w-4 animate-spin" />
-                        {swapMode === "external" ? "Creando orden…" : "Obteniendo cotización…"}
-                      </>
+                  {extLoading
+                    ? <><Loader2 className="h-4 w-4 animate-spin" /> Creando orden…</>
                     : <><ArrowDownUp className="h-4 w-4" />
                         {swapMode === "external" ? "Crear orden de intercambio" : "Convertir ahora"}
                       </>

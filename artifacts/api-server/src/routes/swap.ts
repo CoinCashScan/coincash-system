@@ -10,7 +10,7 @@ import {
   QUOTE_TTL_MS,
   type SwapDirection,
 } from "../lib/swapEngine.js";
-import { isFFConfigured } from "../lib/fixedFloat.js";
+import { isFFConfigured, ffGetOrder } from "../lib/fixedFloat.js";
 
 const swapRouter = Router();
 
@@ -136,6 +136,23 @@ swapRouter.post("/swap/external-order", async (req, res) => {
   } catch (err: any) {
     console.error("[swap/external-order] Error:", err?.message);
     res.status(503).json({ error: err?.message ?? "Error al crear la orden de intercambio." });
+  }
+});
+
+/**
+ * GET /swap/order-status?id=orderId&token=orderToken
+ * Polls the swap provider for the current status of an order.
+ */
+swapRouter.get("/swap/order-status", async (req, res) => {
+  const { id, token } = req.query as Record<string, string>;
+  if (!id)    { res.status(400).json({ error: "id es requerido." }); return; }
+  if (!token) { res.status(400).json({ error: "token es requerido." }); return; }
+  try {
+    const status = await ffGetOrder(id, token);
+    res.json(status);
+  } catch (err: any) {
+    console.error("[swap/order-status] Error:", err?.message);
+    res.status(503).json({ error: err?.message ?? "Error al consultar el estado del pedido." });
   }
 });
 

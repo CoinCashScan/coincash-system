@@ -1001,3 +1001,26 @@ export async function createExternalOrder(
   }
   return res.json();
 }
+
+// ── Order status ──────────────────────────────────────────────────────────────
+export interface OrderStatus {
+  id:             string;
+  status:         string;   // NEW | PENDING | EXCHANGE | WITHDRAW | DONE | EXPIRED | EMERGENCY
+  fromAmount:     string;
+  toAmount:       string;
+  depositAddress: string;
+  toAddress:      string;
+  fromCurrency:   string;
+  toCurrency:     string;
+}
+
+export async function fetchOrderStatus(id: string, token: string): Promise<OrderStatus> {
+  const res = await fetch(
+    `/api-server/api/swap/order-status?id=${encodeURIComponent(id)}&token=${encodeURIComponent(token)}`,
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Error de red" }));
+    throw new Error(err.error ?? `Error al consultar estado: ${res.status}`);
+  }
+  return res.json();
+}
