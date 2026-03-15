@@ -21,6 +21,7 @@ function MainApp() {
   const [tab, setTab]             = useState<Tab>("scanner");
   const [scanAddress, setScanAddress] = useState<string | undefined>();
   const [locked, setLocked]       = useState(() => isPinEnabled());
+  const [frozenOpen, setFrozenOpen] = useState(false);
 
   useEffect(() => {
     // Re-check lock state whenever PIN setting changes (e.g. user enables PIN in Settings)
@@ -40,8 +41,9 @@ function MainApp() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      {frozenOpen && <BlacklistPage onClose={() => setFrozenOpen(false)} />}
       <div style={{ display: tab === "dashboard"   ? "block" : "none" }}>
-        <DashboardPage onScanWallet={handleScanWallet} />
+        <DashboardPage onScanWallet={handleScanWallet} onOpenFrozen={() => setFrozenOpen(true)} />
       </div>
       <div style={{ display: tab === "wallets"     ? "block" : "none" }}>
         <WalletsPage onScan={handleScanWallet} />
@@ -67,7 +69,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/" component={MainApp} />
-      <Route path="/blacklist" component={BlacklistPage} />
+      <Route path="/blacklist">{() => <BlacklistPage />}</Route>
       <Route component={NotFound} />
     </Switch>
   );

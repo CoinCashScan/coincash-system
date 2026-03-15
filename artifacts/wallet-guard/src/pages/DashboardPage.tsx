@@ -10,9 +10,10 @@ const SHADOW = "0 4px 24px rgba(0,0,0,0.45)";
 
 interface DashboardPageProps {
   onScanWallet?: (address: string) => void;
+  onOpenFrozen?: () => void;
 }
 
-const DashboardPage = ({ onScanWallet }: DashboardPageProps) => {
+const DashboardPage = ({ onScanWallet, onOpenFrozen }: DashboardPageProps) => {
   const raw     = localStorage.getItem("wg_daily_stats");
   const stats   = raw ? JSON.parse(raw) : { analyzed: 0, highRisk: 0 };
   const wallets = JSON.parse(localStorage.getItem("wg_wallets") || "[]");
@@ -90,8 +91,8 @@ const DashboardPage = ({ onScanWallet }: DashboardPageProps) => {
       <p className="px-5 text-xs font-semibold mb-3 uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.35)" }}>Acciones rápidas</p>
       <div className="px-4 grid grid-cols-3 gap-3 mb-5">
         {[
-          { label: "Escanear",   icon: ScanSearch,    color: GREEN, action: onScanWallet ? () => onScanWallet("") : undefined },
-          { label: "Congelados", icon: Ban,            color: DANGER },
+          { label: "Escanear",   icon: ScanSearch,    color: GREEN,   action: onScanWallet ? () => onScanWallet("") : undefined },
+          { label: "Congelados", icon: Ban,            color: DANGER,  action: onOpenFrozen },
           { label: "Red TRON",   icon: Wifi,           color: BLUE },
         ].map(({ label, icon: Icon, color, action }) => (
           <button key={label} onClick={action}
