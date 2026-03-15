@@ -167,6 +167,11 @@ export default function WalletsPage({ onScan }: Props) {
     toast.success("Wallet eliminada.");
   };
 
+  const renameWallet = (id: string, name: string) => {
+    setWallets(prev => prev.map(w => w.id === id ? { ...w, name } : w));
+    setDetailWallet(prev => prev?.id === id ? { ...prev, name } : prev);
+  };
+
   // ── Watch wallet ──────────────────────────────────────────────────────────
   const handleAddWatch = async () => {
     const a = address.trim();
@@ -604,6 +609,7 @@ export default function WalletsPage({ onScan }: Props) {
         <WalletDetailSheet
           wallet={detailWallet}
           onClose={() => setDetailWallet(null)}
+          onRename={name => renameWallet(detailWallet.id, name)}
         />
       )}
     </div>

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import {
   X, ArrowLeft, Copy, CheckCheck, ArrowDownLeft, ArrowUpRight,
   Loader2, QrCode, Send, RefreshCw, AlertTriangle, Clock,
-  ChevronRight, Wallet, ShieldAlert,
+  ChevronRight, Wallet, ShieldAlert, Pencil,
 } from "lucide-react";
 import { toast } from "sonner";
 import QRCode from "qrcode";
@@ -36,6 +36,7 @@ type Token = "TRX" | "USDT";
 interface Props {
   wallet: SavedWallet;
   onClose: () => void;
+  onRename?: (name: string) => void;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -86,7 +87,7 @@ function writeCache(addr: string, info: AccountInfo, txs: TxRecord[]) {
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-export default function WalletDetailSheet({ wallet, onClose }: Props) {
+export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) {
   const [view, setView]           = useState<View>("overview");
   const [info, setInfo]           = useState<AccountInfo | null>(null);
   const [txs, setTxs]             = useState<TxRecord[]>([]);
@@ -98,6 +99,14 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState("");
   const [copied, setCopied]       = useState(false);
+
+  // ── Rename ─────────────────────────────────────────────────────────────────
+  const [localName, setLocalName]   = useState(wallet.name);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameDraft, setRenameDraft] = useState("");
+
+  // Keep localName in sync if parent passes a different wallet
+  useEffect(() => { setLocalName(wallet.name); }, [wallet.name]);
 
   // Send state
   const [sendStep, setSendStep]   = useState<SendStep>("form");
@@ -179,13 +188,13 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
   // ── Auto-retry every 3 seconds on connection failure ──────────────────────
   useEffect(() => {
     if (!loadError) return;
-    const id = setTimeout(() => loadWalletData({ silent: false }), 3_000);
+    const id = setTimeout(() => loadWalletData(), 3_000);
     return () => clearTimeout(id);
   }, [loadError, loadWalletData]);
 
   // ── Auto-refresh every 60 seconds while the sheet is open ─────────────────
   useEffect(() => {
-    const id = setInterval(() => loadWalletData({ silent: true }), 60_000);
+    const id = setInterval(() => loadWalletData(), 60_000);
     return () => clearInterval(id);
   }, [loadWalletData]);
 
@@ -265,7 +274,7 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
       setSendStep("done");
       toast.success("Transacción enviada a la red TRON.");
       // Refresh balances + history after a successful send
-      setTimeout(() => loadWalletData({ silent: true }), 3000);
+      setTimeout(() => loadWalletData(), 3000);
     } catch (e: any) {
       toast.error(e?.message ?? "Error al enviar la transacción.");
       setSendStep("confirm");
@@ -318,11 +327,18 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
             <div className="flex items-center gap-2.5">
               <div className="flex h-9 w-9 items-center justify-center rounded-xl text-sm font-bold"
                 style={{ background: `${badgeColor}22`, color: badgeColor }}>
-                {wallet.name.slice(0, 1).toUpperCase()}
+                {localName.slice(0, 1).toUpperCase()}
               </div>
               <div>
                 <div className="flex items-center gap-1.5">
-                  <span className="text-base font-bold text-white">{wallet.name}</span>
+                  <button
+                    onClick={() => { setRenameDraft(localName); setRenameOpen(true); }}
+                    className="flex items-center gap-1 group"
+                  >
+                    <span className="text-base font-bold text-white">{localName}</span>
+                    <Pencil className="h-3 w-3 opacity-0 group-hover:opacity-60 transition-opacity"
+                      style={{ color: "rgba(255,255,255,0.6)" }} />
+                  </button>
                   <span className="rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase"
                     style={{ background: `${badgeColor}20`, color: badgeColor }}>
                     {badgeLabel}
@@ -864,6 +880,83 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
           </div>
         )}
       </div>
+
+      {/* ══════════════════════════════════════════════
+          RENAME MODAL
+      ══════════════════════════════════════════════ */}
+      {renameOpen && (
+        <div
+          className="absolute inset-0 flex items-center justify-center px-6"
+          style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(6px)", zIndex: 60 }}
+          onClick={() => setRenameOpen(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-3xl p-6"
+            style={{ background: CARD, border: `1px solid ${BORDER}` }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Title */}
+            <p className="text-base font-bold text-white mb-1">Editar nombre de wallet</p>
+            <p className="text-[11px] mb-5" style={{ color: "rgba(255,255,255,0.35)" }}>
+              El nombre solo se guarda en tu dispositivo.
+            </p>
+
+            {/* Input */}
+            <label className="block text-[10px] font-semibold uppercase tracking-wider mb-1.5"
+              style={{ color: "rgba(255,255,255,0.3)" }}>
+              Nombre de wallet
+            </label>
+            <input
+              autoFocus
+              value={renameDraft}
+              onChange={e => setRenameDraft(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === "Enter") {
+                  const trimmed = renameDraft.trim();
+                  if (!trimmed) return;
+                  setLocalName(trimmed);
+                  onRename?.(trimmed);
+                  setRenameOpen(false);
+                  toast.success("Nombre actualizado.");
+                }
+              }}
+              maxLength={40}
+              placeholder="Ej: Ahorros, Trading…"
+              className="w-full rounded-2xl px-4 py-3 text-sm font-medium outline-none mb-5"
+              style={{
+                background: "rgba(255,255,255,0.05)",
+                border: `1px solid rgba(255,255,255,0.1)`,
+                color: "#fff",
+              }}
+            />
+
+            {/* Buttons */}
+            <div className="flex gap-3">
+              <button
+                onClick={() => setRenameOpen(false)}
+                className="flex-1 rounded-2xl py-3 text-sm font-medium"
+                style={{ border: `1px solid rgba(255,255,255,0.1)`, color: "rgba(255,255,255,0.5)" }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  const trimmed = renameDraft.trim();
+                  if (!trimmed) { toast.error("El nombre no puede estar vacío."); return; }
+                  setLocalName(trimmed);
+                  onRename?.(trimmed);
+                  setRenameOpen(false);
+                  toast.success("Nombre actualizado.");
+                }}
+                className="flex-1 rounded-2xl py-3 text-sm font-bold"
+                style={{ background: GREEN, color: "#fff" }}
+              >
+                Guardar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
