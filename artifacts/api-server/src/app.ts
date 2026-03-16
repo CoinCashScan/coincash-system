@@ -1,7 +1,7 @@
 import express, { type Express } from "express";
 import cors from "cors";
 import router from "./routes";
-import { ensureUsersTable } from "./lib/db";
+import { ensureUsersTable, ensureMessagesTable } from "./lib/db";
 
 const app: Express = express();
 
@@ -12,8 +12,9 @@ app.use(express.urlencoded({ extended: true }));
 app.use("/api", router);
 
 // Bootstrap DB tables
-ensureUsersTable().catch(err =>
-  console.error("[app] ensureUsersTable failed:", err?.message),
-);
+Promise.all([
+  ensureUsersTable(),
+  ensureMessagesTable(),
+]).catch(err => console.error("[app] DB bootstrap failed:", err?.message));
 
 export default app;

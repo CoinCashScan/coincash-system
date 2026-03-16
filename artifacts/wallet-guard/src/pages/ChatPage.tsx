@@ -1,58 +1,126 @@
 import { useState, useRef, useEffect } from "react";
-import { Send } from "lucide-react";
+import { Send, MessageCircle } from "lucide-react";
 
-interface Message {
-  id: number;
-  text: string;
-  sender: "user" | "system";
-  timestamp: Date;
+const API = "/api-server/api";
+const SUPPORT_ID = "CC-SUPPORT";
+
+interface ChatMsg {
+  id:           number;
+  senderCcId:   string;
+  receiverCcId: string;
+  message:      string;
+  timestamp:    Date;
 }
 
-const INITIAL: Message[] = [
-  {
-    id: 1,
-    text: "Bienvenido al Chat Privado de CoinCash. ¿En qué podemos ayudarte?",
-    sender: "system",
-    timestamp: new Date(),
-  },
-];
+function fmt(ts: Date | string): string {
+  return new Date(ts).toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" });
+}
 
-function fmt(date: Date): string {
-  return date.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" });
+function getFirstWalletAddress(): string | null {
+  try {
+    const wallets = JSON.parse(localStorage.getItem("wg_wallets") || "[]");
+    return wallets[0]?.address ?? null;
+  } catch { return null; }
 }
 
 const ChatPage = () => {
-  const [messages, setMessages] = useState<Message[]>(INITIAL);
-  const [input, setInput]       = useState("");
-  const bottomRef               = useRef<HTMLDivElement>(null);
+  const [myCcId,    setMyCcId]    = useState<string | null>(null);
+  const [ccLoading, setCcLoading] = useState(true);
+  const [messages,  setMessages]  = useState<ChatMsg[]>([]);
+  const [input,     setInput]     = useState("");
+  const [sending,   setSending]   = useState(false);
+  const bottomRef                 = useRef<HTMLDivElement>(null);
 
+  // ── Resolve CoinCash ID from first saved wallet ──
+  useEffect(() => {
+    async function init() {
+      const address = getFirstWalletAddress();
+      if (!address) { setCcLoading(false); return; }
+      try {
+        const res  = await fetch(`${API}/users/lookup`, {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ walletAddress: address }),
+        });
+        const data = await res.json();
+        if (data.coincashId) {
+          setMyCcId(data.coincashId);
+          await loadHistory(data.coincashId);
+        }
+      } catch (err) {
+        console.error("[chat] CoinCash ID lookup failed:", err);
+      } finally {
+        setCcLoading(false);
+      }
+    }
+    init();
+  }, []);
+
+  // Auto-scroll on new messages
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  function send() {
-    const text = input.trim();
-    if (!text) return;
+  async function loadHistory(ccId: string) {
+    try {
+      const res  = await fetch(`${API}/chat/messages?user=${ccId}`);
+      const data = await res.json();
+      if (Array.isArray(data.messages)) {
+        setMessages(data.messages);
+        // Add welcome if no history
+        if (data.messages.length === 0) {
+          setMessages([{
+            id:           0,
+            senderCcId:   SUPPORT_ID,
+            receiverCcId: ccId,
+            message:      "Bienvenido al Chat Privado de CoinCash. ¿En qué podemos ayudarte?",
+            timestamp:    new Date(),
+          }]);
+        }
+      }
+    } catch (err) {
+      console.error("[chat] loadHistory failed:", err);
+    }
+  }
 
-    const userMsg: Message = { id: Date.now(), text, sender: "user", timestamp: new Date() };
-    setMessages(prev => [...prev, userMsg]);
+  async function send() {
+    const text = input.trim();
+    if (!text || !myCcId || sending) return;
+    setSending(true);
     setInput("");
 
-    // Auto-reply
-    setTimeout(() => {
-      const reply: Message = {
-        id:        Date.now() + 1,
-        text:      "Gracias por tu mensaje. Un agente de soporte se pondrá en contacto contigo pronto.",
-        sender:    "system",
-        timestamp: new Date(),
-      };
-      setMessages(prev => [...prev, reply]);
-    }, 900);
+    // Optimistic add
+    const optimistic: ChatMsg = {
+      id:           Date.now(),
+      senderCcId:   myCcId,
+      receiverCcId: SUPPORT_ID,
+      message:      text,
+      timestamp:    new Date(),
+    };
+    setMessages(prev => [...prev, optimistic]);
+
+    try {
+      const res  = await fetch(`${API}/chat/messages`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ senderCcId: myCcId, message: text }),
+      });
+      const data = await res.json();
+      if (data.reply) {
+        setMessages(prev => [...prev, { ...data.reply, timestamp: new Date(data.reply.timestamp) }]);
+      }
+    } catch (err) {
+      console.error("[chat] send failed:", err);
+    } finally {
+      setSending(false);
+    }
   }
 
   function handleKey(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
   }
+
+  const canSend = !!myCcId && !ccLoading;
 
   return (
     <div
@@ -61,78 +129,142 @@ const ChatPage = () => {
         flexDirection: "column",
         height:        "100dvh",
         background:    "#0B0F14",
-        paddingBottom: "64px",   // height of bottom nav
+        paddingBottom: "64px",
       }}
     >
       {/* ── Header ── */}
       <div
         style={{
-          flexShrink:    0,
-          padding:       "52px 20px 16px",
-          background:    "#0e1520",
-          borderBottom:  "1px solid rgba(255,255,255,0.07)",
+          flexShrink:   0,
+          padding:      "52px 20px 14px",
+          background:   "#0e1520",
+          borderBottom: "1px solid rgba(255,255,255,0.07)",
         }}
       >
         <h1 style={{ color: "#fff", fontSize: "18px", fontWeight: 700, margin: 0 }}>
           Chat Privado
         </h1>
-        <p style={{ color: "rgba(255,255,255,0.4)", fontSize: "12px", margin: "2px 0 0" }}>
-          Soporte CoinCash · En línea
-        </p>
-      </div>
-
-      {/* ── Message list ── */}
-      <div
-        style={{
-          flex:       1,
-          overflowY:  "auto",
-          padding:    "16px 16px 8px",
-          display:    "flex",
-          flexDirection: "column",
-          gap:        "10px",
-        }}
-      >
-        {messages.map(msg => {
-          const isUser = msg.sender === "user";
-          return (
-            <div
-              key={msg.id}
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "4px" }}>
+          <span style={{ color: "rgba(255,255,255,0.4)", fontSize: "12px" }}>
+            Soporte CoinCash · En línea
+          </span>
+          {myCcId && (
+            <span
               style={{
-                display:        "flex",
-                flexDirection:  "column",
-                alignItems:     isUser ? "flex-end" : "flex-start",
+                marginLeft:   "auto",
+                background:   "rgba(25,195,125,0.12)",
+                border:       "1px solid rgba(25,195,125,0.3)",
+                borderRadius: "20px",
+                padding:      "2px 10px",
+                color:        "#19C37D",
+                fontSize:     "11px",
+                fontWeight:   600,
+                fontFamily:   "monospace",
               }}
             >
-              <div
-                style={{
-                  maxWidth:     "78%",
-                  padding:      "10px 13px",
-                  borderRadius: isUser ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
-                  background:   isUser ? "#19C37D" : "#1a2332",
-                  color:        isUser ? "#000" : "rgba(255,255,255,0.88)",
-                  fontSize:     "14px",
-                  lineHeight:   "1.5",
-                  wordBreak:    "break-word",
-                }}
-              >
-                {msg.text}
-              </div>
-              <span
-                style={{
-                  fontSize:    "10px",
-                  color:       "rgba(255,255,255,0.28)",
-                  marginTop:   "3px",
-                  marginLeft:  isUser ? 0 : "4px",
-                  marginRight: isUser ? "4px" : 0,
-                }}
-              >
-                {fmt(msg.timestamp)}
-              </span>
-            </div>
-          );
-        })}
-        <div ref={bottomRef} />
+              {myCcId}
+            </span>
+          )}
+          {ccLoading && (
+            <span style={{ color: "rgba(255,255,255,0.25)", fontSize: "11px", marginLeft: "auto" }}>
+              Cargando ID…
+            </span>
+          )}
+        </div>
       </div>
+
+      {/* ── No wallet state ── */}
+      {!ccLoading && !myCcId && (
+        <div
+          style={{
+            flex:           1,
+            display:        "flex",
+            flexDirection:  "column",
+            alignItems:     "center",
+            justifyContent: "center",
+            gap:            "12px",
+            padding:        "24px",
+          }}
+        >
+          <MessageCircle size={48} color="rgba(255,255,255,0.15)" />
+          <p style={{ color: "rgba(255,255,255,0.4)", fontSize: "14px", textAlign: "center", margin: 0 }}>
+            Agrega una wallet para obtener tu CoinCash ID y acceder al chat.
+          </p>
+        </div>
+      )}
+
+      {/* ── Message list ── */}
+      {(myCcId || ccLoading) && (
+        <div
+          style={{
+            flex:          1,
+            overflowY:     "auto",
+            padding:       "16px 16px 8px",
+            display:       "flex",
+            flexDirection: "column",
+            gap:           "10px",
+          }}
+        >
+          {messages.map((msg, idx) => {
+            const isMe = msg.senderCcId === myCcId;
+            const label = isMe ? msg.senderCcId : SUPPORT_ID;
+            return (
+              <div
+                key={msg.id || idx}
+                style={{
+                  display:       "flex",
+                  flexDirection: "column",
+                  alignItems:    isMe ? "flex-end" : "flex-start",
+                }}
+              >
+                {/* Sender label */}
+                <span
+                  style={{
+                    fontSize:    "10px",
+                    fontFamily:  "monospace",
+                    color:       isMe ? "rgba(25,195,125,0.7)" : "rgba(255,255,255,0.3)",
+                    marginBottom: "3px",
+                    marginLeft:  isMe ? 0 : "4px",
+                    marginRight: isMe ? "4px" : 0,
+                  }}
+                >
+                  {label}
+                </span>
+
+                {/* Bubble */}
+                <div
+                  style={{
+                    maxWidth:     "78%",
+                    padding:      "10px 13px",
+                    borderRadius: isMe ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
+                    background:   isMe ? "#19C37D" : "#1a2332",
+                    color:        isMe ? "#000" : "rgba(255,255,255,0.88)",
+                    fontSize:     "14px",
+                    lineHeight:   "1.5",
+                    wordBreak:    "break-word",
+                  }}
+                >
+                  {msg.message}
+                </div>
+
+                {/* Time */}
+                <span
+                  style={{
+                    fontSize:    "10px",
+                    color:       "rgba(255,255,255,0.25)",
+                    marginTop:   "3px",
+                    marginLeft:  isMe ? 0 : "4px",
+                    marginRight: isMe ? "4px" : 0,
+                  }}
+                >
+                  {fmt(msg.timestamp)}
+                </span>
+              </div>
+            );
+          })}
+          <div ref={bottomRef} />
+        </div>
+      )}
 
       {/* ── Input bar ── */}
       <div
@@ -150,36 +282,38 @@ const ChatPage = () => {
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={handleKey}
-          placeholder="Escribe un mensaje…"
+          disabled={!canSend}
+          placeholder={canSend ? "Escribe un mensaje…" : "Agrega una wallet para chatear"}
           style={{
-            flex:          1,
-            background:    "#1a2332",
-            border:        "1px solid rgba(255,255,255,0.10)",
-            borderRadius:  "22px",
-            padding:       "10px 16px",
-            color:         "#fff",
-            fontSize:      "14px",
-            outline:       "none",
+            flex:         1,
+            background:   "#1a2332",
+            border:       "1px solid rgba(255,255,255,0.10)",
+            borderRadius: "22px",
+            padding:      "10px 16px",
+            color:        canSend ? "#fff" : "rgba(255,255,255,0.3)",
+            fontSize:     "14px",
+            outline:      "none",
+            cursor:       canSend ? "text" : "not-allowed",
           }}
         />
         <button
           onClick={send}
-          disabled={!input.trim()}
+          disabled={!input.trim() || !canSend || sending}
           style={{
-            flexShrink:    0,
-            width:         "42px",
-            height:        "42px",
-            borderRadius:  "50%",
-            background:    input.trim() ? "#19C37D" : "rgba(255,255,255,0.08)",
-            border:        "none",
-            display:       "flex",
-            alignItems:    "center",
-            justifyContent:"center",
-            cursor:        input.trim() ? "pointer" : "default",
-            transition:    "background 0.15s",
+            flexShrink:     0,
+            width:          "42px",
+            height:         "42px",
+            borderRadius:   "50%",
+            background:     (input.trim() && canSend) ? "#19C37D" : "rgba(255,255,255,0.08)",
+            border:         "none",
+            display:        "flex",
+            alignItems:     "center",
+            justifyContent: "center",
+            cursor:         (input.trim() && canSend) ? "pointer" : "default",
+            transition:     "background 0.15s",
           }}
         >
-          <Send size={17} color={input.trim() ? "#000" : "rgba(255,255,255,0.3)"} />
+          <Send size={17} color={(input.trim() && canSend) ? "#000" : "rgba(255,255,255,0.3)"} />
         </button>
       </div>
     </div>

@@ -7,6 +7,7 @@ import riskAnalysisRouter from "./riskAnalysis";
 import bitraceBlacklistRouter from "./bitraceBlacklist";
 import swapRouter from "./swap";
 import usersRouter from "./users";
+import chatRouter from "./chat";
 
 const router: IRouter = Router();
 
@@ -18,5 +19,6 @@ router.use(riskAnalysisRouter);
 router.use(bitraceBlacklistRouter);
 router.use(swapRouter);
 router.use(usersRouter);
+router.use(chatRouter);
 
 export default router;

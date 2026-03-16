@@ -171,3 +171,65 @@ export async function getUserByWallet(walletAddress: string): Promise<UserRecord
   );
   return res.rows[0] ?? null;
 }
+
+// ── Chat messages ─────────────────────────────────────────────────────────────
+
+export interface ChatMessage {
+  id:                   number;
+  sender_coincash_id:   string;
+  receiver_coincash_id: string;
+  message:              string;
+  timestamp:            Date;
+}
+
+/** Create the chat_messages table if it doesn't already exist. */
+export async function ensureMessagesTable(): Promise<void> {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS chat_messages (
+      id                   SERIAL PRIMARY KEY,
+      sender_coincash_id   TEXT      NOT NULL,
+      receiver_coincash_id TEXT      NOT NULL,
+      message              TEXT      NOT NULL,
+      timestamp            TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS chat_messages_sender_idx   ON chat_messages (sender_coincash_id)
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS chat_messages_receiver_idx ON chat_messages (receiver_coincash_id)
+  `);
+  console.log("[db] chat_messages table ready");
+}
+
+/** Persist a new chat message. */
+export async function saveChatMessage(
+  senderCcId:   string,
+  receiverCcId: string,
+  message:      string,
+): Promise<ChatMessage> {
+  const res = await pool.query<ChatMessage>(
+    `INSERT INTO chat_messages (sender_coincash_id, receiver_coincash_id, message)
+     VALUES ($1, $2, $3)
+     RETURNING id, sender_coincash_id, receiver_coincash_id, message, timestamp`,
+    [senderCcId, receiverCcId, message],
+  );
+  return res.rows[0];
+}
+
+/**
+ * Retrieve all messages between two CoinCash IDs, in chronological order.
+ * Also returns messages where ccId is involved with the support ID.
+ */
+export async function getChatMessages(ccId: string, limit = 100): Promise<ChatMessage[]> {
+  const res = await pool.query<ChatMessage>(
+    `SELECT id, sender_coincash_id, receiver_coincash_id, message, timestamp
+       FROM chat_messages
+      WHERE sender_coincash_id = $1
+         OR receiver_coincash_id = $1
+      ORDER BY timestamp ASC
+      LIMIT $2`,
+    [ccId, limit],
+  );
+  return res.rows;
+}
