@@ -302,70 +302,56 @@ async function fetchUSDTFromTransfers(walletAddress: string): Promise<number> {
 }
 
 // ── Live USDT balance — exported for the 10-second wallet-sheet poller ────────
-// Runs both approaches in parallel and returns the highest value:
-//   1. balanceOf() smart-contract call — authoritative for the current block
-//   2. Transfer-history sum            — reflects latest confirmed transfers fast
+// Reads the account endpoint and returns the USDT balance from account.trc20.
+// Does NOT compute from transaction history.
 export async function fetchUSDTLiveBalance(walletAddress: string): Promise<number> {
-  const [fromContract, fromTransfers] = await Promise.all([
-    fetchTRC20Balance(walletAddress, USDT_CONTRACT),
-    fetchUSDTFromTransfers(walletAddress),
-  ]);
-  return Math.max(fromContract, fromTransfers, 0);
+  const info = await fetchAccountInfo(walletAddress);
+  return info.usdtBalance;
 }
 
 // ── Fetch account info ────────────────────────────────────────────────────────
-// Fetches TRX balance from the account endpoint and USDT balance from three
-// independent sources: balanceOf() x2, account trc20 array, transfer history sum.
-// Takes the maximum across all sources to handle TronGrid caching delays.
+// Authoritative source of truth for TRX and USDT balances.
+//   TRX  → account.balance (in sun; divide by 1,000,000)
+//   USDT → account.trc20 array, matched against both known USDT contract addresses
+//           (TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t  and  TXLAQ63Xg1NAzckPwKHvzw7CSEmLMEqcdj)
+// Balances are read directly from the account state — NOT computed from transactions.
 export async function fetchAccountInfo(address: string): Promise<AccountInfo> {
-  // Run all four requests in parallel for speed
-  const [accountRes, balanceOf1, balanceOf2, fromTransfers] = await Promise.all([
-    (async () => {
-      await rateWait();
-      const res = await tronFetch(`/v1/accounts/${address}`);
-      return res.ok ? res.json() : null;
-    })(),
-    fetchTRC20Balance(address, USDT_CONTRACT),
-    fetchTRC20Balance(address, USDT_CONTRACT2),
-    fetchUSDTFromTransfers(address),
-  ]);
+  try {
+    await rateWait();
+    const res = await tronFetch(`/v1/accounts/${address}`);
+    if (!res.ok) return { trxBalance: 0, usdtBalance: 0, activated: false };
 
-  // TRX balance from account endpoint
-  let trxBalance = 0;
-  let activated  = false;
-  // Start USDT candidates from all direct sources
-  let usdtCandidates = [balanceOf1, balanceOf2, fromTransfers];
+    const json = await res.json();
+    const acc  = json.data?.[0];
+    if (!acc)  return { trxBalance: 0, usdtBalance: 0, activated: false };
 
-  if (accountRes?.data && accountRes.data.length > 0) {
-    const acc = accountRes.data[0];
-    trxBalance = (acc.balance ?? 0) / 1_000_000;
-    activated  = true;
+    // TRX balance: account.balance is in sun (1 TRX = 1,000,000 sun)
+    const trxBalance = (acc.balance ?? 0) / 1_000_000;
 
-    // Also check the account's trc20 array as an additional data source.
-    // TronGrid can return keys in B58, HEX, or with minor case differences —
-    // do a case-insensitive scan of all keys in each entry to avoid silent misses.
+    // USDT TRC20 balance: scan account.trc20 for both known contract addresses.
+    // Each entry in the array is { "<contractAddress>": "<rawBalance>" }.
+    // Raw balance uses 6 decimal places (1 USDT = 1,000,000 raw units).
+    const usdtContracts = new Set([
+      USDT_CONTRACT.toLowerCase(),   // TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t (primary)
+      USDT_CONTRACT2.toLowerCase(),  // TXLAQ63Xg1NAzckPwKHvzw7CSEmLMEqcdj
+    ]);
+
+    let usdtBalance = 0;
     if (Array.isArray(acc.trc20)) {
-      const usdtTargets = new Set([
-        USDT_CONTRACT.toLowerCase(),
-        USDT_CONTRACT2.toLowerCase(),
-        tronAddrToHex(USDT_CONTRACT).toLowerCase(),
-        tronAddrToHex(USDT_CONTRACT2).toLowerCase(),
-      ]);
       for (const entry of acc.trc20) {
-        for (const [k, v] of Object.entries(entry)) {
-          if (usdtTargets.has(k.toLowerCase()) && v !== undefined) {
-            const num = Number(v) / 1_000_000;
-            if (num > 0) usdtCandidates.push(num);
+        for (const [contract, raw] of Object.entries(entry as Record<string, string>)) {
+          if (usdtContracts.has(contract.toLowerCase())) {
+            const val = Number(raw) / 1_000_000;
+            if (Number.isFinite(val) && val > usdtBalance) usdtBalance = val;
           }
         }
       }
     }
+
+    return { trxBalance, usdtBalance, activated: true };
+  } catch {
+    return { trxBalance: 0, usdtBalance: 0, activated: false };
   }
-
-  // Take the highest balance across all sources
-  const usdtBalance = Math.max(...usdtCandidates, 0);
-
-  return { trxBalance, usdtBalance, activated };
 }
 
 // ── Fetch TRX transactions ────────────────────────────────────────────────────
