@@ -306,10 +306,15 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="space-y-1 bg-background/50 p-3 rounded-lg border border-border/50">
               <span className="text-xs text-muted-foreground">Estado</span>
-              <div className="font-semibold flex items-center gap-1.5 text-green-500">
-                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                Activo
-              </div>
+              {(() => {
+                const active = totalTx > 0 || balanceUSDT > 0;
+                return (
+                  <div className={`font-semibold flex items-center gap-1.5 ${active ? "text-green-500" : "text-amber-400"}`}>
+                    <div className={`w-2 h-2 rounded-full ${active ? "bg-green-500 animate-pulse" : "bg-amber-400"}`} />
+                    {active ? "Activo" : "Inactivo"}
+                  </div>
+                );
+              })()}
             </div>
             <div className="space-y-1 bg-background/50 p-3 rounded-lg border border-border/50">
               <span className="text-xs text-muted-foreground">Balance Total</span>

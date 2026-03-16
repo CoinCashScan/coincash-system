@@ -768,7 +768,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
 
               {/* ── 2×2 Detail cards ── */}
               {(() => {
-                const isActive = reportData.totalTx > 0;
+                const isActive = reportData.totalTx > 0 || reportData.balanceUSDT > 0;
                 const cards = [
                   {
                     Icon: Activity,
