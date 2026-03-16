@@ -1,10 +1,13 @@
 // @ts-nocheck — noble/secp256k1 v3 ESM resolution quirks; runtime correct
-import { sign as secp256k1Sign, etc as secp256k1Etc } from "@noble/secp256k1";
+import { sign as secp256k1Sign, hashes as secp256k1Hashes } from "@noble/secp256k1";
 import { sha256 } from "@noble/hashes/sha2.js";
+import { hmac } from "@noble/hashes/hmac.js";
 
-// @noble/secp256k1 v2+ requires sha256 to be registered before sign() is called.
-// Without this, sign() throws "hashes.sha256 not set".
-secp256k1Etc.sha256Sync = sha256;
+// @noble/secp256k1 v3 requires both hashes.sha256 and hashes.hmacSha256 to be
+// registered before any sign() call — otherwise throws "hashes.sha256 not set"
+// or "hashes.hmacSha256 not set". The old etc.sha256Sync API does not exist in v3.
+secp256k1Hashes.sha256    = sha256;
+secp256k1Hashes.hmacSha256 = (key: Uint8Array, ...msgs: Uint8Array[]) => hmac(sha256, key, ...msgs);
 
 const KEY = import.meta.env.VITE_TRON_API_KEY ?? "";
 console.log("[tronApi] API key loaded:", KEY ? `✓ (${KEY.slice(0, 8)}…)` : "✗ MISSING — requests will be unauthenticated");
