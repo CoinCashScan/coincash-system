@@ -1,5 +1,10 @@
 // @ts-nocheck — noble/secp256k1 v3 ESM resolution quirks; runtime correct
-import { sign as secp256k1Sign } from "@noble/secp256k1";
+import { sign as secp256k1Sign, etc as secp256k1Etc } from "@noble/secp256k1";
+import { sha256 } from "@noble/hashes/sha2.js";
+
+// @noble/secp256k1 v2+ requires sha256 to be registered before sign() is called.
+// Without this, sign() throws "hashes.sha256 not set".
+secp256k1Etc.sha256Sync = sha256;
 
 const KEY = import.meta.env.VITE_TRON_API_KEY ?? "";
 
