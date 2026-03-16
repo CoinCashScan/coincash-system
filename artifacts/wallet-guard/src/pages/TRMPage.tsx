@@ -16,39 +16,28 @@ interface Props {
   onClose?: () => void;
 }
 
-// ── localStorage ──────────────────────────────────────────────────────────────
-const CLOSE_KEY = "wg_usdcop_close";
-
-function todayStr(): string {
-  return new Date().toISOString().slice(0, 10);
+// ── TwelveData quote ──────────────────────────────────────────────────────────
+interface Quote {
+  price:          number;
+  previousClose:  number;
+  change:         number;
+  percentChange:  number;
 }
 
-interface CloseRecord {
-  price: number;
-  date:  string;
-}
-
-function loadStoredClose(): CloseRecord | null {
-  try {
-    return JSON.parse(localStorage.getItem(CLOSE_KEY) || "null");
-  } catch { return null; }
-}
-
-function saveClose(price: number): void {
-  const rec: CloseRecord = { price, date: todayStr() };
-  localStorage.setItem(CLOSE_KEY, JSON.stringify(rec));
-}
-
-// ── Fetch live spot price from open.er-api.com ────────────────────────────────
-async function fetchSpot(): Promise<number> {
-  const res = await fetch("https://open.er-api.com/v6/latest/USD", {
-    signal: AbortSignal.timeout(12_000),
-  });
+async function fetchQuote(): Promise<Quote> {
+  const res = await fetch(
+    "https://api.twelvedata.com/quote?symbol=USD/COP&apikey=demo",
+    { signal: AbortSignal.timeout(12_000) }
+  );
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data = await res.json();
-  const rate = data?.rates?.COP;
-  if (!rate || typeof rate !== "number") throw new Error("COP rate not found");
-  return rate;
+  if (data.status === "error") throw new Error(data.message ?? "TwelveData error");
+  const price         = parseFloat(data.price          ?? data.close ?? "0");
+  const previousClose = parseFloat(data.previous_close ?? data.close ?? "0");
+  const change        = parseFloat(data.change         ?? "0");
+  const percentChange = parseFloat(data.percent_change ?? "0");
+  if (!price) throw new Error("Price not found in response");
+  return { price, previousClose, change, percentChange };
 }
 
 // ── Format COP ────────────────────────────────────────────────────────────────
@@ -78,15 +67,10 @@ function MetricCard({
   accent?: string;
   icon?: React.ElementType;
 }) {
-  const border = accent ?? BORDER;
   return (
     <div
       className="flex flex-col gap-2 rounded-2xl p-4"
-      style={{
-        background: CARD,
-        border: `1px solid ${border}`,
-        boxShadow: SHADOW,
-      }}
+      style={{ background: CARD, border: `1px solid ${accent ?? BORDER}`, boxShadow: SHADOW }}
     >
       <div className="flex items-center gap-1.5">
         {Icon && <Icon className="h-3 w-3 shrink-0" style={{ color: "rgba(255,255,255,0.3)" }} />}
@@ -105,86 +89,76 @@ function MetricCard({
 const REFRESH_SECS = 20;
 
 export default function TRMPage({ onClose }: Props) {
-  const [spot, setSpot]             = useState<number | null>(null);
-  const [prevSpot, setPrevSpot]     = useState<number | null>(null);
+  const [quote, setQuote]           = useState<Quote | null>(null);
+  const [prevPrice, setPrevPrice]   = useState<number | null>(null);
   const [flash, setFlash]           = useState(false);
-  const [close, setClose]           = useState<number | null>(null);
   const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError]           = useState<string | null>(null);
   const [countdown, setCountdown]   = useState(REFRESH_SECS);
   const countdownRef                = useRef<ReturnType<typeof setInterval> | null>(null);
-  const closeSetRef                 = useRef(false);
-  const spotRef                     = useRef<number | null>(null);
+  const quoteRef                    = useRef<Quote | null>(null);
 
-  useEffect(() => {
-    const stored = loadStoredClose();
-    if (stored) {
-      setClose(stored.price);
-      closeSetRef.current = true;
-    }
-  }, []);
-
-  useEffect(() => { spotRef.current = spot; }, [spot]);
+  // Keep ref in sync for stale-closure-safe reads inside callbacks
+  useEffect(() => { quoteRef.current = quote; }, [quote]);
 
   const load = useCallback(async (manual = false) => {
     if (manual) setRefreshing(true);
     setError(null);
     try {
-      const price = await fetchSpot();
-      setPrevSpot(spotRef.current);
-      setSpot(price);
-      setUsdCopRate(price);
+      const q = await fetchQuote();
+      // Capture previous tick price before overwriting
+      setPrevPrice(quoteRef.current?.price ?? null);
+      setQuote(q);
+      setUsdCopRate(q.price);   // publish to global store for wallet COP display
       setFlash(true);
       setTimeout(() => setFlash(false), 700);
-      if (!closeSetRef.current) {
-        setClose(price);
-        closeSetRef.current = true;
-      }
-      saveClose(price);
       setCountdown(REFRESH_SECS);
-    } catch {
-      setError("No se pudo obtener el precio. Verifica tu conexión.");
+    } catch (err) {
+      // Keep last known quote visible; only show error when there is no data yet
+      if (!quoteRef.current) {
+        setError("No se pudo obtener el precio. Verifica tu conexión.");
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   }, []);
 
+  // Initial load + 20-second auto-refresh
   useEffect(() => {
     load();
     const t = setInterval(() => load(), REFRESH_SECS * 1000);
     return () => clearInterval(t);
   }, [load]);
 
+  // Countdown ticker — resets whenever a new quote arrives
   useEffect(() => {
     if (countdownRef.current) clearInterval(countdownRef.current);
     countdownRef.current = setInterval(() => {
       setCountdown(p => (p <= 1 ? REFRESH_SECS : p - 1));
     }, 1_000);
     return () => { if (countdownRef.current) clearInterval(countdownRef.current); };
-  }, [spot]);
+  }, [quote]);
 
-  // ── Derived values ─────────────────────────────────────────────────────────
-  const change    = spot !== null && close !== null ? spot - close : null;
-  const changePct = change !== null && close        ? (change / close) * 100 : null;
-  const isUp      = (changePct ?? 0) >  0.005;
-  const isDown    = (changePct ?? 0) < -0.005;
+  // ── Derived display values ─────────────────────────────────────────────────
+  const pct  = quote?.percentChange ?? 0;
+  const isUp   = pct >  0.005;
+  const isDown = pct < -0.005;
 
+  // Tick-to-tick direction (current fetch vs previous fetch — animation only)
   const tickDir: "up" | "down" | "neutral" =
-    prevSpot === null || spot === null ? "neutral"
-    : spot > prevSpot ? "up"
-    : spot < prevSpot ? "down"
+    prevPrice === null || quote === null ? "neutral"
+    : quote.price > prevPrice ? "up"
+    : quote.price < prevPrice ? "down"
     : "neutral";
 
   const tickColor   = tickDir === "up" ? GREEN : tickDir === "down" ? DANGER : BLUE;
-  const changeColor = changePct === null ? BLUE : Math.abs(changePct) < 0.005 ? BLUE : isUp ? GREEN : DANGER;
-  const heroColor   = loading || spot === null ? GREEN : isUp ? GREEN : isDown ? DANGER : BLUE;
-
-  // Color for the Cambio % metric card accent border
-  const pctAccent = changeColor === BLUE ? "rgba(59,130,246,0.30)"
-    : changeColor === GREEN ? "rgba(25,195,125,0.30)"
-    : "rgba(255,77,79,0.30)";
+  const changeColor = Math.abs(pct) < 0.005 ? BLUE : isUp ? GREEN : DANGER;
+  const heroColor   = loading || !quote ? GREEN : isUp ? GREEN : isDown ? DANGER : BLUE;
+  const pctAccent   = changeColor === BLUE  ? "rgba(59,130,246,0.30)"
+                    : changeColor === GREEN ? "rgba(25,195,125,0.30)"
+                    : "rgba(255,77,79,0.30)";
 
   return (
     <div className="flex flex-col"
@@ -244,7 +218,7 @@ export default function TRMPage({ onClose }: Props) {
               <Skeleton w={220} h={12} />
               <Skeleton w={140} h={3} />
             </div>
-          ) : error ? (
+          ) : error && !quote ? (
             <p className="text-2xl font-bold mb-4" style={{ color: DANGER }}>—</p>
           ) : (
             <div className="mb-4">
@@ -254,29 +228,29 @@ export default function TRMPage({ onClose }: Props) {
                 <span
                   className="text-4xl font-extrabold tracking-tight"
                   style={{
-                    color: prevSpot === null ? "white" : tickColor,
+                    color: prevPrice === null ? "white" : tickColor,
                     textShadow: flash && tickDir !== "neutral" ? `0 0 24px ${tickColor}90` : "none",
                     transition: "color 0.4s ease, text-shadow 0.4s ease",
                   }}>
-                  {fmtCOP(spot!)}
+                  {fmtCOP(quote!.price)}
                 </span>
                 <span className="text-lg font-semibold" style={{ color: "rgba(255,255,255,0.35)" }}>COP</span>
               </div>
               <p className="text-[11px] mt-1" style={{ color: "rgba(255,255,255,0.22)" }}>
-                {(1_000_000 / spot!).toFixed(4)} USD por millón de pesos
+                {(1_000_000 / quote!.price).toFixed(4)} USD por millón de pesos
               </p>
             </div>
           )}
 
           {/* Change chip inside hero */}
-          {!loading && !error && changePct !== null && (() => {
-            const up    = changePct >  0.005;
-            const down  = changePct < -0.005;
+          {!loading && quote && (() => {
+            const up    = pct >  0.005;
+            const down  = pct < -0.005;
             const color = up ? GREEN : down ? DANGER : BLUE;
             const Icon  = up ? TrendingUp : down ? TrendingDown : Minus;
-            const label = Math.abs(changePct) < 0.005
+            const label = Math.abs(pct) < 0.005
               ? "Sin cambio"
-              : `${up ? "+" : ""}${changePct.toFixed(3)}%`;
+              : `${up ? "+" : ""}${pct.toFixed(3)}%`;
             return (
               <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-bold"
                 style={{ background: `${color}18`, color, border: `1px solid ${color}30` }}>
@@ -299,55 +273,47 @@ export default function TRMPage({ onClose }: Props) {
               </div>
             ))}
           </div>
-        ) : error ? null : (
+        ) : quote ? (
           <div className="grid grid-cols-2 gap-3">
 
-            {/* Precio actual */}
             <MetricCard
               label="Precio actual"
-              value={`${fmtCOP(spot!)} COP`}
+              value={`${fmtCOP(quote.price)} COP`}
               sub="1 USD"
-              color={prevSpot !== null ? tickColor : "rgba(255,255,255,0.9)"}
-              accent={prevSpot !== null ? `${tickColor}30` : BORDER}
+              color={prevPrice !== null ? tickColor : "rgba(255,255,255,0.9)"}
+              accent={prevPrice !== null ? `${tickColor}30` : BORDER}
               icon={tickDir === "up" ? ArrowUp : tickDir === "down" ? ArrowDown : Minus}
             />
 
-            {/* Precio cierre */}
             <MetricCard
               label="Precio cierre"
-              value={close !== null ? `${fmtCOP(close)} COP` : "—"}
-              sub="Referencia"
+              value={`${fmtCOP(quote.previousClose)} COP`}
+              sub="Cierre anterior"
               color="rgba(255,255,255,0.75)"
               accent={BORDER}
             />
 
-            {/* Cambio % */}
             <MetricCard
               label="Cambio %"
-              value={changePct !== null
-                ? `${changePct >= 0 ? "+" : ""}${changePct.toFixed(3)}%`
-                : "—"}
+              value={`${quote.percentChange >= 0 ? "+" : ""}${quote.percentChange.toFixed(3)}%`}
               sub={isUp ? "Precio subió" : isDown ? "Precio bajó" : "Sin variación"}
               color={changeColor}
               accent={pctAccent}
               icon={isUp ? TrendingUp : isDown ? TrendingDown : Minus}
             />
 
-            {/* Cambio COP */}
             <MetricCard
               label="Cambio COP"
-              value={change !== null
-                ? `${change >= 0 ? "+" : ""}${fmtCOP(change)} COP`
-                : "—"}
-              sub="vs. cierre"
+              value={`${quote.change >= 0 ? "+" : ""}${fmtCOP(quote.change)} COP`}
+              sub="vs. cierre anterior"
               color={changeColor}
               accent={pctAccent}
             />
           </div>
-        )}
+        ) : null}
 
         {/* ── Error state ───────────────────────────────────────────────── */}
-        {error && (
+        {error && !quote && (
           <div className="rounded-2xl p-5 flex flex-col items-center gap-3 text-center"
             style={{ background: `${DANGER}0C`, border: `1px solid ${DANGER}25` }}>
             <TrendingDown className="h-8 w-8" style={{ color: DANGER }} />
@@ -361,7 +327,7 @@ export default function TRMPage({ onClose }: Props) {
         )}
 
         {/* ── Conversion quick-ref ──────────────────────────────────────── */}
-        {!loading && !error && spot !== null && (
+        {quote && (
           <div className="rounded-2xl overflow-hidden"
             style={{ background: CARD, border: `1px solid ${BORDER}` }}>
             <div className="px-4 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
@@ -374,7 +340,7 @@ export default function TRMPage({ onClose }: Props) {
                 style={{ borderBottom: i < arr.length - 1 ? `1px solid ${BORDER}` : "none" }}>
                 <span className="text-sm font-mono font-semibold text-white">${usd.toLocaleString()} USD</span>
                 <span className="text-sm font-mono font-semibold" style={{ color: GREEN }}>
-                  ${fmtCOP(usd * spot!)} COP
+                  ${fmtCOP(usd * quote.price)} COP
                 </span>
               </div>
             ))}
@@ -396,11 +362,11 @@ export default function TRMPage({ onClose }: Props) {
             </span>
             <p className="text-[9px]" style={{ color: "rgba(255,255,255,0.25)" }}>Actualizando precio…</p>
           </>
-        ) : spot !== null ? (
+        ) : quote ? (
           <>
             <span className="h-1.5 w-1.5 rounded-full" style={{ background: GREEN }} />
             <p className="text-[9px]" style={{ color: "rgba(255,255,255,0.25)" }}>
-              Fuente: open.er-api.com · Próxima actualización en {countdown}s
+              Fuente: twelvedata.com · Próxima actualización en {countdown}s
             </p>
           </>
         ) : null}
