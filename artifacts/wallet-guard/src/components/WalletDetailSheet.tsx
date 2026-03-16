@@ -235,11 +235,26 @@ export default function WalletDetailSheet({ wallet, onClose, onRename, onNavigat
     return () => clearTimeout(id);
   }, [loadError, loadWalletData]);
 
-  // ── Auto-refresh every 60 seconds while the sheet is open ─────────────────
+  // ── Auto-refresh every 30 seconds while the sheet is open ─────────────────
   useEffect(() => {
-    const id = setInterval(() => loadWalletData(), 60_000);
+    const id = setInterval(() => loadWalletData(), 30_000);
     return () => clearInterval(id);
   }, [loadWalletData]);
+
+  // ── Instant refresh when the transaction monitor detects a new transfer ─────
+  // The monitor polls every 10 s and dispatches "wg:new-transfer" with the
+  // wallet address.  We react only for this wallet so unrelated wallets don't
+  // trigger unnecessary fetches.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ address: string }>).detail;
+      if (detail?.address?.toLowerCase() === wallet.address.toLowerCase()) {
+        loadWalletData();
+      }
+    };
+    window.addEventListener("wg:new-transfer", handler);
+    return () => window.removeEventListener("wg:new-transfer", handler);
+  }, [wallet.address, loadWalletData]);
 
   // ── Load fee estimate + live account resources when USDT send view opens ───
   useEffect(() => {

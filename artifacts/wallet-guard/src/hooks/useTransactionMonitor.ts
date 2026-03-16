@@ -83,8 +83,7 @@ async function fetchIncomingUSDT(address: string): Promise<IncomingTransfer[]> {
       const json = await res.json();
       for (const tx of json.data ?? []) {
         if ((tx.to ?? "").toLowerCase() !== address.toLowerCase()) continue;
-        const dec = tx.token_info?.decimals ?? 6;
-        const n   = parseFloat(tx.value ?? "0") / Math.pow(10, dec);
+        const n   = parseFloat(tx.value ?? "0") / 1_000_000; // USDT always 6 decimals
         const amt = n.toLocaleString("en-US", { maximumFractionDigits: 2 }) + " USDT";
         results.push({ txId: tx.transaction_id, sender: tx.from, amount: amt, token: "USDT" });
       }
@@ -155,6 +154,13 @@ export function useTransactionMonitor(
         if (seenRef.current.has(tx.txId)) continue;
         seenRef.current.add(tx.txId);
         saveSeen(seenRef.current);
+
+        // Always dispatch refresh event — even on seed run — so the wallet sheet
+        // picks up any balance changes that happened while the app was closed.
+        window.dispatchEvent(
+          new CustomEvent("wg:new-transfer", { detail: { address: wallet.address } })
+        );
+
         if (isSeedRun) continue;
 
         const { sender, amount, token } = tx;
