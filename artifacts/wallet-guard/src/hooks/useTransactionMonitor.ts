@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback } from "react";
 import { toast } from "sonner";
 import type { SavedWallet } from "@/pages/WalletsPage";
 import { showRiskAlert } from "@/components/RiskAlertToast";
-import { saveRisk, fetchRiskAnalysis } from "@/lib/riskCache";
+import { saveRisk, fetchRiskAnalysis, saveRiskByAddress, loadRiskByAddress } from "@/lib/riskCache";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const USDT_CONTRACTS   = [
@@ -175,10 +175,30 @@ export function useTransactionMonitor(
           position:    "top-center",
         });
 
+        // ── Address cache hit → skip API call, reuse stored result ───────────
+        const cachedByAddr = loadRiskByAddress(sender);
+        if (cachedByAddr) {
+          saveRisk(tx.txId, cachedByAddr);     // link result to this tx ID too
+          toast.dismiss(scanId);
+          showRiskAlert({
+            walletName:   wallet.name,
+            amount,
+            token,
+            sender,
+            risk:         cachedByAddr,
+            onScanSender: onScanRef.current,
+          });
+          inFlightRef.current.delete(sender);
+          continue;
+        }
+
         // ── Phase 2: risk analysis → dismiss phase 1 → show result ──────────
         fetchRiskAnalysis(sender)
           .then(result => {
-            if (result) saveRisk(tx.txId, result);
+            if (result) {
+              saveRisk(tx.txId, result);
+              saveRiskByAddress(sender, result);   // cache for future txs from same address
+            }
             toast.dismiss(scanId);
             showRiskAlert({
               walletName:   wallet.name,

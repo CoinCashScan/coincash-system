@@ -16,7 +16,11 @@ import {
 } from "@/lib/tronApi";
 import { decryptPrivateKey, hasEncryptedKey } from "@/lib/security";
 import type { SavedWallet } from "@/pages/WalletsPage";
-import { loadAllRisks, saveRisk, fetchRiskAnalysis, type RiskResult } from "@/lib/riskCache";
+import {
+  loadAllRisks, saveRisk, fetchRiskAnalysis,
+  saveRiskByAddress, loadRiskByAddress,
+  type RiskResult,
+} from "@/lib/riskCache";
 import QRScannerDialog from "@/components/QRScannerDialog";
 
 // ── Palette ───────────────────────────────────────────────────────────────────
@@ -31,7 +35,7 @@ const AMBER  = "#F59E0B";
 const TEAL   = "#2DD4BF";
 const BORDER = "rgba(255,255,255,0.06)";
 
-type View = "overview" | "receive" | "send" | "history";
+type View = "overview" | "receive" | "send" | "history" | "tx-detail";
 type SendStep = "form" | "confirm" | "signing" | "done";
 type Token = "TRX" | "USDT";
 
@@ -143,6 +147,10 @@ export default function WalletDetailSheet({ wallet, onClose, onRename, onNavigat
   const [risks, setRisks] = useState<Map<string, RiskResult>>(() => loadAllRisks());
   // Set of txIds currently being analyzed — prevents duplicate requests
   const analyzingRef = useRef<Set<string>>(new Set());
+
+  // ── Transaction detail screen ──────────────────────────────────────────────
+  const [selectedTx, setSelectedTx] = useState<TxRecord | null>(null);
+  const [prevView,   setPrevView]   = useState<View>("overview");
 
   // Prevent stale-closure double-fetch on fast wallet switches
   const fetchingRef = useRef(false);
@@ -297,8 +305,9 @@ export default function WalletDetailSheet({ wallet, onClose, onRename, onNavigat
   }, [view, sendToken, wallet.address, relayActive]);
 
   // ── Risk analysis — triggers automatically when transactions are loaded ─────
-  // Refreshes the risk map from cache, then queues analyses for any incoming
-  // USDT txs that don't yet have a stored result.
+  // Refreshes the risk map from cache, then queues analyses for any incoming txs
+  // that don't yet have a stored result. Checks the address-keyed cache first so
+  // the same sender address is never sent to the backend more than once.
   useEffect(() => {
     if (!txs.length) return;
 
@@ -315,12 +324,22 @@ export default function WalletDetailSheet({ wallet, onClose, onRename, onNavigat
 
     for (const tx of pending) {
       if (!tx.counterpart) continue;
+
+      // ── Address cache hit: reuse without calling the backend ───────────────
+      const byAddr = loadRiskByAddress(tx.counterpart);
+      if (byAddr) {
+        saveRisk(tx.id, byAddr);
+        setRisks(prev => { const next = new Map(prev); next.set(tx.id, byAddr); return next; });
+        continue;
+      }
+
       analyzingRef.current.add(tx.id);
 
       fetchRiskAnalysis(tx.counterpart)
         .then(result => {
           if (!result) return;
           saveRisk(tx.id, result);
+          saveRiskByAddress(tx.counterpart, result);   // cache for future txs from same sender
           setRisks(prev => {
             const next = new Map(prev);
             next.set(tx.id, result);
@@ -332,6 +351,13 @@ export default function WalletDetailSheet({ wallet, onClose, onRename, onNavigat
         });
     }
   }, [txs]);
+
+  // ── Open tx-detail screen ─────────────────────────────────────────────────
+  const handleSelectTx = useCallback((tx: TxRecord) => {
+    setPrevView(view);
+    setSelectedTx(tx);
+    setView("tx-detail");
+  }, [view]);
 
   // ── QR code ───────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -654,7 +680,7 @@ export default function WalletDetailSheet({ wallet, onClose, onRename, onNavigat
                 </p>
               </div>
             ) : (
-              <TxList txs={txs.slice(0, 8)} address={wallet.address} risks={risks} analyzing={analyzingRef.current} />
+              <TxList txs={txs.slice(0, 8)} address={wallet.address} risks={risks} analyzing={analyzingRef.current} onSelectTx={handleSelectTx} />
             )}
           </div>
         )}
@@ -1037,10 +1063,187 @@ export default function WalletDetailSheet({ wallet, onClose, onRename, onNavigat
                 </p>
               </div>
             ) : (
-              <TxList txs={txs} address={wallet.address} risks={risks} analyzing={analyzingRef.current} />
+              <TxList txs={txs} address={wallet.address} risks={risks} analyzing={analyzingRef.current} onSelectTx={handleSelectTx} />
             )}
           </div>
         )}
+
+        {/* ════════════════════════════════════════
+            VIEW: TX-DETAIL
+        ════════════════════════════════════════ */}
+        {view === "tx-detail" && selectedTx && (() => {
+          const tx         = selectedTx;
+          const isIn       = tx.type === "in";
+          const riskResult = risks?.get(tx.id);
+          const riskColor  = !riskResult ? (isIn ? GREEN : DANGER)
+            : riskResult.level === "HIGH"     ? DANGER
+            : riskResult.level === "MODERATE" ? AMBER
+            : GREEN;
+          const tokenColor = tx.token === "USDT" ? TEAL : "#FF2D55";
+
+          return (
+            <div className="px-4 pb-10">
+              {/* Header */}
+              <div className="flex items-center gap-3 mb-5">
+                <button onClick={() => { setView(prevView); setSelectedTx(null); }}
+                  className="flex items-center gap-1.5 text-sm font-medium active:opacity-60"
+                  style={{ color: "rgba(255,255,255,0.5)" }}>
+                  <ArrowLeft className="h-4 w-4" /> Volver
+                </button>
+                <p className="text-base font-bold text-white">Detalle de transacción</p>
+              </div>
+
+              {/* Amount card */}
+              <div className="rounded-2xl p-5 mb-4 flex items-center gap-4"
+                style={{ background: CARD, border: `1px solid ${riskColor}25` }}>
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full"
+                  style={{ background: `${riskColor}15` }}>
+                  {isIn
+                    ? <ArrowDownLeft className="h-6 w-6" style={{ color: riskColor }} />
+                    : <ArrowUpRight  className="h-6 w-6" style={{ color: riskColor }} />
+                  }
+                </div>
+                <div>
+                  <p className="text-2xl font-bold" style={{ color: riskColor }}>
+                    {isIn ? "+" : "−"}{fmtAmt(tx.amount, tx.token === "USDT" ? 2 : 4)}{" "}
+                    <span style={{ color: tokenColor }}>{tx.token}</span>
+                  </p>
+                  <p className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.35)" }}>
+                    {isIn ? "Recibido" : "Enviado"} · {fmtDate(tx.ts)}
+                  </p>
+                </div>
+              </div>
+
+              {/* Meta rows */}
+              <div className="rounded-2xl overflow-hidden mb-4"
+                style={{ border: `1px solid ${BORDER}`, background: CARD }}>
+                {/* Counterpart address */}
+                <div className="px-4 py-3 flex items-start justify-between gap-3"
+                  style={{ borderBottom: `1px solid ${BORDER}` }}>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[10px] font-medium mb-0.5" style={{ color: "rgba(255,255,255,0.3)" }}>
+                      {isIn ? "Remitente" : "Destinatario"}
+                    </p>
+                    <p className="text-[11px] font-mono break-all" style={{ color: "rgba(255,255,255,0.75)" }}>
+                      {tx.counterpart || "—"}
+                    </p>
+                  </div>
+                  {tx.counterpart && (
+                    <button onClick={() => { navigator.clipboard.writeText(tx.counterpart); toast.success("Dirección copiada."); }}
+                      className="shrink-0 active:opacity-60">
+                      <Copy className="h-3.5 w-3.5" style={{ color: "rgba(255,255,255,0.3)" }} />
+                    </button>
+                  )}
+                </div>
+                {/* TX ID */}
+                <div className="px-4 py-3 flex items-center justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[10px] font-medium mb-0.5" style={{ color: "rgba(255,255,255,0.3)" }}>TX ID</p>
+                    <p className="text-[11px] font-mono truncate" style={{ color: "rgba(255,255,255,0.55)" }}>
+                      {tx.id.slice(0, 16)}…{tx.id.slice(-10)}
+                    </p>
+                  </div>
+                  <button onClick={() => { navigator.clipboard.writeText(tx.id); toast.success("TX ID copiado."); }}
+                    className="shrink-0 active:opacity-60">
+                    <Copy className="h-3.5 w-3.5" style={{ color: "rgba(255,255,255,0.3)" }} />
+                  </button>
+                </div>
+              </div>
+
+              {/* ── Risk Report (incoming only) ───────────────────────────── */}
+              {isIn && (
+                <div className="rounded-2xl overflow-hidden"
+                  style={{ border: `1px solid ${riskResult ? `${riskColor}30` : BORDER}`, background: CARD }}>
+                  <div className="px-4 pt-4 pb-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <ShieldAlert className="h-4 w-4" style={{ color: riskResult ? riskColor : "rgba(255,255,255,0.3)" }} />
+                      <p className="text-sm font-bold text-white">Análisis de riesgo</p>
+                    </div>
+                    <p className="text-[10px]" style={{ color: "rgba(255,255,255,0.3)" }}>
+                      Remitente: {tx.counterpart ? `${tx.counterpart.slice(0,10)}…${tx.counterpart.slice(-6)}` : "—"}
+                    </p>
+                  </div>
+
+                  {!riskResult ? (
+                    <div className="px-4 py-6 flex flex-col items-center gap-2">
+                      <Loader2 className="h-5 w-5 animate-spin" style={{ color: "rgba(255,255,255,0.2)" }} />
+                      <p className="text-xs" style={{ color: "rgba(255,255,255,0.3)" }}>Analizando dirección…</p>
+                    </div>
+                  ) : (
+                    <div className="px-4 py-4">
+                      {/* Score bar */}
+                      <div className="mb-4">
+                        <div className="flex items-end justify-between mb-1.5">
+                          <p className="text-xs font-medium" style={{ color: "rgba(255,255,255,0.45)" }}>
+                            Puntuación de riesgo
+                          </p>
+                          <span className="text-2xl font-bold" style={{ color: riskColor }}>
+                            {riskResult.score}<span className="text-sm font-normal" style={{ color: "rgba(255,255,255,0.3)" }}>/100</span>
+                          </span>
+                        </div>
+                        <div className="h-2 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
+                          <div className="h-full rounded-full transition-all duration-700"
+                            style={{ width: `${riskResult.score}%`, background: riskColor }} />
+                        </div>
+                      </div>
+
+                      {/* Level badge */}
+                      <div className="flex items-center gap-2 mb-4">
+                        <span className="rounded-full px-3 py-1 text-xs font-bold"
+                          style={{ background: `${riskColor}18`, color: riskColor, border: `1px solid ${riskColor}30` }}>
+                          {riskResult.level === "HIGH" ? "⚠ Riesgo alto"
+                            : riskResult.level === "MODERATE" ? "Riesgo moderado"
+                            : "✓ Riesgo bajo"}
+                        </span>
+                        {riskResult.walletAgeDays !== null && (
+                          <span className="text-[10px]" style={{ color: "rgba(255,255,255,0.3)" }}>
+                            Antigüedad: {riskResult.walletAgeDays} días
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Indicators grid */}
+                      <div className="grid grid-cols-3 gap-2 mb-4">
+                        {[
+                          { label: "Lista negra", value: riskResult.inBlacklist },
+                          { label: "Wallets congeladas", value: riskResult.interactedWithFrozen },
+                          { label: "Transf. sospechosas", value: riskResult.hasSuspiciousTransfer },
+                        ].map(({ label, value }) => (
+                          <div key={label} className="rounded-xl px-2.5 py-2 flex flex-col gap-0.5 items-center text-center"
+                            style={{ background: value ? `${DANGER}10` : "rgba(255,255,255,0.03)", border: `1px solid ${value ? `${DANGER}25` : "rgba(255,255,255,0.05)"}` }}>
+                            <span className="text-base">{value ? "🚨" : "✓"}</span>
+                            <p className="text-[9px] leading-tight font-medium"
+                              style={{ color: value ? DANGER : "rgba(255,255,255,0.35)" }}>
+                              {label}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Reasons */}
+                      {riskResult.reasons.length > 0 && (
+                        <div className="rounded-xl px-3 py-3"
+                          style={{ background: "rgba(255,255,255,0.025)", border: `1px solid ${BORDER}` }}>
+                          <p className="text-[10px] font-semibold mb-2" style={{ color: "rgba(255,255,255,0.4)" }}>
+                            Factores detectados
+                          </p>
+                          <div className="flex flex-col gap-1.5">
+                            {riskResult.reasons.map((r, i) => (
+                              <div key={i} className="flex items-start gap-1.5">
+                                <span className="text-[10px] mt-0.5" style={{ color: riskColor }}>•</span>
+                                <p className="text-[10px] leading-snug" style={{ color: "rgba(255,255,255,0.5)" }}>{r}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
       {/* ══════════════════════════════════════════════
           RENAME MODAL
@@ -1134,10 +1337,18 @@ export default function WalletDetailSheet({ wallet, onClose, onRename, onNavigat
 
 // ── Transaction list sub-component ────────────────────────────────────────────
 interface TxListProps {
-  txs:       TxRecord[];
-  address:   string;
-  risks?:    Map<string, RiskResult>;
-  analyzing?: Set<string>;
+  txs:         TxRecord[];
+  address:     string;
+  risks?:      Map<string, RiskResult>;
+  analyzing?:  Set<string>;
+  onSelectTx?: (tx: TxRecord) => void;
+}
+
+// ── Risk color helpers shared by list + badge ─────────────────────────────────
+function riskColorFromResult(result: RiskResult): string {
+  if (result.score >= 60 || result.level === "HIGH")     return DANGER;
+  if (result.level === "MODERATE")                       return AMBER;
+  return GREEN;
 }
 
 function RiskBadge({ result, pending }: { result: RiskResult | undefined; pending: boolean }) {
@@ -1151,9 +1362,13 @@ function RiskBadge({ result, pending }: { result: RiskResult | undefined; pendin
   }
   if (!result) return null;
 
-  const { level } = result;
-  const color = level === "HIGH" ? DANGER : level === "MODERATE" ? AMBER : GREEN;
-  const label = level === "HIGH" ? "ALTO" : level === "MODERATE" ? "MOD" : "BAJO";
+  const color = riskColorFromResult(result);
+  // Show ⚠ warning label for score >= 60; lighter labels for safer addresses
+  const label = result.score >= 60
+    ? "⚠ RIESGO"
+    : result.level === "MODERATE"
+      ? "MOD"
+      : "BAJO";
 
   return (
     <span className="flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[9px] font-bold"
@@ -1163,10 +1378,11 @@ function RiskBadge({ result, pending }: { result: RiskResult | undefined; pendin
   );
 }
 
-function TxList({ txs, address, risks, analyzing }: TxListProps) {
+function TxList({ txs, address, risks, analyzing, onSelectTx }: TxListProps) {
   const [copiedTx, setCopiedTx] = useState<string | null>(null);
 
-  const copyTxId = (id: string) => {
+  const copyTxId = (e: MouseEvent, id: string) => {
+    e.stopPropagation();
     navigator.clipboard.writeText(id);
     setCopiedTx(id);
     setTimeout(() => setCopiedTx(null), 1500);
@@ -1177,21 +1393,29 @@ function TxList({ txs, address, risks, analyzing }: TxListProps) {
     <div className="rounded-2xl overflow-hidden" style={{ border: `1px solid ${BORDER}`, background: CARD }}>
       {txs.map((tx, i) => {
         const isIn       = tx.type === "in";
-        const color      = isIn ? GREEN : DANGER;
         const tokenColor = tx.token === "USDT" ? TEAL : "#FF2D55";
         const riskResult = risks?.get(tx.id);
         const isPending  = isIn && !riskResult && (analyzing?.has(tx.id) ?? false);
+        // Icon/row color: reflects risk level for incoming, always red for outgoing
+        const iconColor  = isIn
+          ? (riskResult ? riskColorFromResult(riskResult) : GREEN)
+          : DANGER;
+        // Expanded warning: show for score >= 60 (high and upper-moderate risk)
+        const showWarning = isIn && riskResult && riskResult.score >= 60;
+        const warnColor   = riskResult ? riskColorFromResult(riskResult) : DANGER;
 
         return (
-          <div key={tx.id} className="px-4 py-3.5"
-            style={{ borderBottom: i < txs.length - 1 ? `1px solid ${BORDER}` : "none" }}>
+          <div key={tx.id}
+            className="px-4 py-3.5 cursor-pointer active:opacity-70 transition-opacity"
+            style={{ borderBottom: i < txs.length - 1 ? `1px solid ${BORDER}` : "none" }}
+            onClick={() => onSelectTx?.(tx)}>
             <div className="flex items-center gap-3">
-              {/* Direction icon */}
+              {/* Direction icon — color reflects risk level for incoming */}
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
-                style={{ background: `${color}15` }}>
+                style={{ background: `${iconColor}15` }}>
                 {isIn
-                  ? <ArrowDownLeft className="h-4 w-4" style={{ color }} />
-                  : <ArrowUpRight  className="h-4 w-4" style={{ color }} />
+                  ? <ArrowDownLeft className="h-4 w-4" style={{ color: iconColor }} />
+                  : <ArrowUpRight  className="h-4 w-4" style={{ color: iconColor }} />
                 }
               </div>
 
@@ -1223,10 +1447,10 @@ function TxList({ txs, address, risks, analyzing }: TxListProps) {
               {/* Amount + copy */}
               <div className="flex flex-col items-end gap-1 shrink-0">
                 <span className="text-sm font-bold"
-                  style={{ color: isIn ? GREEN : "rgba(255,255,255,0.85)" }}>
+                  style={{ color: isIn ? iconColor : "rgba(255,255,255,0.85)" }}>
                   {isIn ? "+" : "-"}{fmtAmt(tx.amount, tx.token === "USDT" ? 2 : 4)} {tx.token}
                 </span>
-                <button onClick={() => copyTxId(tx.id)}
+                <button onClick={e => copyTxId(e, tx.id)}
                   className="flex items-center gap-0.5 text-[9px]"
                   style={{ color: "rgba(255,255,255,0.2)" }}>
                   {copiedTx === tx.id
@@ -1238,20 +1462,23 @@ function TxList({ txs, address, risks, analyzing }: TxListProps) {
               </div>
             </div>
 
-            {/* Expanded risk detail — only for HIGH risk incoming transactions */}
-            {isIn && riskResult?.level === "HIGH" && (
+            {/* ── Warning banner — score >= 60 (high + upper-moderate risk) ── */}
+            {showWarning && (
               <div className="mt-2 ml-12 flex items-start gap-1.5 rounded-xl px-2.5 py-2"
-                style={{ background: `${DANGER}0C`, border: `1px solid ${DANGER}20` }}>
-                <ShieldAlert className="h-3 w-3 shrink-0 mt-0.5" style={{ color: DANGER }} />
+                style={{ background: `${warnColor}0C`, border: `1px solid ${warnColor}25` }}>
+                <ShieldAlert className="h-3 w-3 shrink-0 mt-0.5" style={{ color: warnColor }} />
                 <div className="flex-1 min-w-0">
-                  <p className="text-[9px] font-semibold mb-0.5" style={{ color: DANGER }}>
-                    Remitente de alto riesgo · {riskResult.score}/100
+                  <p className="text-[9px] font-semibold mb-0.5" style={{ color: warnColor }}>
+                    ⚠ Riesgo alto · {riskResult!.score}/100 — Dirección con actividad sospechosa
                   </p>
-                  {riskResult.reasons.slice(0, 2).map((r, ri) => (
+                  {riskResult!.reasons.slice(0, 2).map((r, ri) => (
                     <p key={ri} className="text-[9px] leading-snug" style={{ color: "rgba(255,255,255,0.4)" }}>
                       • {r}
                     </p>
                   ))}
+                  <p className="text-[9px] mt-1" style={{ color: warnColor, opacity: 0.7 }}>
+                    Toca para ver el informe completo →
+                  </p>
                 </div>
               </div>
             )}
