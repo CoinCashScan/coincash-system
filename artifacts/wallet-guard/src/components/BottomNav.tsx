@@ -1,6 +1,6 @@
-import { LayoutDashboard, Wallet, ArrowDownUp, ScanSearch, Settings } from "lucide-react";
+import { LayoutDashboard, Wallet, ArrowDownUp, ScanSearch, MessageCircle, Settings } from "lucide-react";
 
-export type Tab = "dashboard" | "wallets" | "swap" | "scanner" | "settings";
+export type Tab = "dashboard" | "wallets" | "swap" | "scanner" | "chat" | "settings";
 
 interface BottomNavProps {
   active: Tab;
@@ -15,8 +15,9 @@ const BORDER = "rgba(255,255,255,0.07)";
 const TABS: { id: Tab; label: string; Icon: React.FC<{ className?: string }>; accent?: string }[] = [
   { id: "dashboard", label: "Dashboard", Icon: LayoutDashboard },
   { id: "wallets",   label: "Wallets",   Icon: Wallet },
-  { id: "swap",      label: "Swap",      Icon: ArrowDownUp, accent: PURPLE },
+  { id: "swap",      label: "Swap",      Icon: ArrowDownUp,    accent: PURPLE },
   { id: "scanner",   label: "Scanner",   Icon: ScanSearch },
+  { id: "chat",      label: "Chat",      Icon: MessageCircle },
   { id: "settings",  label: "Settings",  Icon: Settings },
 ];
 
