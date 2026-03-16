@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { ArrowLeft, RefreshCw, TrendingUp, TrendingDown, Minus, Activity, ArrowUp, ArrowDown } from "lucide-react";
+import { setUsdCopRate } from "@/lib/rateStore";
 
 // ── Palette ────────────────────────────────────────────────────────────────────
 const BG     = "#0B0F14";
@@ -148,6 +149,7 @@ export default function TRMPage({ onClose }: Props) {
       // Capture previous tick value before overwriting
       setPrevSpot(spotRef.current);
       setSpot(price);
+      setUsdCopRate(price);
       // Trigger brief flash animation on every price update
       setFlash(true);
       setTimeout(() => setFlash(false), 700);

@@ -22,6 +22,7 @@ import {
   type RiskResult,
 } from "@/lib/riskCache";
 import QRScannerDialog from "@/components/QRScannerDialog";
+import { getUsdCopRate, subscribeUsdCopRate } from "@/lib/rateStore";
 
 // ── Palette ───────────────────────────────────────────────────────────────────
 const BG     = "#0B0F14";
@@ -298,24 +299,14 @@ export default function WalletDetailSheet({ wallet, onClose, onRename, onNavigat
     return () => { cancelled = true; clearInterval(id); };
   }, [wallet.address]);
 
-  // ── USD → COP rate poller (60-second refresh) ─────────────────────────────
+  // ── USD → COP rate — sourced from the global rate store ──────────────────
+  // The TRM page publishes to rateStore on every successful fetch from
+  // open.er-api.com. We seed from the cached value on mount, then subscribe
+  // for any subsequent updates (no independent HTTP fetch here).
   useEffect(() => {
-    let cancelled = false;
-    const fetchCOP = async () => {
-      try {
-        const res = await fetch(
-          "https://api.exchangerate.host/latest?base=USD&symbols=COP",
-          { signal: AbortSignal.timeout(8_000) }
-        );
-        if (!res.ok) return;
-        const data = await res.json();
-        const rate = data?.rates?.COP;
-        if (!cancelled && typeof rate === "number" && rate > 0) setCopRate(rate);
-      } catch { /* non-fatal — hide COP line silently */ }
-    };
-    fetchCOP();
-    const id = setInterval(fetchCOP, 60_000);
-    return () => { cancelled = true; clearInterval(id); };
+    const current = getUsdCopRate();
+    if (current !== null) setCopRate(current);
+    return subscribeUsdCopRate(rate => setCopRate(rate));
   }, []);
 
   // ── Load fee estimate + live account resources when USDT send view opens ───
