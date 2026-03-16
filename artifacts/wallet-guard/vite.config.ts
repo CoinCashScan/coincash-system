@@ -70,6 +70,7 @@ export default defineConfig({
       "/api-server": {
         target: "http://localhost:8080",
         changeOrigin: true,
+        ws: true,
         rewrite: (path) => path.replace(/^\/api-server/, ""),
       },
     },

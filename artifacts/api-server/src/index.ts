@@ -1,19 +1,113 @@
+// @ts-nocheck
+import { createServer } from "http";
+import { Server as SocketIO } from "socket.io";
 import app from "./app";
+import { saveChatMessage, getChatUserById } from "./lib/db";
 
-const rawPort = process.env["PORT"];
-
-if (!rawPort) {
-  throw new Error(
-    "PORT environment variable is required but was not provided.",
-  );
-}
-
-const port = Number(rawPort);
+const rawPort = process.env["PORT"] ?? "3000";
+const port    = Number(rawPort);
 
 if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-app.listen(port, () => {
-  console.log(`Server listening on port ${port}`);
+// ── HTTP + Socket.io server ───────────────────────────────────────────────────
+const httpServer = createServer(app);
+
+const io = new SocketIO(httpServer, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"],
+  },
+  // Allow clients to reach socket.io through the /api-server proxy path
+  path: "/socket.io",
+});
+
+// Attach io to the Express app so REST routes can emit events
+app.set("io", io);
+
+// ── Socket.io connection handling ─────────────────────────────────────────────
+const SUPPORT_ID = "CC-SUPPORT";
+const CC_RE      = /^CC-\d{6}$/;
+
+io.on("connection", (socket) => {
+  let myId: string | null = null;
+
+  /**
+   * register — client announces its CC-ID.
+   * Joins a room named after the CC-ID so targeted events can be sent.
+   */
+  socket.on("register", (ccId: string) => {
+    if (!CC_RE.test(ccId)) return;
+    myId = ccId;
+    socket.join(ccId);
+
+    // Admins also join the CC-SUPPORT room so they receive incoming messages
+    getChatUserById(ccId)
+      .then((rec) => {
+        if (rec?.linked_to) socket.join(rec.linked_to);
+      })
+      .catch(() => {});
+
+    console.log(`[socket] ${ccId} connected (${socket.id})`);
+  });
+
+  /**
+   * send_message — client sends a chat message.
+   * { senderCcId, receiverCcId, message }
+   *
+   * Resolves admin → CC-SUPPORT proxy, saves to DB, and emits
+   * receive_message to both sender and receiver rooms.
+   */
+  socket.on("send_message", async ({ senderCcId, receiverCcId, message }) => {
+    if (!senderCcId || !CC_RE.test(senderCcId)) return;
+    if (!receiverCcId || !message?.trim()) return;
+
+    try {
+      // Resolve admin proxy
+      const senderRec      = await getChatUserById(senderCcId).catch(() => null);
+      const effectiveSender = senderRec?.linked_to ?? senderCcId;
+      const isAdmin        = senderRec?.role === "admin" && !!senderRec.linked_to;
+
+      // Save message to DB
+      const saved = await saveChatMessage(effectiveSender, receiverCcId, message.trim());
+      const msg   = formatMsg(saved);
+
+      // Deliver to receiver room + echo to sender
+      io.to(receiverCcId).emit("receive_message", msg);
+      io.to(senderCcId).emit("receive_message", msg);
+
+      // Auto-reply: only when a regular user messages CC-SUPPORT
+      if (!isAdmin && receiverCcId === SUPPORT_ID) {
+        const replyText  = "Gracias por tu mensaje. Un agente de soporte se pondrá en contacto contigo pronto.";
+        const reply      = await saveChatMessage(SUPPORT_ID, senderCcId, replyText);
+        const replyMsg   = formatMsg(reply);
+        io.to(senderCcId).emit("receive_message", replyMsg);
+        // Also push to admin(s) watching CC-SUPPORT room
+        io.to(SUPPORT_ID).emit("receive_message", replyMsg);
+      }
+    } catch (err: any) {
+      console.error("[socket] send_message error:", err?.message);
+      socket.emit("error", { error: "Failed to send message" });
+    }
+  });
+
+  socket.on("disconnect", () => {
+    console.log(`[socket] ${myId ?? "?"} disconnected (${socket.id})`);
+  });
+});
+
+function formatMsg(m: any) {
+  return {
+    id:          m.id,
+    senderCcId:  m.sender_coincash_id,
+    receiverCcId: m.receiver_coincash_id,
+    message:     m.message,
+    timestamp:   m.timestamp,
+  };
+}
+
+// ── Start server ──────────────────────────────────────────────────────────────
+httpServer.listen(port, () => {
+  console.log(`Server listening on port ${port} (HTTP + Socket.io)`);
 });

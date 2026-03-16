@@ -314,6 +314,62 @@ export async function getAllChatUsers(): Promise<ChatUserRecord[]> {
   return res.rows;
 }
 
+// ── Chat contacts ─────────────────────────────────────────────────────────────
+
+export interface ChatContactRecord {
+  id:         number;
+  user_id:    string;
+  contact_id: string;
+  created_at: Date;
+}
+
+/** Create the chat_contacts table if it doesn't already exist. */
+export async function ensureChatContactsTable(): Promise<void> {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS chat_contacts (
+      id         SERIAL    PRIMARY KEY,
+      user_id    TEXT      NOT NULL,
+      contact_id TEXT      NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      UNIQUE (user_id, contact_id)
+    )
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS chat_contacts_user_idx    ON chat_contacts (user_id)
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS chat_contacts_contact_idx ON chat_contacts (contact_id)
+  `);
+  console.log("[db] chat_contacts table ready");
+}
+
+/** Add a contact relationship (idempotent). Returns the record. */
+export async function addChatContact(
+  userId:    string,
+  contactId: string,
+): Promise<ChatContactRecord> {
+  const res = await pool.query<ChatContactRecord>(
+    `INSERT INTO chat_contacts (user_id, contact_id)
+     VALUES ($1, $2)
+     ON CONFLICT (user_id, contact_id) DO UPDATE SET user_id = EXCLUDED.user_id
+     RETURNING id, user_id, contact_id, created_at`,
+    [userId, contactId],
+  );
+  return res.rows[0];
+}
+
+/** Return all contacts for a given user. */
+export async function getChatContacts(userId: string): Promise<ChatContactRecord[]> {
+  const res = await pool.query<ChatContactRecord>(
+    `SELECT id, user_id, contact_id, created_at
+       FROM chat_contacts
+      WHERE user_id = $1
+      ORDER BY created_at ASC`,
+    [userId],
+  );
+  return res.rows;
+}
+
 // ── Chat messages ─────────────────────────────────────────────────────────────
 
 export interface ChatMessage {
