@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { ScanSearch, Loader2, QrCode, X, CheckCircle2 } from "lucide-react";
+import { ScanSearch, Loader2, QrCode, X, CheckCircle2, AlertTriangle, ShieldAlert } from "lucide-react";
 import { motion } from "framer-motion";
 import TronAnalysisReport from "@/components/TronAnalysisReport";
 import ScanningAnimation from "@/components/ScanningAnimation";
@@ -7,8 +7,40 @@ import QRScannerDialog from "@/components/QRScannerDialog";
 import { toast } from "sonner";
 
 const GREEN  = "#19C37D";
+const AMBER  = "#F59E0B";
+const ORANGE = "#FF6B35";
+const DANGER = "#FF4D4F";
 const CARD   = "#121821";
 const BORDER = "rgba(255,255,255,0.07)";
+
+// ── Compute risk score from report data (mirrors TronAnalysisReport logic) ──────
+function computeRiskScore(d: WalletAnalysisData): number {
+  const daysSinceCreation = (Date.now() - d.dateCreated) / 86_400_000;
+  let score = 0;
+  if (daysSinceCreation < 30)        score += 20;
+  else if (daysSinceCreation <= 180) score += 10;
+  const totalVolumeUSDT = d.totalInUSDT + d.totalOutUSDT;
+  if (totalVolumeUSDT > 1_000_000)      score += 25;
+  else if (totalVolumeUSDT > 100_000)   score += 15;
+  if (d.uniqueWalletsCount > 200)       score += 20;
+  else if (d.uniqueWalletsCount > 50)   score += 10;
+  if (d.totalTx > 500)                  score += 20;
+  else if (d.totalTx > 100)            score += 10;
+  if (d.transfersAnalyzed > 0 && d.exchangeInteractions > d.transfersAnalyzed * 0.5) score -= 10;
+  if (d.suspiciousInteractions >= 5)    score += 40;
+  else if (d.suspiciousInteractions >= 2) score += 25;
+  else if (d.suspiciousInteractions >= 1) score += 15;
+  score = Math.max(0, Math.min(100, score));
+  if (d.isFrozen) score = 100;
+  return score;
+}
+
+function getRiskStatusConfig(score: number): { msg: string; color: string; Icon: React.ElementType } {
+  if (score >= 80) return { msg: "Riesgo severo detectado",      color: DANGER,  Icon: ShieldAlert    };
+  if (score >= 60) return { msg: "Riesgos detectados",           color: ORANGE,  Icon: ShieldAlert    };
+  if (score >= 30) return { msg: "Actividad moderada detectada", color: AMBER,   Icon: AlertTriangle  };
+  return            { msg: "No se detectaron riesgos",           color: GREEN,   Icon: CheckCircle2   };
+}
 
 // Daily stats helpers (localStorage)
 interface DailyStats { date: string; analyzed: number; highRisk: number; }
@@ -611,20 +643,24 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
           <ScanningAnimation isAnalyzing={isAnalyzing} waitingMessage={rateLimitMessage} />
         ) : showReport && reportData ? (
           <>
-            {!reportData.isFrozen && !reportData.isInBlacklistDB && reportData.riskyCounterparties.length === 0 && (
-              <motion.div
-                initial={{ opacity: 0, y: -8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.35 }}
-                className="mb-4 flex items-start gap-3 rounded-2xl px-4 py-3.5"
-                style={{ background: `${GREEN}12`, border: `1px solid ${GREEN}35` }}
-              >
-                <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" style={{ color: GREEN }} />
-                <p className="text-sm leading-snug" style={{ color: "rgba(255,255,255,0.8)" }}>
-                  <span className="font-semibold text-white">Análisis completado</span> — no se detectaron riesgos en esta wallet.
-                </p>
-              </motion.div>
-            )}
+            {(() => {
+              const score = computeRiskScore(reportData);
+              const { msg, color, Icon } = getRiskStatusConfig(score);
+              return (
+                <motion.div
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.35 }}
+                  className="mb-4 flex items-start gap-3 rounded-2xl px-4 py-3.5"
+                  style={{ background: `${color}12`, border: `1px solid ${color}35` }}
+                >
+                  <Icon className="mt-0.5 h-5 w-5 shrink-0" style={{ color }} />
+                  <p className="text-sm leading-snug" style={{ color: "rgba(255,255,255,0.8)" }}>
+                    <span className="font-semibold text-white">Análisis completado</span> — {msg}.
+                  </p>
+                </motion.div>
+              );
+            })()}
             <TronAnalysisReport reportData={reportData} />
           </>
         ) : null}
