@@ -1078,14 +1078,8 @@ export default function WalletDetailSheet({ wallet, onClose, onRename, onNavigat
       <QRScannerDialog
         open={sendScannerOpen}
         onOpenChange={setSendScannerOpen}
-        onScanSuccess={(raw: string) => {
-          // Strip optional "tron:" URI prefix
-          const text = raw.replace(/^tron:/i, "").trim();
-          if (!text.startsWith("T") || text.length !== 34 || text.includes("...")) {
-            toast.error("Dirección TRON inválida");
-            return;
-          }
-          setSendTo(text);
+        onScanSuccess={(addr: string) => {
+          setSendTo(addr);
           toast.success("Dirección escaneada correctamente");
         }}
       />

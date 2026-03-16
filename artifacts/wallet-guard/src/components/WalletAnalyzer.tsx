@@ -461,9 +461,9 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
     };
   };
 
-  const handleAnalyze = async (e?: React.FormEvent | React.MouseEvent) => {
+  const handleAnalyze = async (e?: React.FormEvent | React.MouseEvent, overrideAddr?: string) => {
     e?.preventDefault();
-    const trimmed = address.trim();
+    const trimmed = (overrideAddr ?? address).trim();
     if (!trimmed) {
       toast.error("Por favor ingresa una dirección de billetera TRON");
       return;
@@ -512,7 +512,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
 
   const handleScanSuccess = (result: string) => {
     setAddress(result);
-    toast.success("Dirección escaneada correctamente");
+    handleAnalyze(undefined, result);
   };
 
   return (

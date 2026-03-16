@@ -19,8 +19,12 @@ const TEMP_ID    = "wg-qr-temp";
 const TOAST_GAP  = 2500; // ms between repeated invalid-address toasts
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-function isValidTron(s: string): boolean {
-  return typeof s === "string" && s.trim().startsWith("T") && s.trim().length === 34;
+/** Strip optional tron: URI scheme then validate base-58 TRON address. */
+function normalizeTron(raw: string): string | null {
+  if (typeof raw !== "string") return null;
+  const s = raw.replace(/^tron:/i, "").trim();
+  if (s.startsWith("T") && s.length === 34 && !s.includes("...")) return s;
+  return null;
 }
 
 // Inject CSS overrides for html5-qrcode internal DOM once
@@ -79,20 +83,20 @@ const QRScannerDialog = ({ open, onOpenChange, onScanSuccess }: Props) => {
         { fps: 10, aspectRatio: 1.0 },
         (raw: string) => {
           if (detectedRef.current) return;
-          const text = raw.trim();
+          const addr = normalizeTron(raw);
 
-          if (!isValidTron(text)) {
+          if (!addr) {
             const now = Date.now();
             if (now - lastErrTime.current > TOAST_GAP) {
               lastErrTime.current = now;
-              toast.error("Dirección TRON no válida");
+              toast.error("Dirección TRON inválida");
             }
             return; // keep scanner running
           }
 
           detectedRef.current = true;
           stopCamera();
-          onScanSuccess(text);
+          onScanSuccess(addr);
           onOpenChange(false);
         },
         () => { /* decode frame error — ignore */ },
@@ -123,13 +127,13 @@ const QRScannerDialog = ({ open, onOpenChange, onScanSuccess }: Props) => {
     try {
       const temp = new Html5Qrcode(TEMP_ID, { verbose: false });
       const result = await temp.scanFile(file, false);
-      const text = result.trim();
-      if (!isValidTron(text)) {
-        toast.error("Dirección TRON no válida");
+      const addr = normalizeTron(result);
+      if (!addr) {
+        toast.error("Dirección TRON inválida");
       } else {
-        onScanSuccess(text);
+        onScanSuccess(addr);
         onOpenChange(false);
-        toast.success("QR escaneado correctamente desde imagen");
+        toast.success("Dirección escaneada correctamente");
       }
     } catch {
       toast.error("No se pudo leer el QR de la imagen");
