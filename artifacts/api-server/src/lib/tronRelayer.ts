@@ -1,26 +1,29 @@
-// @ts-nocheck — @noble/secp256k1 v3 ESM resolution quirks; runtime correct
-// TRON Relayer — energy rental + broadcast
+// @ts-nocheck
+// TRON Relayer — energy rental + broadcast via TronWeb
 // Private key never leaves client; this handles energy provision and relaying signed txs.
 // Energy rental flow:
 //   1. Check user's available energy via /wallet/getaccountresource
 //   2a. If relayer has staked energy → delegate it (free, instant)
 //   2b. Else → relayer freezes a small TRX amount on-the-fly to acquire energy, then delegates
 //   3. Broadcast user's already-signed USDT transaction
+import { TronWeb } from "tronweb";
 import { createHash } from "node:crypto";
-import { sign as secp256k1Sign, hashes as secp256k1Hashes } from "@noble/secp256k1";
-import { sha256 } from "@noble/hashes/sha2.js";
-import { hmac } from "@noble/hashes/hmac.js";
-secp256k1Hashes.sha256 = sha256;
-secp256k1Hashes.hmacSha256 = (key: Uint8Array, ...msgs: Uint8Array[]) => hmac(sha256, key, ...msgs);
 
-const TRON_GRID       = "https://api.trongrid.io";
-const API_KEY         = process.env.TRONGRID_API_KEY ?? process.env.VITE_TRON_API_KEY ?? "";
-const RELAY_KEY       = process.env.TRON_RELAYER_PRIVATE_KEY   ?? "";
-const RELAY_ADDR      = process.env.TRON_RELAYER_ADDRESS       ?? "";   // hex 41-prefix
-const TREASURY_ADDR   = process.env.TREASURY_ADDRESS           ?? "";   // Base58 TRON address
+const TRON_GRID     = "https://api.trongrid.io";
+const API_KEY       = process.env.TRONGRID_API_KEY ?? process.env.VITE_TRON_API_KEY ?? "";
+const RELAY_KEY     = process.env.TRON_RELAYER_PRIVATE_KEY ?? "";
+const RELAY_ADDR    = process.env.TRON_RELAYER_ADDRESS     ?? "";   // hex 41-prefix
+const TREASURY_ADDR = process.env.TREASURY_ADDRESS         ?? "";   // Base58 TRON address
 export const SERVICE_FEE_USDT = 1;
 
 console.log("[tronRelayer] TronGrid API key:", API_KEY ? `✓ loaded (${API_KEY.slice(0, 8)}…)` : "✗ MISSING");
+
+// ── TronWeb instance (used for signing + broadcasting relayer transactions) ───
+const tronWeb = new TronWeb({
+  fullHost:   TRON_GRID,
+  headers:    { "TRON-PRO-API-KEY": API_KEY },
+  privateKey: RELAY_KEY || "0".repeat(64),   // fallback keeps TronWeb happy when key is absent
+});
 
 // ── Hex error decoder — TronGrid returns errors as hex-encoded UTF-8 ──────────
 function decodeHexMessage(raw: string): string {
@@ -53,7 +56,7 @@ function apiHeaders(): Record<string, string> {
   return { "TRON-PRO-API-KEY": API_KEY, "Content-Type": "application/json" };
 }
 
-// TronGrid fetch with 429 retry (2 s wait, max 3 attempts)
+// TronGrid fetch with 429 retry
 const TG_MAX_RETRIES = 3;
 const TG_RETRY_WAIT  = 2_000;
 async function tgFetch(path: string, init: RequestInit = {}): Promise<Response> {
@@ -68,14 +71,6 @@ async function tgFetch(path: string, init: RequestInit = {}): Promise<Response> 
   throw new Error(`TronGrid rate-limited (429) on ${path} after ${TG_MAX_RETRIES} attempts`);
 }
 
-// ── Hex helpers ───────────────────────────────────────────────────────────────
-function hexToBytes(hex: string): Uint8Array {
-  const h = hex.startsWith("0x") ? hex.slice(2) : hex;
-  const out = new Uint8Array(h.length / 2);
-  for (let i = 0; i < out.length; i++) out[i] = parseInt(h.slice(i * 2, i * 2 + 2), 16);
-  return out;
-}
-
 // ── Base58 decode (TRON address → 21-byte hex) ────────────────────────────────
 const B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 export function tronAddrToHex(b58: string): string {
@@ -85,31 +80,29 @@ export function tronAddrToHex(b58: string): string {
     if (i < 0) throw new Error("Invalid base58 character");
     n = n * 58n + BigInt(i);
   }
-  return n.toString(16).padStart(50, "0").slice(0, 42); // 21 bytes
+  return n.toString(16).padStart(50, "0").slice(0, 42);
 }
 
-// ── sha256 (Node crypto) ──────────────────────────────────────────────────────
-function sha256(data: Uint8Array): Uint8Array {
-  return new Uint8Array(createHash("sha256").update(data).digest());
+// ── Sign a transaction with the relayer key via TronWeb, then broadcast ───────
+async function signAndBroadcast(tx: any): Promise<string> {
+  const signedTx = await tronWeb.trx.sign(tx);
+  const result   = await tronWeb.trx.sendRawTransaction(signedTx);
+  if (!result.result) {
+    const rawMsg = result.message ?? "";
+    console.error("[relay] broadcast rejected:", rawMsg);
+    throw new Error(decodeHexMessage(rawMsg));
+  }
+  return signedTx.txID as string;
 }
 
-// ── Sign a TronGrid unsigned transaction with a private key ───────────────────
-function signTx(tx: any, privKeyHex: string): any {
-  const txHashBytes = hexToBytes(tx.txID);
-  const privBytes   = hexToBytes(privKeyHex);
-  const sigRec = secp256k1Sign(txHashBytes, privBytes, { lowS: false, prehash: false, format: 'recovered' });
-  const sigHex = Array.from(sigRec.slice(1)).map((b: number) => b.toString(16).padStart(2, '0')).join('') + (sigRec[0] + 27).toString(16).padStart(2, '0');
-  return { ...tx, signature: [sigHex] };
-}
-
-// ── Broadcast a signed transaction ────────────────────────────────────────────
-async function broadcastTx(signedTx: any): Promise<{ result: boolean; txID: string; message?: string }> {
-  const res = await tgFetch("/wallet/broadcasttransaction", {
-    method: "POST",
-    body: JSON.stringify(signedTx),
-  });
-  if (!res.ok) throw new Error(`TronGrid broadcast error ${res.status}`);
-  return res.json();
+// ── Broadcast an already-signed transaction (user-signed, no re-sign) ─────────
+async function broadcastSigned(signedTx: any): Promise<{ result: boolean; txID: string; message?: string }> {
+  const result = await tronWeb.trx.sendRawTransaction(signedTx);
+  return {
+    result: !!result.result,
+    txID:   signedTx.txID,
+    message: result.message,
+  };
 }
 
 // ── Check user's available energy ─────────────────────────────────────────────
@@ -121,18 +114,13 @@ async function getUserEnergy(userHex: string): Promise<number> {
     });
     if (!res.ok) return 0;
     const d = await res.json() as any;
-    const limit = d.EnergyLimit ?? 0;
-    const used  = d.EnergyUsed  ?? 0;
-    return Math.max(0, limit - used);
+    return Math.max(0, (d.EnergyLimit ?? 0) - (d.EnergyUsed ?? 0));
   } catch {
     return 0;
   }
 }
 
 // ── Energy delegation: relayer → target address ───────────────────────────────
-// First tries to delegate from already-staked relayer energy.
-// If the relayer has no staked energy, freezes TRX dynamically to acquire some.
-// Returns true if delegation succeeded, false otherwise.
 async function delegateEnergy(toHex: string): Promise<boolean> {
   if (!RELAY_KEY || !RELAY_ADDR) return false;
 
@@ -143,7 +131,7 @@ async function delegateEnergy(toHex: string): Promise<boolean> {
       body: JSON.stringify({
         owner_address:    RELAY_ADDR,
         receiver_address: toHex,
-        balance:          100_000_000, // 100 TRX staked equivalent
+        balance:          100_000_000,
         resource:         "ENERGY",
         lock:             false,
         visible:          false,
@@ -152,54 +140,35 @@ async function delegateEnergy(toHex: string): Promise<boolean> {
     if (res.ok) {
       const delegateTx = await res.json() as any;
       if (!delegateTx.Error && delegateTx.txID) {
-        const signed = signTx(delegateTx, RELAY_KEY);
-        const result = await broadcastTx(signed);
-        if (result.result) {
-          console.log("[relay] Energy delegated from stake, txID:", result.txID);
-          await new Promise(r => setTimeout(r, 600));
-          return true;
-        }
-        console.warn("[relay] Stake delegation failed:", result.message);
+        const txId = await signAndBroadcast(delegateTx);
+        console.log("[relay] Energy delegated from stake, txID:", txId);
+        await new Promise(r => setTimeout(r, 600));
+        return true;
       }
     }
   } catch (err: any) {
     console.warn("[relay] Stake delegation error:", err?.message);
   }
 
-  // ── Attempt 2: freeze TRX dynamically to acquire energy, then delegate ──
-  // Freezes the minimum TRX needed (≈32 TRX for ~65 000 energy units),
-  // waits one block, then delegates to the user.
+  // ── Attempt 2: freeze TRX to acquire energy, then delegate ──
   try {
-    const TRX_TO_FREEZE_SUN = 32_000_000; // 32 TRX in SUN
+    const TRX_TO_FREEZE_SUN = 32_000_000;
 
     const freezeRes = await tgFetch("/wallet/freezebalancev2", {
       method: "POST",
       body: JSON.stringify({
-        owner_address: RELAY_ADDR,
+        owner_address:  RELAY_ADDR,
         frozen_balance: TRX_TO_FREEZE_SUN,
         resource:       "ENERGY",
         visible:        false,
       }),
     });
-    if (!freezeRes.ok) {
-      console.warn("[relay] Freeze HTTP error:", freezeRes.status);
-      return false;
-    }
+    if (!freezeRes.ok) { console.warn("[relay] Freeze HTTP error:", freezeRes.status); return false; }
     const freezeTx = await freezeRes.json() as any;
-    if (freezeTx.Error || !freezeTx.txID) {
-      console.warn("[relay] Freeze tx error:", freezeTx.Error);
-      return false;
-    }
+    if (freezeTx.Error || !freezeTx.txID) { console.warn("[relay] Freeze tx error:", freezeTx.Error); return false; }
 
-    const signedFreeze = signTx(freezeTx, RELAY_KEY);
-    const freezeResult = await broadcastTx(signedFreeze);
-    if (!freezeResult.result) {
-      console.warn("[relay] Freeze broadcast failed:", freezeResult.message);
-      return false;
-    }
-    console.log("[relay] TRX frozen for energy, txID:", freezeResult.txID);
-
-    // Wait ~1 block for the freeze to settle before delegating
+    const freezeTxId = await signAndBroadcast(freezeTx);
+    console.log("[relay] TRX frozen for energy, txID:", freezeTxId);
     await new Promise(r => setTimeout(r, 3_500));
 
     const delRes = await tgFetch("/wallet/delegateresource", {
@@ -217,13 +186,8 @@ async function delegateEnergy(toHex: string): Promise<boolean> {
     const delTx = await delRes.json() as any;
     if (delTx.Error || !delTx.txID) return false;
 
-    const signedDel = signTx(delTx, RELAY_KEY);
-    const delResult = await broadcastTx(signedDel);
-    if (!delResult.result) {
-      console.warn("[relay] Dynamic delegate failed:", delResult.message);
-      return false;
-    }
-    console.log("[relay] Energy delegated dynamically, txID:", delResult.txID);
+    const delTxId = await signAndBroadcast(delTx);
+    console.log("[relay] Energy delegated dynamically, txID:", delTxId);
     await new Promise(r => setTimeout(r, 600));
     return true;
   } catch (err: any) {
@@ -235,15 +199,15 @@ async function delegateEnergy(toHex: string): Promise<boolean> {
 // ── Main relay function ───────────────────────────────────────────────────────
 export interface RelayResult {
   txId:      string;
-  feeTxId?:  string;         // treasury fee collection tx (may be absent)
-  sponsored: boolean;        // true = relayer covered the energy cost
+  feeTxId?:  string;
+  sponsored: boolean;
   feeMode:   "free" | "rental" | "burn";
 }
 
 export async function relayUSDTTransfer(
   signedTx:    any,
-  userAddress: string,       // TRON Base58 address of sender
-  feeTx?:      any | null,   // pre-signed 1 USDT service fee tx (optional)
+  userAddress: string,
+  feeTx?:      any | null,
 ): Promise<RelayResult> {
   const ENERGY_NEEDED = 65_000;
   const userHex = tronAddrToHex(userAddress);
@@ -253,12 +217,11 @@ export async function relayUSDTTransfer(
   if (feeTx && feeTx.txID && feeTx.raw_data && Array.isArray(feeTx.signature)) {
     try {
       console.log("[relay] Broadcasting service fee tx…");
-      const feeResult = await broadcastTx(feeTx);
+      const feeResult = await broadcastSigned(feeTx);
       if (feeResult.result) {
         feeTxId = feeTx.txID;
         console.log("[relay] Service fee collected, txID:", feeTxId);
       } else {
-        // Log but don't abort — still deliver the main transfer
         console.warn("[relay] Service fee tx rejected:", feeResult.message);
       }
     } catch (err: any) {
@@ -266,7 +229,7 @@ export async function relayUSDTTransfer(
     }
   }
 
-  // 2. Check whether the user already has enough energy for the main tx
+  // 2. Check whether the user already has enough energy
   const availableEnergy = await getUserEnergy(userHex);
   console.log(`[relay] User energy: ${availableEnergy} / ${ENERGY_NEEDED} needed`);
 
@@ -284,8 +247,7 @@ export async function relayUSDTTransfer(
   }
 
   // 3. Broadcast the user's main USDT transfer
-  await rateWait();
-  const result = await broadcastTx(signedTx);
+  const result = await broadcastSigned(signedTx);
 
   if (!result.result) {
     const rawMsg = result.message ?? "";
