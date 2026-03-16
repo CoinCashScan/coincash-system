@@ -147,6 +147,29 @@ const ScannerPage = ({ prefillAddress, onAddressConsumed }: ScannerPageProps) =>
       </div>
 
       <WalletAnalyzer prefillAddress={prefillAddress} onAddressConsumed={onAddressConsumed} />
+
+      {/* ── Fixed legal disclaimer banner ── */}
+      <div
+        style={{
+          position: "fixed",
+          bottom: 0,
+          left: 0,
+          right: 0,
+          zIndex: 999,
+          padding: "12px",
+          background: "#7a0000",
+          color: "#fff",
+          fontSize: "12px",
+          borderTop: "1px solid rgba(255,255,255,0.2)",
+          lineHeight: "1.5",
+        }}
+      >
+        <span style={{ fontWeight: 700 }}>⚠ Aviso Legal&nbsp;&nbsp;</span>
+        La información proporcionada en este informe es generada a partir de datos on-chain y bases
+        de datos públicas de terceros. CoinCashWalletGuard no garantiza la exactitud absoluta,
+        integridad o actualidad de los datos. Esta información tiene fines puramente analíticos e
+        informativos y no constituye asesoramiento financiero ni legal.
+      </div>
     </div>
   );
 };
