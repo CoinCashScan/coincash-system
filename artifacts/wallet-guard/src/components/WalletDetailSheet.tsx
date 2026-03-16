@@ -275,10 +275,13 @@ export default function WalletDetailSheet({ wallet, onClose, onRename, onNavigat
     const pollUSDT = async () => {
       try {
         const usdtBalance = await fetchUSDTLiveBalance(wallet.address);
-        if (!cancelled) {
+        // Only update when we received a real non-zero balance.
+        // A zero result almost always means a transient API failure or rate limit —
+        // writing it would flash "0.00" over a valid displayed balance.
+        if (!cancelled && usdtBalance > 0) {
           setInfo(prev => {
             if (!prev) return prev;
-            // Only update if the value actually changed (avoid re-render noise)
+            // Skip re-render if the value hasn't meaningfully changed
             if (Math.abs(prev.usdtBalance - usdtBalance) < 0.000001) return prev;
             return { ...prev, usdtBalance };
           });
