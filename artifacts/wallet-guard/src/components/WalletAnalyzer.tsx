@@ -371,16 +371,26 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
       }
     }
 
+    // Derive TRC20-based tx counts — more accurate than the TRX endpoint for
+    // TRC20-only wallets (which have 0 on the /transactions endpoint).
+    let trc20TxIn  = 0;
+    let trc20TxOut = 0;
+
     transfers.forEach((t: any) => {
-      const decimals = parseInt(t.token_info?.decimals ?? "6", 10);
-      const amount = parseFloat(t.value || "0") / Math.pow(10, decimals);
+      // USDT TRC20 always uses 6 decimals. Hardcode the divisor so we never
+      // display raw uint256 blockchain values regardless of token_info content.
+      const raw    = parseFloat(t.value || "0");
+      const amount = Number.isFinite(raw) ? raw / 1_000_000 : 0;
+
       if (t.to === addr) {
-        totalInUSDT += amount;
+        totalInUSDT  += amount;
+        trc20TxIn    += 1;
       } else if (t.from === addr) {
         totalOutUSDT += amount;
+        trc20TxOut   += 1;
       }
       if (t.from) uniqueWallets.add(t.from);
-      if (t.to) uniqueWallets.add(t.to);
+      if (t.to)   uniqueWallets.add(t.to);
 
       // Counterparty risk: check the other party against the static risk database
       const counterparty = t.to === addr ? t.from : t.to;
@@ -395,6 +405,19 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
         });
       }
     });
+
+    // Override TRX-based counters with TRC20 counts when the TRC20 data is
+    // more informative (avoids showing "0 Transacciones" on USDT-only wallets).
+    if (trc20TxIn + trc20TxOut > 0) {
+      txIn    = trc20TxIn;
+      txOut   = trc20TxOut;
+      totalTx = trc20TxIn + trc20TxOut;
+    }
+
+    // Safety cap: prevent astronomical numbers from slipping through if the
+    // blockchain ever returns unexpected raw values.
+    totalInUSDT  = Number.isFinite(totalInUSDT)  ? Math.min(totalInUSDT,  1e12) : 0;
+    totalOutUSDT = Number.isFinite(totalOutUSDT) ? Math.min(totalOutUSDT, 1e12) : 0;
 
     // 5. Live USDT blacklist check for unique counterparties not already flagged
     try {
@@ -422,8 +445,8 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
           transfers.forEach((t: any) => {
             const cp = t.to === addr ? t.from : t.to;
             if (cp === cpAddr) {
-              const decimals = parseInt(t.token_info?.decimals ?? "6", 10);
-              const amount = parseFloat(t.value || "0") / Math.pow(10, decimals);
+              const raw    = parseFloat(t.value || "0");
+              const amount = Number.isFinite(raw) ? raw / 1_000_000 : 0;
               totalValue += t.to === addr ? amount : -amount;
             }
           });
