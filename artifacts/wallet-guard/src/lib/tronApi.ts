@@ -7,6 +7,7 @@ import { sha256 } from "@noble/hashes/sha2.js";
 secp256k1Etc.sha256Sync = sha256;
 
 const KEY = import.meta.env.VITE_TRON_API_KEY ?? "";
+console.log("[tronApi] API key loaded:", KEY ? `✓ (${KEY.slice(0, 8)}…)` : "✗ MISSING — requests will be unauthenticated");
 
 // Both known mainnet USDT TRC20 contract addresses (TR7... is the primary Tether contract)
 export const USDT_CONTRACT  = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
@@ -29,34 +30,57 @@ export function getActiveNodeIndex(): number { return _activeNode; }
 export function getNodeCount(): number       { return NODES.length; }
 export function getActiveNodeBase(): string  { return NODES[_activeNode].base; }
 
-// ── Resilient fetch with node fallback ───────────────────────────────────────
-// Tries each node in sequence (starting from last known-good) with a 5s timeout.
-// Falls back on network errors and 5xx server errors; passes through 2xx-4xx.
+// ── Resilient fetch with node fallback + 429 retry ───────────────────────────
+// Tries each node in sequence (starting from last known-good) with a 5 s timeout.
+// On 429: waits 2 s and retries up to 3 attempts before falling to the next node.
+// Falls back on network errors and 5xx server errors; passes through other 4xx.
+const MAX_RETRIES = 3;
+const RETRY_WAIT_MS = 2_000;
+
 async function tronFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const order = NODES.map((_, i) => (i + _activeNode) % NODES.length);
   let lastErr: Error | null = null;
 
   for (const idx of order) {
     const node = NODES[idx];
-    const ctrl  = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 5_000);
-    try {
-      const hdrs: Record<string, string> = { "Content-Type": "application/json" };
-      if (node.key && KEY) hdrs["TRON-PRO-API-KEY"] = KEY;
-      const res = await fetch(`${node.base}${path}`, {
-        ...init,
-        headers: { ...hdrs, ...(init.headers as Record<string, string> ?? {}) },
-        signal: ctrl.signal,
-      });
-      clearTimeout(timer);
-      if (res.status < 500) {  // 2xx/3xx/4xx → server is alive, use result
-        _activeNode = idx;
-        return res;
+
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      const ctrl  = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 5_000);
+      try {
+        const hdrs: Record<string, string> = { "Content-Type": "application/json" };
+        if (node.key && KEY) hdrs["TRON-PRO-API-KEY"] = KEY;
+        const res = await fetch(`${node.base}${path}`, {
+          ...init,
+          headers: { ...hdrs, ...(init.headers as Record<string, string> ?? {}) },
+          signal: ctrl.signal,
+        });
+        clearTimeout(timer);
+
+        if (res.status === 429) {
+          console.warn(`[tronApi] 429 from node ${idx} (attempt ${attempt}/${MAX_RETRIES}) — waiting ${RETRY_WAIT_MS}ms`);
+          if (attempt < MAX_RETRIES) {
+            await new Promise<void>(r => setTimeout(r, RETRY_WAIT_MS));
+            continue; // retry same node
+          }
+          // exhausted retries on this node — try next
+          lastErr = new Error(`Node ${idx} rate-limited (429) after ${MAX_RETRIES} attempts`);
+          break;
+        }
+
+        if (res.status < 500) { // 2xx/3xx/other 4xx → server alive, return result
+          _activeNode = idx;
+          return res;
+        }
+
+        // 5xx — don't retry same node, move to next
+        lastErr = new Error(`Node ${idx} returned ${res.status}`);
+        break;
+      } catch (e: any) {
+        clearTimeout(timer);
+        lastErr = e;
+        break; // network/abort error — move to next node
       }
-      lastErr = new Error(`Node ${idx} returned ${res.status}`);
-    } catch (e: any) {
-      clearTimeout(timer);
-      lastErr = e;
     }
   }
   throw lastErr ?? new Error("All TRON nodes unavailable");

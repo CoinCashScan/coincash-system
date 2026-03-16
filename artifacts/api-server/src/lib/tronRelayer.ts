@@ -10,11 +10,13 @@ import { createHash } from "node:crypto";
 import { sign as secp256k1Sign } from "@noble/secp256k1";
 
 const TRON_GRID       = "https://api.trongrid.io";
-const API_KEY         = process.env.VITE_TRON_API_KEY          ?? "";
+const API_KEY         = process.env.TRONGRID_API_KEY ?? process.env.VITE_TRON_API_KEY ?? "";
 const RELAY_KEY       = process.env.TRON_RELAYER_PRIVATE_KEY   ?? "";
 const RELAY_ADDR      = process.env.TRON_RELAYER_ADDRESS       ?? "";   // hex 41-prefix
 const TREASURY_ADDR   = process.env.TREASURY_ADDRESS           ?? "";   // Base58 TRON address
 export const SERVICE_FEE_USDT = 1;
+
+console.log("[tronRelayer] TronGrid API key:", API_KEY ? `✓ loaded (${API_KEY.slice(0, 8)}…)` : "✗ MISSING");
 
 // ── Rate limiter (shared, 120ms gap) ──────────────────────────────────────────
 let _next = 0;
@@ -26,6 +28,21 @@ async function rateWait(): Promise<void> {
 
 function apiHeaders(): Record<string, string> {
   return { "TRON-PRO-API-KEY": API_KEY, "Content-Type": "application/json" };
+}
+
+// TronGrid fetch with 429 retry (2 s wait, max 3 attempts)
+const TG_MAX_RETRIES = 3;
+const TG_RETRY_WAIT  = 2_000;
+async function tgFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  await rateWait();
+  const url = `${TRON_GRID}${path}`;
+  for (let attempt = 1; attempt <= TG_MAX_RETRIES; attempt++) {
+    const res = await fetch(url, { ...init, headers: apiHeaders() });
+    if (res.status !== 429) return res;
+    console.warn(`[tronRelayer] TronGrid 429 on ${path} (attempt ${attempt}/${TG_MAX_RETRIES}) — waiting ${TG_RETRY_WAIT}ms`);
+    if (attempt < TG_MAX_RETRIES) await new Promise<void>(r => setTimeout(r, TG_RETRY_WAIT));
+  }
+  throw new Error(`TronGrid rate-limited (429) on ${path} after ${TG_MAX_RETRIES} attempts`);
 }
 
 // ── Hex helpers ───────────────────────────────────────────────────────────────
@@ -64,10 +81,8 @@ function signTx(tx: any, privKeyHex: string): any {
 
 // ── Broadcast a signed transaction ────────────────────────────────────────────
 async function broadcastTx(signedTx: any): Promise<{ result: boolean; txID: string; message?: string }> {
-  await rateWait();
-  const res = await fetch(`${TRON_GRID}/wallet/broadcasttransaction`, {
+  const res = await tgFetch("/wallet/broadcasttransaction", {
     method: "POST",
-    headers: apiHeaders(),
     body: JSON.stringify(signedTx),
   });
   if (!res.ok) throw new Error(`TronGrid broadcast error ${res.status}`);
@@ -77,10 +92,8 @@ async function broadcastTx(signedTx: any): Promise<{ result: boolean; txID: stri
 // ── Check user's available energy ─────────────────────────────────────────────
 async function getUserEnergy(userHex: string): Promise<number> {
   try {
-    await rateWait();
-    const res = await fetch(`${TRON_GRID}/wallet/getaccountresource`, {
+    const res = await tgFetch("/wallet/getaccountresource", {
       method: "POST",
-      headers: apiHeaders(),
       body: JSON.stringify({ address: userHex }),
     });
     if (!res.ok) return 0;
@@ -102,10 +115,8 @@ async function delegateEnergy(toHex: string): Promise<boolean> {
 
   // ── Attempt 1: delegate from existing staked energy ──
   try {
-    await rateWait();
-    const res = await fetch(`${TRON_GRID}/wallet/delegateresource`, {
+    const res = await tgFetch("/wallet/delegateresource", {
       method: "POST",
-      headers: apiHeaders(),
       body: JSON.stringify({
         owner_address:    RELAY_ADDR,
         receiver_address: toHex,
@@ -138,10 +149,8 @@ async function delegateEnergy(toHex: string): Promise<boolean> {
   try {
     const TRX_TO_FREEZE_SUN = 32_000_000; // 32 TRX in SUN
 
-    await rateWait();
-    const freezeRes = await fetch(`${TRON_GRID}/wallet/freezebalancev2`, {
+    const freezeRes = await tgFetch("/wallet/freezebalancev2", {
       method: "POST",
-      headers: apiHeaders(),
       body: JSON.stringify({
         owner_address: RELAY_ADDR,
         frozen_balance: TRX_TO_FREEZE_SUN,
@@ -170,10 +179,8 @@ async function delegateEnergy(toHex: string): Promise<boolean> {
     // Wait ~1 block for the freeze to settle before delegating
     await new Promise(r => setTimeout(r, 3_500));
 
-    await rateWait();
-    const delRes = await fetch(`${TRON_GRID}/wallet/delegateresource`, {
+    const delRes = await tgFetch("/wallet/delegateresource", {
       method: "POST",
-      headers: apiHeaders(),
       body: JSON.stringify({
         owner_address:    RELAY_ADDR,
         receiver_address: toHex,

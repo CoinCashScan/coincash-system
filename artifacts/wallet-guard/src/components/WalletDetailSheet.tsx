@@ -146,6 +146,8 @@ export default function WalletDetailSheet({ wallet, onClose, onRename, onNavigat
 
   // Prevent stale-closure double-fetch on fast wallet switches
   const fetchingRef = useRef(false);
+  // Prevents double-fire on "Confirmar y enviar" (guard runs before state update)
+  const sendInFlightRef = useRef(false);
 
   // ── Background live fetch — always runs silently ───────────────────────────
   // Shows only the subtle refresh dot. Retries up to 3× with fallback nodes.
@@ -334,6 +336,8 @@ export default function WalletDetailSheet({ wallet, onClose, onRename, onNavigat
   };
 
   const executeSend = async () => {
+    if (sendInFlightRef.current) return; // guard against double-tap before state re-renders
+    sendInFlightRef.current = true;
     setSendLoading(true);
     setSendStep("signing");
     try {
@@ -365,6 +369,7 @@ export default function WalletDetailSheet({ wallet, onClose, onRename, onNavigat
       setSendStep("confirm");
     } finally {
       setSendLoading(false);
+      sendInFlightRef.current = false;
     }
   };
 

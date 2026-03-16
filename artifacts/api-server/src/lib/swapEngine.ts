@@ -11,10 +11,12 @@ import { logSwapOrder, updateSwapOrderTxIds } from "./db.js";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const TRON_GRID       = "https://api.trongrid.io";
-const API_KEY         = process.env.VITE_TRON_API_KEY          ?? "";
+const API_KEY         = process.env.TRONGRID_API_KEY ?? process.env.VITE_TRON_API_KEY ?? "";
 const RELAY_KEY       = process.env.TRON_RELAYER_PRIVATE_KEY   ?? "";
 const _RELAY_ADDR_RAW = process.env.TRON_RELAYER_ADDRESS       ?? "";
 const TREASURY_ADDR   = process.env.TREASURY_ADDRESS           ?? "";
+
+console.log("[swapEngine] TronGrid API key:", API_KEY ? `✓ loaded (${API_KEY.slice(0, 8)}…)` : "✗ MISSING");
 
 const USDT_CONTRACT_B58 = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
 
@@ -98,6 +100,21 @@ async function rateWait(): Promise<void> {
   _rateNext = Date.now() + 150;
 }
 
+// TronGrid fetch with 429 retry (2 s wait, max 3 attempts)
+const TG_MAX_RETRIES  = 3;
+const TG_RETRY_WAIT   = 2_000;
+async function tgFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  await rateWait();
+  const url = `${TRON_GRID}${path}`;
+  for (let attempt = 1; attempt <= TG_MAX_RETRIES; attempt++) {
+    const res = await fetch(url, { ...init, headers: apiHeaders() });
+    if (res.status !== 429) return res;
+    console.warn(`[swapEngine] TronGrid 429 on ${path} (attempt ${attempt}/${TG_MAX_RETRIES}) — waiting ${TG_RETRY_WAIT}ms`);
+    if (attempt < TG_MAX_RETRIES) await new Promise<void>(r => setTimeout(r, TG_RETRY_WAIT));
+  }
+  throw new Error(`TronGrid rate-limited (429) on ${path} after ${TG_MAX_RETRIES} attempts`);
+}
+
 function signTx(tx: any, privKeyHex: string): any {
   const txHashBytes = hexToBytes(tx.txID);
   const privBytes   = hexToBytes(privKeyHex);
@@ -106,9 +123,8 @@ function signTx(tx: any, privKeyHex: string): any {
 }
 
 async function broadcastTx(signedTx: any): Promise<{ result: boolean; txID: string; message?: string }> {
-  await rateWait();
-  const res = await fetch(`${TRON_GRID}/wallet/broadcasttransaction`, {
-    method: "POST", headers: apiHeaders(), body: JSON.stringify(signedTx),
+  const res = await tgFetch("/wallet/broadcasttransaction", {
+    method: "POST", body: JSON.stringify(signedTx),
   });
   if (!res.ok) throw new Error(`TronGrid broadcast ${res.status}`);
   return res.json();
@@ -137,9 +153,8 @@ async function sendTRXFromRelayer(toHex: string, amountTRX: number): Promise<str
   assertValidRecipientHex(toHex, "Dirección del destinatario (to_address)");
   console.log("[swap:sendTRXFromRelayer]", { Router: RELAY_ADDR, To: toHex, Amount: amt, AmountSun: amountSun });
 
-  await rateWait();
-  const res = await fetch(`${TRON_GRID}/wallet/createtransaction`, {
-    method: "POST", headers: apiHeaders(),
+  const res = await tgFetch("/wallet/createtransaction", {
+    method: "POST",
     body: JSON.stringify({ owner_address: RELAY_ADDR, to_address: toHex, amount: amountSun }),
   });
   if (!res.ok) throw new Error(`Error creando tx TRX (${res.status})`);
@@ -174,9 +189,8 @@ async function sendUSDTFromRelayer(toHex: string, amountUSDT: number): Promise<s
     Router: RELAY_ADDR, Token: contractHex, To: toHex, Amount: amt, AmountSun: amtSun,
   });
 
-  await rateWait();
-  const res = await fetch(`${TRON_GRID}/wallet/triggersmartcontract`, {
-    method: "POST", headers: apiHeaders(),
+  const res = await tgFetch("/wallet/triggersmartcontract", {
+    method: "POST",
     body: JSON.stringify({
       owner_address:     RELAY_ADDR,
       contract_address:  contractHex,
