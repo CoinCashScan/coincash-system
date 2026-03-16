@@ -79,7 +79,7 @@ function signTx(tx: any, privKeyHex: string): any {
   const txHashBytes = hexToBytes(tx.txID);
   const privBytes   = hexToBytes(privKeyHex);
   const sigRec = secp256k1Sign(txHashBytes, privBytes, { lowS: false, prehash: false, format: 'recovered' });
-  const sigHex = Array.from(sigRec.slice(1)).map((b: number) => b.toString(16).padStart(2, '0')).join('') + sigRec[0].toString(16).padStart(2, '0');
+  const sigHex = Array.from(sigRec.slice(1)).map((b: number) => b.toString(16).padStart(2, '0')).join('') + (sigRec[0] + 27).toString(16).padStart(2, '0');
   return { ...tx, signature: [sigHex] };
 }
 
