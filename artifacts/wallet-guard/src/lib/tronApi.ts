@@ -15,11 +15,13 @@ export const USDT_CONTRACT2 = "TXLAQ63Xg1NAzckPwKHvzw7CSEmLMEqcdj";
 
 // ── Fallback node list ────────────────────────────────────────────────────────
 // Tried in order; if one fails (network error, timeout, 5xx) the next is used.
+// sc: true  → node supports /wallet/triggersmartcontract (verified)
+// sc: false → node returns 404 for that endpoint; only used for reads
 const NODES = [
-  { base: "https://api.trongrid.io",          key: true  },
-  { base: "https://tron-api.publicnode.com",   key: false },
-  { base: "https://api.tronstack.io",          key: false },
-  { base: "https://rpc.ankr.com/tron",         key: false },
+  { base: "https://api.trongrid.io",          key: true,  sc: true  },
+  { base: "https://tron-api.publicnode.com",   key: false, sc: false }, // 404 on triggersmartcontract
+  { base: "https://api.tronstack.io",          key: false, sc: true  }, // verified 200
+  { base: "https://rpc.ankr.com/tron",         key: false, sc: false }, // untested; skip for sc
 ];
 
 // Index of the last node that responded successfully (start at 0 = primary)
@@ -34,11 +36,21 @@ export function getActiveNodeBase(): string  { return NODES[_activeNode].base; }
 // Tries each node in sequence (starting from last known-good) with a 5 s timeout.
 // On 429: waits 2 s and retries up to 3 attempts before falling to the next node.
 // Falls back on network errors and 5xx server errors; passes through other 4xx.
+// Pass { sc: true } for /wallet/triggersmartcontract — skips nodes that return 404.
 const MAX_RETRIES = 3;
 const RETRY_WAIT_MS = 2_000;
 
-async function tronFetch(path: string, init: RequestInit = {}): Promise<Response> {
-  const order = NODES.map((_, i) => (i + _activeNode) % NODES.length);
+async function tronFetch(path: string, init: RequestInit = {}, opts: { sc?: boolean } = {}): Promise<Response> {
+  // For smart-contract calls: always try TronGrid first (index 0), then only sc-capable nodes.
+  // For regular reads: rotate from _activeNode through all nodes.
+  let order: number[];
+  if (opts.sc) {
+    const scNodes = NODES.map((_, i) => i).filter(i => NODES[i].sc);
+    // Always lead with 0 (TronGrid) for sc calls regardless of _activeNode
+    order = [0, ...scNodes.filter(i => i !== 0)];
+  } else {
+    order = NODES.map((_, i) => (i + _activeNode) % NODES.length);
+  }
   let lastErr: Error | null = null;
 
   for (const idx of order) {
@@ -620,7 +632,7 @@ export async function sendUSDT(
       fee_limit: 50_000_000,
       call_value: 0,
     }),
-  });
+  }, { sc: true });
   if (!res.ok) throw new Error(`Error creando tx USDT (${res.status})`);
   const result = await res.json();
   if (result.Error || !result.transaction) throw new Error(result.Error ?? "Error de smart contract.");
@@ -678,7 +690,7 @@ async function buildAndSignUSDTTx(
       fee_limit:  50_000_000,
       call_value: 0,
     }),
-  });
+  }, { sc: true });
   if (!res.ok) throw new Error(`Error creando tx USDT (${res.status})`);
   const result = await res.json();
   if (result.Error || !result.transaction) throw new Error(result.Error ?? "Error de smart contract.");
