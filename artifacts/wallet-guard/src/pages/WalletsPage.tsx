@@ -126,6 +126,7 @@ export default function WalletsPage({ onScan, activeTab, onNavigateSwap }: Props
   const [copied, setCopied]       = useState<string|null>(null);
   const [loading, setLoading]     = useState(false);
   const [detailWallet, setDetailWallet] = useState<SavedWallet|null>(null);
+  const [coincashIds, setCoincashIds] = useState<Record<string, string>>({});
 
   // Close the detail sheet and any open modal when the user navigates to another tab
   useEffect(() => {
@@ -149,6 +150,24 @@ export default function WalletsPage({ onScan, activeTab, onNavigateSwap }: Props
   const [ksPass, setKsPass]       = useState("");
 
   useEffect(() => { saveWallets(wallets); }, [wallets]);
+
+  // Auto-generate and cache a CoinCash ID for every wallet
+  useEffect(() => {
+    wallets.forEach(async (w) => {
+      if (coincashIds[w.address]) return;
+      try {
+        const res  = await fetch("/api-server/api/users/lookup", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ walletAddress: w.address }),
+        });
+        const data = await res.json();
+        if (data.coincashId) {
+          setCoincashIds(prev => ({ ...prev, [w.address]: data.coincashId }));
+        }
+      } catch { /* non-fatal — ID will retry on next render */ }
+    });
+  }, [wallets]);
 
   const closeModal = () => {
     setModal(null); setName(""); setAddress(""); setGenerated(null);
@@ -346,6 +365,15 @@ export default function WalletsPage({ onScan, activeTab, onNavigateSwap }: Props
                       {copied===w.address?<CheckCheck className="h-3 w-3" style={{color:GREEN}}/>:<Copy className="h-3 w-3" style={{color:"rgba(255,255,255,0.25)"}}/>}
                     </button>
                   </div>
+                  {coincashIds[w.address] ? (
+                    <span className="text-[10px] font-mono mt-0.5" style={{ color:"rgba(25,195,125,0.75)" }}>
+                      CoinCash ID: {coincashIds[w.address]}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] mt-0.5" style={{ color:"rgba(255,255,255,0.18)" }}>
+                      CoinCash ID: …
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
                   <button onClick={e=>{e.stopPropagation();onScan(w.address);}} className="flex h-8 w-8 items-center justify-center rounded-xl active:opacity-60"
