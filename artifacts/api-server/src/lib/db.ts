@@ -227,31 +227,52 @@ export async function getUserByWallet(walletAddress: string): Promise<UserRecord
 export interface ChatUserRecord {
   id:          number;
   coincash_id: string;
+  name:        string;
+  role:        string;
   created_at:  Date;
 }
 
-/** Create the chat_users table if it doesn't already exist. */
+const SYSTEM_SUPPORT_ID = "CC-SUPPORT";
+
+/** Create the chat_users table and seed the CC-SUPPORT system account. */
 export async function ensureChatUsersTable(): Promise<void> {
+  // Create table
   await pool.query(`
     CREATE TABLE IF NOT EXISTS chat_users (
       id          SERIAL    PRIMARY KEY,
       coincash_id TEXT      UNIQUE NOT NULL,
+      name        TEXT      NOT NULL DEFAULT '',
+      role        TEXT      NOT NULL DEFAULT 'user',
       created_at  TIMESTAMP NOT NULL DEFAULT NOW()
     )
   `);
-  console.log("[db] chat_users table ready");
+  // Add name/role columns if table existed before this migration (idempotent)
+  await pool.query(`ALTER TABLE chat_users ADD COLUMN IF NOT EXISTS name TEXT NOT NULL DEFAULT ''`);
+  await pool.query(`ALTER TABLE chat_users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user'`);
+
+  // Seed the permanent CC-SUPPORT system account
+  await pool.query(
+    `INSERT INTO chat_users (coincash_id, name, role)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (coincash_id) DO UPDATE
+       SET name = EXCLUDED.name,
+           role = EXCLUDED.role`,
+    [SYSTEM_SUPPORT_ID, "Soporte CoinCash", "system"],
+  );
+
+  console.log("[db] chat_users table ready — CC-SUPPORT seeded");
 }
 
 /**
- * Register a CoinCash ID in chat_users (upsert — safe to call every time the
- * chat opens).  Returns the stored record.
+ * Register a user CC-ID in chat_users (upsert).
+ * Safe to call every time the chat opens — always returns the stored record.
  */
 export async function getOrCreateChatUser(coincashId: string): Promise<ChatUserRecord> {
   const res = await pool.query<ChatUserRecord>(
-    `INSERT INTO chat_users (coincash_id)
-     VALUES ($1)
+    `INSERT INTO chat_users (coincash_id, name, role)
+     VALUES ($1, '', 'user')
      ON CONFLICT (coincash_id) DO UPDATE SET coincash_id = EXCLUDED.coincash_id
-     RETURNING id, coincash_id, created_at`,
+     RETURNING id, coincash_id, name, role, created_at`,
     [coincashId],
   );
   return res.rows[0];
@@ -260,13 +281,24 @@ export async function getOrCreateChatUser(coincashId: string): Promise<ChatUserR
 /** Look up a chat user by CoinCash ID. Returns null if not found. */
 export async function getChatUserById(coincashId: string): Promise<ChatUserRecord | null> {
   const res = await pool.query<ChatUserRecord>(
-    `SELECT id, coincash_id, created_at
+    `SELECT id, coincash_id, name, role, created_at
        FROM chat_users
       WHERE coincash_id = $1
       LIMIT 1`,
     [coincashId],
   );
   return res.rows[0] ?? null;
+}
+
+/** Return all regular (non-system) chat users. Used by broadcast. */
+export async function getAllChatUsers(): Promise<ChatUserRecord[]> {
+  const res = await pool.query<ChatUserRecord>(
+    `SELECT id, coincash_id, name, role, created_at
+       FROM chat_users
+      WHERE role != 'system'
+      ORDER BY created_at ASC`,
+  );
+  return res.rows;
 }
 
 // ── Chat messages ─────────────────────────────────────────────────────────────

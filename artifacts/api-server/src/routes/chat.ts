@@ -8,11 +8,12 @@
 import { Router } from "express";
 import {
   saveChatMessage, getChatMessages, getConversation,
-  getOrCreateChatUser, getChatUserById,
+  getOrCreateChatUser, getChatUserById, getAllChatUsers,
 } from "../lib/db";
 
 const SUPPORT_ID = "CC-SUPPORT";
 const CC_RE      = /^CC-\d{6}$/;
+const VALID_ID   = (id: string) => CC_RE.test(id) || id === SUPPORT_ID;
 const router     = Router();
 
 /**
@@ -39,19 +40,53 @@ router.post("/chat/user", async (req, res) => {
 /**
  * GET /api/chat/user/:coincash_id
  * Returns the chat user record if found, 404 if not.
+ * Accepts CC-XXXXXX and CC-SUPPORT.
  */
 router.get("/chat/user/:coincash_id", async (req, res) => {
   const ccId = req.params.coincash_id;
-  if (!CC_RE.test(ccId)) {
+  if (!VALID_ID(ccId)) {
     return res.status(400).json({ error: "Invalid CoinCash ID format. Use CC-XXXXXX" });
   }
   try {
     const user = await getChatUserById(ccId);
     if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
-    return res.json({ coincashId: user.coincash_id, createdAt: user.created_at });
+    return res.json({
+      coincashId: user.coincash_id,
+      name:       user.name,
+      role:       user.role,
+      createdAt:  user.created_at,
+    });
   } catch (err: any) {
     console.error("[chat-users] lookup error:", err?.message);
     return res.status(500).json({ error: "Failed to look up user" });
+  }
+});
+
+/**
+ * POST /api/chat/broadcast
+ * Body: { adminKey, message }
+ * Admin-only: sends a message from CC-SUPPORT to every registered user.
+ * Protect with ADMIN_BROADCAST_KEY env var (falls back to a dev key if unset).
+ */
+router.post("/chat/broadcast", async (req, res) => {
+  const { adminKey, message } = req.body ?? {};
+  const validKey = process.env.ADMIN_BROADCAST_KEY || "coincash-admin-dev";
+  if (!adminKey || adminKey !== validKey) {
+    return res.status(403).json({ error: "Unauthorized" });
+  }
+  if (!message || typeof message !== "string" || !message.trim()) {
+    return res.status(400).json({ error: "message is required" });
+  }
+  try {
+    const users    = await getAllChatUsers();
+    const text     = message.trim();
+    const promises = users.map(u => saveChatMessage(SUPPORT_ID, u.coincash_id, text));
+    await Promise.all(promises);
+    console.log(`[chat-broadcast] Sent to ${users.length} users: "${text.slice(0, 60)}"`);
+    return res.json({ sent: users.length, message: text });
+  } catch (err: any) {
+    console.error("[chat-broadcast] error:", err?.message);
+    return res.status(500).json({ error: "Broadcast failed" });
   }
 });
 
