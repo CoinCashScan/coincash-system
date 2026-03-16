@@ -10,7 +10,6 @@ import WalletsPage, { type SavedWallet } from "@/pages/WalletsPage";
 import ScannerPage from "@/pages/ScannerPage";
 import SwapPage from "@/pages/SwapPage";
 import SettingsPage from "@/pages/SettingsPage";
-import ChatPage from "@/pages/ChatPage";
 import BlacklistPage from "@/pages/BlacklistPage";
 import TRMPage from "@/pages/TRMPage";
 import PinLockScreen from "@/components/PinLockScreen";
@@ -98,9 +97,6 @@ function MainApp() {
             prefillAddress={tab === "scanner" ? scanAddress : undefined}
             onAddressConsumed={() => setScanAddress(undefined)}
           />
-        </div>
-        <div style={{ display: tab === "chat"       ? "block" : "none" }}>
-          <ChatPage wallets={wallets} />
         </div>
         <div style={{ display: tab === "settings"   ? "block" : "none" }}>
           <SettingsPage />
