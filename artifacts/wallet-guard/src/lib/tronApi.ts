@@ -394,8 +394,8 @@ async function broadcastSigned(tx: any, privKeyHex: string): Promise<string> {
   const txHashBytes = hexToBytes(tx.txID);
   const privBytes = hexToBytes(privKeyHex);
 
-  const sig = secp256k1Sign(txHashBytes, privBytes, { lowS: false });
-  const sigHex = sig.toCompactHex() + sig.recovery.toString(16).padStart(2, "0");
+  const sigRec = secp256k1Sign(txHashBytes, privBytes, { lowS: false, prehash: false, format: 'recovered' });
+  const sigHex = Array.from(sigRec.slice(1)).map((b: number) => b.toString(16).padStart(2, '0')).join('') + sigRec[0].toString(16).padStart(2, '0');
 
   const signed = { ...tx, signature: [sigHex] };
 
@@ -702,8 +702,8 @@ async function buildAndSignUSDTTx(
   const tx = result.transaction;
   const txHashBytes = hexToBytes(tx.txID);
   const privBytes   = hexToBytes(privKeyHex);
-  const sig = secp256k1Sign(txHashBytes, privBytes, { lowS: false });
-  const sigHex = sig.toCompactHex() + sig.recovery.toString(16).padStart(2, "0");
+  const sigRec = secp256k1Sign(txHashBytes, privBytes, { lowS: false, prehash: false, format: 'recovered' });
+  const sigHex = Array.from(sigRec.slice(1)).map((b: number) => b.toString(16).padStart(2, '0')).join('') + sigRec[0].toString(16).padStart(2, '0');
 
   return { ...tx, signature: [sigHex] };
 }
@@ -796,8 +796,8 @@ async function buildAndSignTRXTx(
 
   const txHashBytes = hexToBytes(tx.txID);
   const privBytes   = hexToBytes(privKeyHex);
-  const sig = secp256k1Sign(txHashBytes, privBytes, { lowS: false });
-  return { ...tx, signature: [sig.toCompactHex() + sig.recovery.toString(16).padStart(2, "0")] };
+  const sigRec = secp256k1Sign(txHashBytes, privBytes, { lowS: false, prehash: false, format: 'recovered' });
+  return { ...tx, signature: [Array.from(sigRec.slice(1)).map((b: number) => b.toString(16).padStart(2, '0')).join('') + sigRec[0].toString(16).padStart(2, '0')] };
 }
 
 // ── Fetch live TRX/USDT rate + relayer info ───────────────────────────────────

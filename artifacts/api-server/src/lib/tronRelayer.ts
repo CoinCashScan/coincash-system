@@ -7,7 +7,11 @@
 //   2b. Else → relayer freezes a small TRX amount on-the-fly to acquire energy, then delegates
 //   3. Broadcast user's already-signed USDT transaction
 import { createHash } from "node:crypto";
-import { sign as secp256k1Sign } from "@noble/secp256k1";
+import { sign as secp256k1Sign, hashes as secp256k1Hashes } from "@noble/secp256k1";
+import { sha256 } from "@noble/hashes/sha2.js";
+import { hmac } from "@noble/hashes/hmac.js";
+secp256k1Hashes.sha256 = sha256;
+secp256k1Hashes.hmacSha256 = (key: Uint8Array, ...msgs: Uint8Array[]) => hmac(sha256, key, ...msgs);
 
 const TRON_GRID       = "https://api.trongrid.io";
 const API_KEY         = process.env.TRONGRID_API_KEY ?? process.env.VITE_TRON_API_KEY ?? "";
@@ -74,8 +78,8 @@ function sha256(data: Uint8Array): Uint8Array {
 function signTx(tx: any, privKeyHex: string): any {
   const txHashBytes = hexToBytes(tx.txID);
   const privBytes   = hexToBytes(privKeyHex);
-  const sig = secp256k1Sign(txHashBytes, privBytes, { lowS: false });
-  const sigHex = sig.toCompactHex() + sig.recovery.toString(16).padStart(2, "0");
+  const sigRec = secp256k1Sign(txHashBytes, privBytes, { lowS: false, prehash: false, format: 'recovered' });
+  const sigHex = Array.from(sigRec.slice(1)).map((b: number) => b.toString(16).padStart(2, '0')).join('') + sigRec[0].toString(16).padStart(2, '0');
   return { ...tx, signature: [sigHex] };
 }
 
