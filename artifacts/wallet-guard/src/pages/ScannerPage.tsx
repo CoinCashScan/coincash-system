@@ -128,12 +128,42 @@ const ScannerPage = ({ prefillAddress, onAddressConsumed }: ScannerPageProps) =>
         </div>
       )}
 
-      {/* ── Page header ── */}
-      <div className="px-5 pt-10 pb-5">
-        <h1 className="text-xl font-bold text-white">Wallet Scanner</h1>
-        <p className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.4)" }}>
-          Análisis de seguridad TRON en tiempo real
-        </p>
+      {/* ── Logo header ── */}
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", paddingTop: "48px", paddingBottom: "24px" }}>
+        <div style={{
+          borderRadius: "24px",
+          padding: "6px",
+          marginBottom: "16px",
+          filter: "drop-shadow(0 0 18px rgba(0,210,200,0.45)) drop-shadow(0 0 6px rgba(0,210,200,0.25))",
+        }}>
+          <img
+            src={`${import.meta.env.BASE_URL}logo.png`}
+            alt="CoinCash"
+            style={{ width: "180px", height: "auto", objectFit: "contain" }}
+          />
+        </div>
+        <div style={{ textAlign: "center" }}>
+          <span style={{
+            display: "block",
+            fontSize: "22px",
+            fontWeight: 800,
+            letterSpacing: "0.01em",
+            color: "#ffffff",
+            lineHeight: 1.1,
+          }}>
+            CoinCash
+          </span>
+          <span style={{
+            display: "block",
+            fontSize: "11px",
+            fontWeight: 700,
+            letterSpacing: "0.25em",
+            color: "rgba(0,210,200,0.85)",
+            marginTop: "4px",
+          }}>
+            SCANNER
+          </span>
+        </div>
       </div>
 
       <WalletAnalyzer prefillAddress={prefillAddress} onAddressConsumed={onAddressConsumed} />
