@@ -9,12 +9,14 @@ import ChatPage from "@/pages/ChatPage";
 import AdminPage from "@/pages/AdminPage";
 import DmPage from "@/pages/DmPage";
 import SettingsPage from "@/pages/SettingsPage";
+import VideoPage from "@/pages/VideoPage";
 import IOSInstallBanner from "@/components/IOSInstallBanner";
 import { API_BASE } from "@/lib/apiConfig";
 
 const queryClient = new QueryClient();
 
 const IS_ADMIN = typeof window !== "undefined" && window.location.hash === "#soporte-admin";
+const IS_VIDEO = typeof window !== "undefined" && window.location.hash === "#video";
 
 function MainApp() {
   const [tab, setTab] = useState<Tab>("scanner");
@@ -24,9 +26,8 @@ function MainApp() {
     fetch(`${API_BASE}/visit`, { method: "POST" }).catch(() => {});
   }, []);
 
-  if (IS_ADMIN) {
-    return <AdminPage />;
-  }
+  if (IS_ADMIN) return <AdminPage />;
+  if (IS_VIDEO) return <VideoPage />;
 
   return (
     <div style={{ minHeight: "100vh", background: "#0B0F14" }}>
