@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Shield, Search, Lock, MessageSquare, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Search, Lock, AlertTriangle, CheckCircle, Shield } from 'lucide-react';
+
+const LOGO_URL = `${import.meta.env.BASE_URL}coincash-logo.png`;
 
 const SCENE_DURATIONS = [3500, 5500, 4500, 5500, 4500, 4500, 3500];
 const TOTAL_SCENES = SCENE_DURATIONS.length;
@@ -126,32 +128,24 @@ function Scene1() {
         initial={{ y: 50, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ delay: 0.2, duration: 1 }}
-        style={{ position: 'relative', marginBottom: 32 }}
+        style={{ position: 'relative', marginBottom: 40 }}
       >
-        <div style={{ position: 'absolute', inset: -20, background: '#00FFC6', filter: 'blur(60px)', opacity: 0.2, borderRadius: '50%' }} />
-        <Shield size={80} style={{ color: '#00FFC6', filter: 'drop-shadow(0 0 30px rgba(0,255,198,0.5))', position: 'relative' }} />
+        <div style={{ position: 'absolute', inset: -30, background: '#00FFC6', filter: 'blur(80px)', opacity: 0.15, borderRadius: '50%' }} />
+        <img
+          src={LOGO_URL}
+          alt="CoinCash"
+          style={{ height: 'clamp(60px, 10vw, 120px)', width: 'auto', objectFit: 'contain', position: 'relative', filter: 'drop-shadow(0 0 30px rgba(0,255,198,0.5))' }}
+        />
       </motion.div>
 
-      <motion.div
-        initial="hidden"
-        animate="visible"
-        variants={{ visible: { transition: { staggerChildren: 0.1 } } }}
-        style={{ textAlign: 'center' }}
+      <motion.p
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.6, duration: 0.8 }}
+        style={{ fontSize: 'clamp(14px, 2vw, 24px)', color: '#00FFC6', fontWeight: 500, margin: 0 }}
       >
-        <motion.h1
-          className="cc-font-display cc-glow-text"
-          style={{ fontSize: 'clamp(32px, 5vw, 64px)', fontWeight: 800, color: '#fff', margin: '0 0 16px', letterSpacing: '-0.02em' }}
-          variants={{ hidden: { y: 20, opacity: 0 }, visible: { y: 0, opacity: 1, transition: { duration: 0.8 } } }}
-        >
-          CoinCash Scanner
-        </motion.h1>
-        <motion.p
-          style={{ fontSize: 'clamp(14px, 2vw, 24px)', color: '#00FFC6', fontWeight: 500, margin: 0 }}
-          variants={{ hidden: { y: 20, opacity: 0 }, visible: { y: 0, opacity: 1, transition: { duration: 0.8 } } }}
-        >
-          Protege tu billetera TRON
-        </motion.p>
-      </motion.div>
+        Protege tu billetera TRON
+      </motion.p>
     </motion.div>
   );
 }
@@ -480,24 +474,18 @@ function Scene7() {
       transition={{ duration: 1 }}
     >
       <motion.div
-        style={{ position: 'relative', marginBottom: 24 }}
+        style={{ position: 'relative', marginBottom: 40 }}
         initial={{ y: -40, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ delay: 0.2, duration: 1, type: 'spring' }}
       >
-        <div style={{ position: 'absolute', inset: -30, background: '#00FFC6', filter: 'blur(80px)', opacity: 0.25, borderRadius: '50%' }} />
-        <Shield size={100} style={{ color: '#00FFC6', filter: 'drop-shadow(0 0 30px rgba(0,255,198,0.5))', position: 'relative' }} />
+        <div style={{ position: 'absolute', inset: -40, background: '#00FFC6', filter: 'blur(100px)', opacity: 0.2, borderRadius: '50%' }} />
+        <img
+          src={LOGO_URL}
+          alt="CoinCash"
+          style={{ height: 'clamp(70px, 12vw, 150px)', width: 'auto', objectFit: 'contain', position: 'relative', filter: 'drop-shadow(0 0 40px rgba(0,255,198,0.6))' }}
+        />
       </motion.div>
-
-      <motion.h1
-        className="cc-font-display cc-glow-text"
-        style={{ fontSize: 'clamp(32px, 6vw, 80px)', fontWeight: 800, color: '#fff', margin: '0 0 8px', letterSpacing: '-0.02em', textAlign: 'center' }}
-        initial={{ y: 30, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ delay: 0.5 }}
-      >
-        CoinCash Scanner
-      </motion.h1>
 
       <motion.div
         style={{ marginTop: 32, padding: '14px 32px', background: '#1E2736', border: '1px solid rgba(0,255,198,0.5)', borderRadius: 999 }}
