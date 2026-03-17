@@ -6,6 +6,7 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 import BottomNav, { type Tab } from "@/components/BottomNav";
 import ScannerPage from "@/pages/ScannerPage";
 import PlaceholderPage from "@/pages/PlaceholderPage";
+import IOSInstallBanner from "@/components/IOSInstallBanner";
 
 const queryClient = new QueryClient();
 
@@ -22,6 +23,7 @@ function MainApp() {
       </div>
 
       <BottomNav active={tab} onChange={setTab} />
+      <IOSInstallBanner />
     </div>
   );
 }
