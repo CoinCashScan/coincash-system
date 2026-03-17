@@ -14,12 +14,6 @@ function MainApp() {
 
   return (
     <div style={{ minHeight: "100vh", background: "#0B0F14" }}>
-      <div style={{ display: tab === "dashboard" ? "block" : "none" }}>
-        <PlaceholderPage title="Dashboard" icon="📊" />
-      </div>
-      <div style={{ display: tab === "wallets" ? "block" : "none" }}>
-        <PlaceholderPage title="Wallets" icon="👛" />
-      </div>
       <div style={{ display: tab === "scanner" ? "block" : "none" }}>
         <ScannerPage />
       </div>
