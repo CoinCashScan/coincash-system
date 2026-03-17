@@ -2,6 +2,45 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useChatSocket } from "@/hooks/useChatSocket";
 import { API_BASE } from "@/lib/apiConfig";
 
+// ── Media helpers ─────────────────────────────────────────────────────────────
+const IMG_PREFIX  = "[MEDIA_IMG:";
+const FILE_PREFIX = "[MEDIA_FILE:";
+const API_STATIC  = API_BASE;
+
+function isMediaMsg(text: string) {
+  return text.startsWith(IMG_PREFIX) || text.startsWith(FILE_PREFIX);
+}
+
+function AdminMediaBubble({ message }: { message: string }) {
+  if (message.startsWith(IMG_PREFIX)) {
+    const objectPath = message.slice(IMG_PREFIX.length, -1);
+    return (
+      <img
+        src={`${API_STATIC}/storage${objectPath}`}
+        alt="imagen"
+        style={{ maxWidth: 220, maxHeight: 200, borderRadius: 10, display: "block" }}
+        onError={(e) => { (e.target as HTMLImageElement).alt = "No se pudo cargar"; }}
+      />
+    );
+  }
+  if (message.startsWith(FILE_PREFIX)) {
+    const parts      = message.slice(FILE_PREFIX.length, -1).split(":");
+    const objectPath = parts[0];
+    const filename   = parts[1] ?? "archivo";
+    return (
+      <a
+        href={`${API_STATIC}/storage${objectPath}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{ color: "#00FFC6", fontSize: 13, textDecoration: "underline" }}
+      >
+        📎 {filename}
+      </a>
+    );
+  }
+  return null;
+}
+
 const ADMIN_CC_ID = "CC-801286";
 const SUPPORT_ID  = "CC-SUPPORT";
 const API         = API_BASE;
@@ -140,7 +179,7 @@ export default function AdminPage() {
                   </div>
                   <div style={{ fontSize: 12, color: "#6B7280", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {c.lastSender === SUPPORT_ID ? "Tú: " : ""}
-                    {c.lastMessage}
+                    {isMediaMsg(c.lastMessage) ? "📷 Imagen" : c.lastMessage}
                   </div>
                 </div>
               </button>
@@ -179,22 +218,32 @@ export default function AdminPage() {
         )}
         {convMessages.map((msg) => {
           const isSupport = msg.senderCcId === SUPPORT_ID || msg.senderCcId === ADMIN_CC_ID;
+          const isMedia   = isMediaMsg(msg.message);
           return (
             <div key={msg.id} style={{ display: "flex", flexDirection: isSupport ? "row-reverse" : "row", alignItems: "flex-end", gap: 8 }}>
               {!isSupport && (
-                <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#1E2736", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, flexShrink: 0 }}>👤</div>
+                <div style={{ width: 28, height: 28, borderRadius: "50%", background: "rgba(0,255,198,0.15)", border: "1.5px solid #00FFC6", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, flexShrink: 0 }}>👤</div>
               )}
               <div style={{
                 maxWidth: "72%",
-                background: isSupport ? "linear-gradient(135deg,#00FFC6 0%,#00B8A9 100%)" : "#1E2736",
-                color: isSupport ? "#0B1220" : "#E5E7EB",
+                background: isMedia
+                  ? "transparent"
+                  : isSupport
+                    ? "#1E2736"
+                    : "linear-gradient(135deg,#00C896 0%,#00FFC6 100%)",
+                color: isSupport ? "#E5E7EB" : "#0B1220",
                 borderRadius: isSupport ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
-                padding: "10px 14px", fontSize: 14, lineHeight: 1.45, wordBreak: "break-word",
+                padding: isMedia ? 0 : "10px 14px",
+                fontSize: 14, lineHeight: 1.45, wordBreak: "break-word",
+                overflow: "hidden",
+                boxShadow: isMedia ? "none" : isSupport ? "none" : "0 2px 12px rgba(0,255,198,0.2)",
               }}>
-                {msg.message}
-                <div style={{ fontSize: 10, marginTop: 4, opacity: 0.65, textAlign: isSupport ? "right" : "left" }}>
-                  {timeStr(msg.timestamp)}
-                </div>
+                {isMedia ? <AdminMediaBubble message={msg.message} /> : msg.message}
+                {!isMedia && (
+                  <div style={{ fontSize: 10, marginTop: 4, opacity: 0.65, textAlign: isSupport ? "right" : "left" }}>
+                    {timeStr(msg.timestamp)}
+                  </div>
+                )}
               </div>
             </div>
           );
