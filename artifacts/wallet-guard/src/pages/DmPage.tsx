@@ -470,15 +470,16 @@ export default function DmPage() {
   const [myId]                  = useState<string>(getCcId);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [activeChat, setActiveChat] = useState<string | null>(null);
-  const [kbBottom, setKbBottom]     = useState(0);
+  const [overlayTop,    setOverlayTop]    = useState(0);
+  const [overlayHeight, setOverlayHeight] = useState(() => window.visualViewport?.height ?? window.innerHeight);
 
-  // Track virtual keyboard height so the overlay shrinks above it (iOS/Android fix)
+  // Resize overlay to match the visual viewport so keyboard never covers the input bar
   useEffect(() => {
     const vv = window.visualViewport;
     if (!vv) return;
     const update = () => {
-      const kh = Math.max(0, window.innerHeight - vv.offsetTop - vv.height);
-      setKbBottom(kh);
+      setOverlayTop(vv.offsetTop ?? 0);
+      setOverlayHeight(vv.height);
     };
     vv.addEventListener("resize", update);
     vv.addEventListener("scroll", update);
@@ -510,16 +511,19 @@ export default function DmPage() {
         onRefresh={loadContacts}
       />
 
-      {/* Chat opens as a fixed overlay — bottom adjusts with keyboard so input is always visible */}
+      {/* Chat opens as a fixed overlay sized to the visual viewport so the keyboard never covers the input */}
       {activeChat && (
         <div style={{
           position: "fixed",
-          top: 0, left: 0, right: 0,
-          bottom: kbBottom,
+          top: overlayTop,
+          left: 0,
+          right: 0,
+          height: overlayHeight,
           zIndex: 300,
           display: "flex",
           flexDirection: "column",
           background: "#0B0F14",
+          overflow: "hidden",
         }}>
           <DmChat
             myId={myId}
