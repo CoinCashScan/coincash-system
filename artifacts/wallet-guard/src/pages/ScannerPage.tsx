@@ -142,28 +142,6 @@ const ScannerPage = ({ prefillAddress, onAddressConsumed }: ScannerPageProps) =>
             style={{ width: "180px", height: "auto", objectFit: "contain" }}
           />
         </div>
-        <div style={{ textAlign: "center" }}>
-          <span style={{
-            display: "block",
-            fontSize: "22px",
-            fontWeight: 800,
-            letterSpacing: "0.01em",
-            color: "#ffffff",
-            lineHeight: 1.1,
-          }}>
-            CoinCash
-          </span>
-          <span style={{
-            display: "block",
-            fontSize: "11px",
-            fontWeight: 700,
-            letterSpacing: "0.25em",
-            color: "rgba(0,210,200,0.85)",
-            marginTop: "4px",
-          }}>
-            SCANNER
-          </span>
-        </div>
       </div>
 
       <WalletAnalyzer prefillAddress={prefillAddress} onAddressConsumed={onAddressConsumed} />
