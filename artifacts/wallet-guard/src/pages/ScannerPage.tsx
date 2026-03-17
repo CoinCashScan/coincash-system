@@ -131,40 +131,25 @@ const ScannerPage = ({ prefillAddress, onAddressConsumed }: ScannerPageProps) =>
       {/* ── Logo header ── */}
       <div style={{
         display: "flex",
-        flexDirection: "row",
+        flexDirection: "column",
         alignItems: "center",
-        gap: "14px",
-        padding: "40px 24px 24px",
+        gap: "8px",
+        padding: "40px 24px 20px",
       }}>
-        <div style={{
-          flexShrink: 0,
-          filter: "drop-shadow(0 0 16px rgba(0,210,200,0.5)) drop-shadow(0 0 6px rgba(0,210,200,0.25))",
+        <img
+          src={`${import.meta.env.BASE_URL}logo.png`}
+          alt="CoinCash"
+          style={{ width: "200px", height: "auto", objectFit: "contain" }}
+        />
+        <span style={{
+          fontSize: "11.5px",
+          color: "#9CA3AF",
+          letterSpacing: "0.01em",
+          lineHeight: 1.4,
+          textAlign: "center",
         }}>
-          <img
-            src={`${import.meta.env.BASE_URL}logo.png`}
-            alt="CoinCash"
-            style={{ width: "120px", height: "auto", objectFit: "contain" }}
-          />
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-          <span style={{
-            fontSize: "18px",
-            fontWeight: 800,
-            color: "#ffffff",
-            letterSpacing: "-0.01em",
-            lineHeight: 1.1,
-          }}>
-            CoinCash
-          </span>
-          <span style={{
-            fontSize: "11.5px",
-            color: "#9CA3AF",
-            letterSpacing: "0.01em",
-            lineHeight: 1.4,
-          }}>
-            Análisis de seguridad TRON en tiempo real
-          </span>
-        </div>
+          Análisis de seguridad TRON en tiempo real
+        </span>
       </div>
 
       <WalletAnalyzer prefillAddress={prefillAddress} onAddressConsumed={onAddressConsumed} />
