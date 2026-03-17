@@ -12,6 +12,7 @@ import dmRouter from "./dm";
 import storageRouter from "./storage";
 import pushRouter from "./push";
 import visitsRouter from "./visits";
+import authRouter from "./auth";
 
 const router: IRouter = Router();
 
@@ -28,5 +29,6 @@ router.use(dmRouter);
 router.use(storageRouter);
 router.use(pushRouter);
 router.use(visitsRouter);
+router.use(authRouter);
 
 export default router;

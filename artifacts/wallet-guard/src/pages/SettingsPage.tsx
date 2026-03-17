@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Camera, Bell, BellOff, Check, Headphones, ChevronRight, Play, Trash2, KeyRound } from "lucide-react";
+import { Camera, Bell, BellOff, Check, Headphones, ChevronRight, Play, Trash2, KeyRound, ShieldCheck } from "lucide-react";
 import { API_BASE } from "@/lib/apiConfig";
 
 const TEAL   = "#00FFC6";
@@ -40,6 +40,13 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return arr;
 }
 
+/** Hash a PIN string using SHA-256 via Web Crypto. Returns a hex string. */
+async function hashPin(pin: string): Promise<string> {
+  const encoded = new TextEncoder().encode("coincash-pin-v1:" + pin);
+  const buf     = await crypto.subtle.digest("SHA-256", encoded);
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
 export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => void }) {
   const [ccId]         = useState<string>(getCcId);
   const [photoUrl,     setPhotoUrl]     = useState<string | null>(() => localStorage.getItem("coincash-profile-photo"));
@@ -49,19 +56,102 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
   const [pushLoading,  setPushLoading]  = useState(false);
   const [pushSupport,    setPushSupport]    = useState(true);
   const [saved,          setSaved]          = useState(false);
+
+  // ── Recovery modal ────────────────────────────────────────────────────────
   const [showRecovery,   setShowRecovery]   = useState(false);
+  const [recoveryStep,   setRecoveryStep]   = useState<"id" | "pin">("id");
   const [recoveryInput,  setRecoveryInput]  = useState("");
+  const [recoveryPin,    setRecoveryPin]    = useState("");
   const [recoveryErr,    setRecoveryErr]    = useState("");
+  const [recoveryBusy,   setRecoveryBusy]   = useState(false);
+
+  // ── PIN setup modal ────────────────────────────────────────────────────────
+  const [showPinSetup,   setShowPinSetup]   = useState(false);
+  const [pinHasSet,      setPinHasSet]      = useState(false);
+  const [pinInput1,      setPinInput1]      = useState("");
+  const [pinInput2,      setPinInput2]      = useState("");
+  const [pinErr,         setPinErr]         = useState("");
+  const [pinBusy,        setPinBusy]        = useState(false);
+
   const fileRef = useRef<HTMLInputElement>(null);
 
-  function recoverAccount() {
-    const id = recoveryInput.trim().toUpperCase();
-    if (!/^CC-\d{6}$/.test(id)) {
-      setRecoveryErr("Formato inválido. Debe ser CC-XXXXXX (ej: CC-123456)");
-      return;
+  // Check if PIN is already set for this CC-ID
+  useEffect(() => {
+    fetch(`${API_BASE}/auth/pin/exists/${ccId}`)
+      .then(r => r.json())
+      .then(d => setPinHasSet(!!d.exists))
+      .catch(() => {});
+  }, [ccId]);
+
+  async function savePinHandler() {
+    if (pinInput1.length < 4) { setPinErr("Mínimo 4 caracteres"); return; }
+    if (pinInput1 !== pinInput2) { setPinErr("Las contraseñas no coinciden"); return; }
+    setPinBusy(true); setPinErr("");
+    try {
+      const h = await hashPin(pinInput1);
+      const r = await fetch(`${API_BASE}/auth/pin/set`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ccId, pinHash: h }),
+      });
+      if (!r.ok) throw new Error("Error del servidor");
+      setPinHasSet(true);
+      setShowPinSetup(false);
+      setPinInput1(""); setPinInput2("");
+      flashSaved();
+    } catch {
+      setPinErr("No se pudo guardar. Inténtalo de nuevo.");
+    } finally {
+      setPinBusy(false);
     }
-    localStorage.setItem("coincash-cc-id", id);
-    window.location.reload();
+  }
+
+  async function recoveryNextStep() {
+    if (recoveryStep === "id") {
+      const id = recoveryInput.trim().toUpperCase();
+      if (!/^CC-\d{6}$/.test(id)) {
+        setRecoveryErr("Formato inválido. Debe ser CC-XXXXXX (ej: CC-123456)");
+        return;
+      }
+      setRecoveryBusy(true); setRecoveryErr("");
+      try {
+        const r = await fetch(`${API_BASE}/auth/pin/exists/${id}`);
+        const d = await r.json();
+        if (!d.exists) {
+          setRecoveryErr("Ese ID no tiene contraseña de recuperación configurada.");
+          return;
+        }
+        setRecoveryStep("pin");
+      } catch {
+        setRecoveryErr("Error de conexión. Inténtalo de nuevo.");
+      } finally {
+        setRecoveryBusy(false);
+      }
+    } else {
+      // Step 2: verify PIN
+      if (recoveryPin.length < 4) { setRecoveryErr("Contraseña demasiado corta"); return; }
+      setRecoveryBusy(true); setRecoveryErr("");
+      try {
+        const h = await hashPin(recoveryPin);
+        const id = recoveryInput.trim().toUpperCase();
+        const r = await fetch(`${API_BASE}/auth/pin/verify`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ccId: id, pinHash: h }),
+        });
+        const d = await r.json();
+        if (!d.valid) {
+          setRecoveryErr("Contraseña incorrecta. Inténtalo de nuevo.");
+          return;
+        }
+        localStorage.setItem("coincash-cc-id", id);
+        window.location.reload();
+      } catch {
+        setRecoveryErr("Error de conexión. Inténtalo de nuevo.");
+      } finally {
+        setRecoveryBusy(false);
+      }
+    }
   }
 
   // Check push permission on mount
@@ -217,57 +307,168 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
         <p style={{ margin: "0 0 4px", fontSize: 12, color: MUTED }}>Tu ID de CoinCash</p>
         <p style={{ margin: 0, fontSize: 18, fontWeight: 700, color: TEAL, fontFamily: "monospace" }}>{ccId}</p>
         <p style={{ margin: "6px 0 0", fontSize: 12, color: MUTED }}>Comparte este ID con tus contactos para que puedan enviarte mensajes.</p>
-        <button
-          onClick={() => { setShowRecovery(true); setRecoveryInput(""); setRecoveryErr(""); }}
-          style={{
-            marginTop: 12, display: "flex", alignItems: "center", gap: 6,
-            background: "rgba(0,255,198,0.08)", border: "1px solid rgba(0,255,198,0.2)",
-            borderRadius: 8, padding: "7px 13px", cursor: "pointer",
-            color: TEAL, fontSize: 12, fontWeight: 600,
-          }}
-        >
-          <KeyRound size={13} /> Restaurar cuenta en este dispositivo
-        </button>
+
+        {/* PIN status badge */}
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10 }}>
+          <ShieldCheck size={13} style={{ color: pinHasSet ? TEAL : "rgba(255,200,0,0.75)" }} />
+          <span style={{ fontSize: 11, color: pinHasSet ? TEAL : "rgba(255,200,0,0.75)" }}>
+            {pinHasSet ? "Contraseña de recuperación configurada" : "Sin contraseña de recuperación"}
+          </span>
+        </div>
+
+        <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+          <button
+            onClick={() => { setShowPinSetup(true); setPinInput1(""); setPinInput2(""); setPinErr(""); }}
+            style={{
+              display: "flex", alignItems: "center", gap: 6,
+              background: "rgba(0,255,198,0.08)", border: "1px solid rgba(0,255,198,0.2)",
+              borderRadius: 8, padding: "7px 13px", cursor: "pointer",
+              color: TEAL, fontSize: 12, fontWeight: 600,
+            }}
+          >
+            <ShieldCheck size={13} />
+            {pinHasSet ? "Cambiar contraseña" : "Crear contraseña"}
+          </button>
+          <button
+            onClick={() => { setShowRecovery(true); setRecoveryInput(""); setRecoveryPin(""); setRecoveryErr(""); setRecoveryStep("id"); }}
+            style={{
+              display: "flex", alignItems: "center", gap: 6,
+              background: "rgba(255,255,255,0.04)", border: `1px solid ${BORDER}`,
+              borderRadius: 8, padding: "7px 13px", cursor: "pointer",
+              color: MUTED, fontSize: 12, fontWeight: 600,
+            }}
+          >
+            <KeyRound size={13} /> Restaurar cuenta
+          </button>
+        </div>
       </div>
 
-      {/* Recovery modal */}
-      {showRecovery && (
+      {/* PIN setup modal */}
+      {showPinSetup && (
         <div style={{ position: "fixed", inset: 0, zIndex: 400, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
           <div style={{ background: CARD, borderRadius: 16, padding: 24, width: "100%", maxWidth: 360, border: `1px solid ${BORDER}` }}>
-            <p style={{ margin: "0 0 6px", fontSize: 16, fontWeight: 700, color: TEXT }}>Restaurar cuenta</p>
+            <p style={{ margin: "0 0 6px", fontSize: 16, fontWeight: 700, color: TEXT }}>
+              {pinHasSet ? "Cambiar contraseña" : "Crear contraseña de recuperación"}
+            </p>
             <p style={{ margin: "0 0 16px", fontSize: 13, color: MUTED, lineHeight: 1.5 }}>
-              Introduce tu ID de CoinCash anterior para recuperar tus contactos y mensajes en este dispositivo.
+              Esta contraseña se pedirá al restaurar tu cuenta en un nuevo dispositivo. Guárdala en un lugar seguro.
             </p>
             <input
               autoFocus
-              placeholder="CC-123456"
-              value={recoveryInput}
-              onChange={e => { setRecoveryInput(e.target.value.toUpperCase()); setRecoveryErr(""); }}
-              onKeyDown={e => e.key === "Enter" && recoverAccount()}
-              maxLength={9}
+              type="password"
+              placeholder="Nueva contraseña (mín. 4 caracteres)"
+              value={pinInput1}
+              onChange={e => { setPinInput1(e.target.value); setPinErr(""); }}
+              onKeyDown={e => e.key === "Enter" && savePinHandler()}
               style={{
                 width: "100%", boxSizing: "border-box",
-                background: "#0B0F14", border: `1px solid ${recoveryErr ? "#ff4444" : BORDER}`,
+                background: "#0B0F14", border: `1px solid ${pinErr ? "#ff4444" : BORDER}`,
                 borderRadius: 8, padding: "10px 12px", color: TEXT,
-                fontSize: 16, fontFamily: "monospace", outline: "none",
+                fontSize: 15, outline: "none", marginBottom: 8,
               }}
             />
-            {recoveryErr && <p style={{ color: "#ff6b6b", fontSize: 12, margin: "6px 0 0" }}>{recoveryErr}</p>}
-            <p style={{ margin: "10px 0 0", fontSize: 11, color: "rgba(255,200,0,0.75)" }}>
-              ⚠ Esto reemplazará tu ID actual ({ccId}) en este dispositivo.
-            </p>
+            <input
+              type="password"
+              placeholder="Repite la contraseña"
+              value={pinInput2}
+              onChange={e => { setPinInput2(e.target.value); setPinErr(""); }}
+              onKeyDown={e => e.key === "Enter" && savePinHandler()}
+              style={{
+                width: "100%", boxSizing: "border-box",
+                background: "#0B0F14", border: `1px solid ${pinErr ? "#ff4444" : BORDER}`,
+                borderRadius: 8, padding: "10px 12px", color: TEXT,
+                fontSize: 15, outline: "none",
+              }}
+            />
+            {pinErr && <p style={{ color: "#ff6b6b", fontSize: 12, margin: "6px 0 0" }}>{pinErr}</p>}
             <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
               <button
-                onClick={() => setShowRecovery(false)}
+                onClick={() => setShowPinSetup(false)}
                 style={{ flex: 1, padding: 10, background: "transparent", border: `1px solid ${BORDER}`, borderRadius: 8, color: MUTED, cursor: "pointer", fontSize: 14 }}
               >
                 Cancelar
               </button>
               <button
-                onClick={recoverAccount}
-                style={{ flex: 1, padding: 10, background: TEAL, border: "none", borderRadius: 8, color: "#0B1220", fontWeight: 700, cursor: "pointer", fontSize: 14 }}
+                onClick={savePinHandler}
+                disabled={pinBusy}
+                style={{ flex: 1, padding: 10, background: TEAL, border: "none", borderRadius: 8, color: "#0B1220", fontWeight: 700, cursor: "pointer", fontSize: 14, opacity: pinBusy ? 0.6 : 1 }}
               >
-                Restaurar
+                {pinBusy ? "Guardando..." : "Guardar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Recovery modal — step 1: CC-ID, step 2: PIN */}
+      {showRecovery && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 400, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+          <div style={{ background: CARD, borderRadius: 16, padding: 24, width: "100%", maxWidth: 360, border: `1px solid ${BORDER}` }}>
+            {recoveryStep === "id" ? (
+              <>
+                <p style={{ margin: "0 0 6px", fontSize: 16, fontWeight: 700, color: TEXT }}>Restaurar cuenta</p>
+                <p style={{ margin: "0 0 16px", fontSize: 13, color: MUTED, lineHeight: 1.5 }}>
+                  Introduce tu ID de CoinCash anterior. A continuación se pedirá la contraseña de recuperación.
+                </p>
+                <input
+                  autoFocus
+                  placeholder="CC-123456"
+                  value={recoveryInput}
+                  onChange={e => { setRecoveryInput(e.target.value.toUpperCase()); setRecoveryErr(""); }}
+                  onKeyDown={e => e.key === "Enter" && recoveryNextStep()}
+                  maxLength={9}
+                  style={{
+                    width: "100%", boxSizing: "border-box",
+                    background: "#0B0F14", border: `1px solid ${recoveryErr ? "#ff4444" : BORDER}`,
+                    borderRadius: 8, padding: "10px 12px", color: TEXT,
+                    fontSize: 16, fontFamily: "monospace", outline: "none",
+                  }}
+                />
+              </>
+            ) : (
+              <>
+                <p style={{ margin: "0 0 6px", fontSize: 16, fontWeight: 700, color: TEXT }}>Verificar identidad</p>
+                <p style={{ margin: "0 0 16px", fontSize: 13, color: MUTED, lineHeight: 1.5 }}>
+                  Introduce la contraseña de recuperación de la cuenta <span style={{ color: TEAL, fontFamily: "monospace" }}>{recoveryInput}</span>.
+                </p>
+                <input
+                  autoFocus
+                  type="password"
+                  placeholder="Contraseña de recuperación"
+                  value={recoveryPin}
+                  onChange={e => { setRecoveryPin(e.target.value); setRecoveryErr(""); }}
+                  onKeyDown={e => e.key === "Enter" && recoveryNextStep()}
+                  style={{
+                    width: "100%", boxSizing: "border-box",
+                    background: "#0B0F14", border: `1px solid ${recoveryErr ? "#ff4444" : BORDER}`,
+                    borderRadius: 8, padding: "10px 12px", color: TEXT,
+                    fontSize: 15, outline: "none",
+                  }}
+                />
+              </>
+            )}
+            {recoveryErr && <p style={{ color: "#ff6b6b", fontSize: 12, margin: "6px 0 0" }}>{recoveryErr}</p>}
+            {recoveryStep === "id" && (
+              <p style={{ margin: "10px 0 0", fontSize: 11, color: "rgba(255,200,0,0.75)" }}>
+                ⚠ Esto reemplazará tu ID actual ({ccId}) en este dispositivo.
+              </p>
+            )}
+            <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+              <button
+                onClick={() => {
+                  if (recoveryStep === "pin") { setRecoveryStep("id"); setRecoveryErr(""); }
+                  else setShowRecovery(false);
+                }}
+                style={{ flex: 1, padding: 10, background: "transparent", border: `1px solid ${BORDER}`, borderRadius: 8, color: MUTED, cursor: "pointer", fontSize: 14 }}
+              >
+                {recoveryStep === "pin" ? "Atrás" : "Cancelar"}
+              </button>
+              <button
+                onClick={recoveryNextStep}
+                disabled={recoveryBusy}
+                style={{ flex: 1, padding: 10, background: TEAL, border: "none", borderRadius: 8, color: "#0B1220", fontWeight: 700, cursor: "pointer", fontSize: 14, opacity: recoveryBusy ? 0.6 : 1 }}
+              >
+                {recoveryBusy ? "..." : recoveryStep === "id" ? "Siguiente" : "Restaurar"}
               </button>
             </div>
           </div>

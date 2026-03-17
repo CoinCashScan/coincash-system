@@ -685,6 +685,45 @@ export async function recordVisit(country: string, countryCode: string): Promise
   );
 }
 
+// ── Account PIN (recovery security) ──────────────────────────────────────────
+
+export async function ensureAccountPinsTable(): Promise<void> {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS account_pins (
+      coincash_id TEXT PRIMARY KEY,
+      pin_hash    TEXT NOT NULL,
+      created_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at  TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  console.log("[db] account_pins table ready");
+}
+
+export async function setAccountPin(ccId: string, pinHash: string): Promise<void> {
+  await pool.query(
+    `INSERT INTO account_pins (coincash_id, pin_hash, updated_at)
+     VALUES ($1, $2, NOW())
+     ON CONFLICT (coincash_id) DO UPDATE SET pin_hash = $2, updated_at = NOW()`,
+    [ccId, pinHash],
+  );
+}
+
+export async function getAccountPinHash(ccId: string): Promise<string | null> {
+  const res = await pool.query<{ pin_hash: string }>(
+    `SELECT pin_hash FROM account_pins WHERE coincash_id = $1`,
+    [ccId],
+  );
+  return res.rows[0]?.pin_hash ?? null;
+}
+
+export async function hasPinSet(ccId: string): Promise<boolean> {
+  const res = await pool.query<{ exists: boolean }>(
+    `SELECT EXISTS(SELECT 1 FROM account_pins WHERE coincash_id = $1) AS exists`,
+    [ccId],
+  );
+  return res.rows[0]?.exists ?? false;
+}
+
 /** Return total visits and per-country breakdown. */
 export async function getVisitStats(): Promise<{
   total: number;
