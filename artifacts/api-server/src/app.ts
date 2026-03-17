@@ -1,16 +1,12 @@
 import express, { type Express } from "express";
 import cors from "cors";
 import path from "path";
-import { fileURLToPath } from "url";
 import { existsSync } from "fs";
 import router from "./routes";
 import {
   ensureUsersTable, ensureMessagesTable,
   ensureChatUsersTable, ensureChatContactsTable,
 } from "./lib/db";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname  = path.dirname(__filename);
 
 const app: Express = express();
 
@@ -19,14 +15,11 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // ── Serve wallet-guard static files in production ────────────────────────────
-// When built, the dist lands at artifacts/wallet-guard/dist/public.
-// The api-server binary sits at artifacts/api-server/dist/index.cjs, so
-// __dirname resolves to …/api-server/dist — walk up two levels to reach the
-// monorepo root, then down to the wallet-guard dist.
+// process.cwd() is the monorepo root in both dev (tsx) and production (node).
+// import.meta.url is NOT used here because the CJS build sets it to undefined.
 const walletGuardDist = path.join(
-  __dirname,
-  "..", "..",     // api-server/dist → monorepo root
-  "wallet-guard", "dist", "public",
+  process.cwd(),
+  "artifacts", "wallet-guard", "dist", "public",
 );
 
 if (existsSync(walletGuardDist)) {
