@@ -470,20 +470,24 @@ export default function DmPage() {
 
   return (
     <div style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-      {activeChat ? (
-        <DmChat
-          myId={myId}
-          contactId={activeChat}
-          contactName={activeContact?.nickname ?? ""}
-          onBack={() => setActiveChat(null)}
-        />
-      ) : (
-        <ContactsList
-          myId={myId}
-          contacts={contacts}
-          onSelect={id => setActiveChat(id)}
-          onRefresh={loadContacts}
-        />
+      {/* Contacts list always mounts here */}
+      <ContactsList
+        myId={myId}
+        contacts={contacts}
+        onSelect={id => setActiveChat(id)}
+        onRefresh={loadContacts}
+      />
+
+      {/* Chat opens as a fixed full-screen overlay so the bottom nav never covers it */}
+      {activeChat && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 300, display: "flex", flexDirection: "column", background: "#0B0F14" }}>
+          <DmChat
+            myId={myId}
+            contactId={activeChat}
+            contactName={activeContact?.nickname ?? ""}
+            onBack={() => setActiveChat(null)}
+          />
+        </div>
       )}
     </div>
   );
