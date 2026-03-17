@@ -2,7 +2,7 @@
 import { createServer } from "http";
 import { Server as SocketIO } from "socket.io";
 import app from "./app";
-import { saveChatMessage, getChatUserById, saveDmMessage } from "./lib/db";
+import { saveChatMessage, getChatUserById, saveDmMessage, getConversation } from "./lib/db";
 import { sendPushToUser } from "./routes/push";
 
 const rawPort = process.env["PORT"] ?? "3000";
@@ -71,6 +71,12 @@ io.on("connection", (socket) => {
       const effectiveSender = senderRec?.linked_to ?? senderCcId;
       const isAdmin        = senderRec?.role === "admin" && !!senderRec.linked_to;
 
+      // Check if this is the user's first message to support (before saving)
+      const isFirstMessage =
+        !isAdmin && receiverCcId === SUPPORT_ID
+          ? (await getConversation(effectiveSender, SUPPORT_ID).catch(() => [])).length === 0
+          : false;
+
       // Save message to DB
       const saved = await saveChatMessage(effectiveSender, receiverCcId, message.trim());
       const msg   = formatMsg(saved);
@@ -79,13 +85,12 @@ io.on("connection", (socket) => {
       io.to(receiverCcId).emit("receive_message", msg);
       io.to(senderCcId).emit("receive_message", msg);
 
-      // Auto-reply: only when a regular user messages CC-SUPPORT
-      if (!isAdmin && receiverCcId === SUPPORT_ID) {
-        const replyText  = "Gracias por tu mensaje. Un agente de soporte se pondrá en contacto contigo pronto.";
-        const reply      = await saveChatMessage(SUPPORT_ID, senderCcId, replyText);
-        const replyMsg   = formatMsg(reply);
+      // Auto-reply: only on the very first message a user sends to CC-SUPPORT
+      if (isFirstMessage) {
+        const replyText = "Gracias por tu mensaje. Un agente de soporte se pondrá en contacto contigo pronto. ¿En qué podemos ayudarte hoy?";
+        const reply     = await saveChatMessage(SUPPORT_ID, senderCcId, replyText);
+        const replyMsg  = formatMsg(reply);
         io.to(senderCcId).emit("receive_message", replyMsg);
-        // Also push to admin(s) watching CC-SUPPORT room
         io.to(SUPPORT_ID).emit("receive_message", replyMsg);
       }
     } catch (err: any) {
