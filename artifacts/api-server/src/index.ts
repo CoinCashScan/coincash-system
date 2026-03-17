@@ -2,7 +2,7 @@
 import { createServer } from "http";
 import { Server as SocketIO } from "socket.io";
 import app from "./app";
-import { saveChatMessage, getChatUserById } from "./lib/db";
+import { saveChatMessage, getChatUserById, saveDmMessage } from "./lib/db";
 
 const rawPort = process.env["PORT"] ?? "3000";
 const port    = Number(rawPort);
@@ -90,6 +90,35 @@ io.on("connection", (socket) => {
     } catch (err: any) {
       console.error("[socket] send_message error:", err?.message);
       socket.emit("error", { error: "Failed to send message" });
+    }
+  });
+
+  // ── Direct Message events ───────────────────────────────────────────────────
+  socket.on("dm_send", async ({ to, msgType, ciphertext, iv, objectPath }) => {
+    if (!myId || !CC_RE.test(to)) return;
+    try {
+      const saved = await saveDmMessage(
+        myId, to,
+        (msgType as "text" | "image" | "audio") ?? "text",
+        ciphertext  ?? null,
+        iv          ?? null,
+        objectPath  ?? null,
+      );
+      const msg = {
+        id:          saved.id,
+        senderId:    saved.sender_id,
+        receiverId:  saved.receiver_id,
+        msgType:     saved.msg_type,
+        ciphertext:  saved.ciphertext,
+        iv:          saved.iv,
+        objectPath:  saved.object_path,
+        createdAt:   saved.created_at,
+      };
+      io.to(to).emit("dm_receive", msg);
+      io.to(myId).emit("dm_receive", msg);
+    } catch (err: any) {
+      console.error("[socket] dm_send error:", err?.message);
+      socket.emit("error", { error: "Failed to send DM" });
     }
   });
 

@@ -8,6 +8,8 @@ import bitraceBlacklistRouter from "./bitraceBlacklist";
 import swapRouter from "./swap";
 import usersRouter from "./users";
 import chatRouter from "./chat";
+import dmRouter from "./dm";
+import storageRouter from "./storage";
 
 const router: IRouter = Router();
 
@@ -20,5 +22,7 @@ router.use(bitraceBlacklistRouter);
 router.use(swapRouter);
 router.use(usersRouter);
 router.use(chatRouter);
+router.use(dmRouter);
+router.use(storageRouter);
 
 export default router;

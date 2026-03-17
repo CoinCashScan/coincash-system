@@ -491,3 +491,108 @@ export async function getConversation(
   );
   return res.rows;
 }
+
+// ── Direct Messages (DMs) ─────────────────────────────────────────────────────
+
+export interface DmContact {
+  id:         number;
+  owner_id:   string;
+  contact_id: string;
+  created_at: Date;
+}
+
+export interface DmMessage {
+  id:          number;
+  sender_id:   string;
+  receiver_id: string;
+  msg_type:    "text" | "image" | "audio";
+  ciphertext:  string | null;
+  iv:          string | null;
+  object_path: string | null;
+  created_at:  Date;
+}
+
+export async function ensureDmTables(): Promise<void> {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS dm_contacts (
+      id         SERIAL PRIMARY KEY,
+      owner_id   TEXT NOT NULL,
+      contact_id TEXT NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      UNIQUE(owner_id, contact_id)
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS dm_messages (
+      id          SERIAL PRIMARY KEY,
+      sender_id   TEXT NOT NULL,
+      receiver_id TEXT NOT NULL,
+      msg_type    TEXT NOT NULL DEFAULT 'text',
+      ciphertext  TEXT,
+      iv          TEXT,
+      object_path TEXT,
+      created_at  TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS dm_msgs_pair_idx ON dm_messages (sender_id, receiver_id)`);
+  console.log("[db] dm_contacts + dm_messages tables ready");
+}
+
+export async function addDmContact(ownerId: string, contactId: string): Promise<DmContact | null> {
+  const res = await pool.query<DmContact>(
+    `INSERT INTO dm_contacts (owner_id, contact_id)
+     VALUES ($1, $2)
+     ON CONFLICT (owner_id, contact_id) DO NOTHING
+     RETURNING *`,
+    [ownerId, contactId],
+  );
+  return res.rows[0] ?? null;
+}
+
+export async function getDmContacts(ownerId: string): Promise<DmContact[]> {
+  const res = await pool.query<DmContact>(
+    `SELECT * FROM dm_contacts WHERE owner_id = $1 ORDER BY created_at DESC`,
+    [ownerId],
+  );
+  return res.rows;
+}
+
+export async function removeDmContact(ownerId: string, contactId: string): Promise<void> {
+  await pool.query(
+    `DELETE FROM dm_contacts WHERE owner_id = $1 AND contact_id = $2`,
+    [ownerId, contactId],
+  );
+}
+
+export async function saveDmMessage(
+  senderId:   string,
+  receiverId: string,
+  msgType:    "text" | "image" | "audio",
+  ciphertext: string | null,
+  iv:         string | null,
+  objectPath: string | null,
+): Promise<DmMessage> {
+  const res = await pool.query<DmMessage>(
+    `INSERT INTO dm_messages (sender_id, receiver_id, msg_type, ciphertext, iv, object_path)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING *`,
+    [senderId, receiverId, msgType, ciphertext, iv, objectPath],
+  );
+  return res.rows[0];
+}
+
+export async function getDmMessages(
+  userId1: string,
+  userId2: string,
+  limit = 150,
+): Promise<DmMessage[]> {
+  const res = await pool.query<DmMessage>(
+    `SELECT * FROM dm_messages
+      WHERE (sender_id = $1 AND receiver_id = $2)
+         OR (sender_id = $2 AND receiver_id = $1)
+      ORDER BY created_at ASC
+      LIMIT $3`,
+    [userId1, userId2, limit],
+  );
+  return res.rows;
+}

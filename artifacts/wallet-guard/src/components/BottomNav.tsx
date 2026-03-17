@@ -1,157 +1,82 @@
-import { ScanSearch, MessageCircle, Settings } from "lucide-react";
+import { ScanSearch, MessageSquare, Headphones, Settings } from "lucide-react";
 
-export type Tab = "scanner" | "soporte" | "settings";
+export type Tab = "scanner" | "mensajes" | "soporte" | "settings";
 
 interface BottomNavProps {
   active: Tab;
   onChange: (tab: Tab) => void;
 }
 
-export default function BottomNav({ active, onChange }: BottomNavProps) {
+const TEAL  = "#00FFC6";
+const MUTED = "rgba(255,255,255,0.35)";
+
+function NavBtn({
+  label, icon, active: isActive, onClick,
+}: {
+  label: string; icon: React.ReactNode; active: boolean; onClick: () => void;
+}) {
   return (
-    <nav
+    <button
+      onClick={onClick}
       style={{
-        position: "fixed",
-        bottom: 0,
-        left: 0,
-        right: 0,
-        zIndex: 1000,
-        background: "#0B1220",
-        borderTop: "1px solid rgba(255,255,255,0.07)",
-        display: "flex",
-        alignItems: "center",
-        height: "64px",
-        paddingBottom: "env(safe-area-inset-bottom)",
+        flex: 1, display: "flex", flexDirection: "column",
+        alignItems: "center", justifyContent: "center",
+        gap: 4, background: "none", border: "none", cursor: "pointer",
+        padding: "8px 0", height: "100%",
       }}
     >
-      {/* Scanner — left */}
-      <button
-        onClick={() => onChange("scanner")}
-        style={{
-          width: "80px",
-          flexShrink: 0,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: "4px",
-          background: "none",
-          border: "none",
-          cursor: "pointer",
-          padding: 0,
-          height: "100%",
-        }}
-      >
-        <ScanSearch
-          style={{
-            width: "20px",
-            height: "20px",
-            color: active === "scanner" ? "#00FFC6" : "rgba(255,255,255,0.35)",
-            transition: "color 0.2s",
-          }}
-        />
-        <span
-          style={{
-            fontSize: "10px",
-            fontWeight: active === "scanner" ? 600 : 400,
-            color: active === "scanner" ? "#00FFC6" : "rgba(255,255,255,0.35)",
-            transition: "color 0.2s",
-          }}
-        >
-          Scanner
-        </span>
-      </button>
+      <div style={{ color: isActive ? TEAL : MUTED, transition: "color 0.2s" }}>{icon}</div>
+      <span style={{
+        fontSize: 10, fontWeight: isActive ? 700 : 400,
+        color: isActive ? TEAL : MUTED, transition: "color 0.2s",
+      }}>{label}</span>
+    </button>
+  );
+}
 
-      {/* Soporte — center (pill) */}
+export default function BottomNav({ active, onChange }: BottomNavProps) {
+  return (
+    <nav style={{
+      position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 1000,
+      background: "#0B1220", borderTop: "1px solid rgba(255,255,255,0.07)",
+      display: "flex", alignItems: "stretch", height: 64,
+      paddingBottom: "env(safe-area-inset-bottom)",
+    }}>
+      <NavBtn label="Scanner" icon={<ScanSearch size={20} />}
+        active={active === "scanner"} onClick={() => onChange("scanner")} />
+
+      {/* Mensajes — accent pill */}
       <button
-        onClick={() => onChange("soporte")}
+        onClick={() => onChange("mensajes")}
         style={{
-          flex: 1,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: "3px",
-          background: "none",
-          border: "none",
-          cursor: "pointer",
-          padding: 0,
-          height: "100%",
+          flex: 1, display: "flex", flexDirection: "column",
+          alignItems: "center", justifyContent: "center",
+          gap: 3, background: "none", border: "none", cursor: "pointer",
+          padding: 0, height: "100%",
         }}
       >
-        <div
-          style={{
-            width: "44px",
-            height: "44px",
-            borderRadius: "14px",
-            background:
-              active === "soporte"
-                ? "linear-gradient(135deg,#00FFC6 0%,#00B8A9 100%)"
-                : "rgba(0,255,198,0.12)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            boxShadow: active === "soporte" ? "0 0 18px rgba(0,255,198,0.45)" : "none",
-            transition: "all 0.2s ease",
-          }}
-        >
-          <MessageCircle
-            style={{
-              width: "20px",
-              height: "20px",
-              color: active === "soporte" ? "#0B1220" : "#00FFC6",
-            }}
-          />
+        <div style={{
+          width: 40, height: 40, borderRadius: 13,
+          background: active === "mensajes"
+            ? "linear-gradient(135deg,#00FFC6 0%,#00B8A9 100%)"
+            : "rgba(0,255,198,0.1)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          boxShadow: active === "mensajes" ? "0 0 16px rgba(0,255,198,0.4)" : "none",
+          transition: "all 0.2s ease",
+        }}>
+          <MessageSquare size={19} style={{ color: active === "mensajes" ? "#0B1220" : TEAL }} />
         </div>
-        <span
-          style={{
-            fontSize: "10px",
-            fontWeight: 700,
-            letterSpacing: "0.04em",
-            color: active === "soporte" ? "#00FFC6" : "rgba(0,255,198,0.6)",
-          }}
-        >
-          Soporte
-        </span>
+        <span style={{
+          fontSize: 10, fontWeight: 700,
+          color: active === "mensajes" ? TEAL : "rgba(0,255,198,0.55)",
+          letterSpacing: "0.04em",
+        }}>Mensajes</span>
       </button>
 
-      {/* Settings — right */}
-      <button
-        onClick={() => onChange("settings")}
-        style={{
-          width: "80px",
-          flexShrink: 0,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: "4px",
-          background: "none",
-          border: "none",
-          cursor: "pointer",
-          padding: 0,
-          height: "100%",
-        }}
-      >
-        <Settings
-          style={{
-            width: "20px",
-            height: "20px",
-            color: active === "settings" ? "#00FFC6" : "rgba(255,255,255,0.35)",
-            transition: "color 0.2s",
-          }}
-        />
-        <span
-          style={{
-            fontSize: "10px",
-            fontWeight: active === "settings" ? 600 : 400,
-            color: active === "settings" ? "#00FFC6" : "rgba(255,255,255,0.35)",
-            transition: "color 0.2s",
-          }}
-        >
-          Settings
-        </span>
-      </button>
+      <NavBtn label="Soporte" icon={<Headphones size={20} />}
+        active={active === "soporte"} onClick={() => onChange("soporte")} />
+      <NavBtn label="Config"  icon={<Settings   size={20} />}
+        active={active === "settings"} onClick={() => onChange("settings")} />
     </nav>
   );
 }
