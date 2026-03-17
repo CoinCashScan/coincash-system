@@ -43,6 +43,7 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
 export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => void }) {
   const [ccId]         = useState<string>(getCcId);
   const [photoUrl,     setPhotoUrl]     = useState<string | null>(() => localStorage.getItem("coincash-profile-photo"));
+  const [photoStored,  setPhotoStored]  = useState<boolean>(() => !!localStorage.getItem("coincash-profile-photo"));
   const [uploading,    setUploading]    = useState(false);
   const [pushEnabled,  setPushEnabled]  = useState(false);
   const [pushLoading,  setPushLoading]  = useState(false);
@@ -70,6 +71,7 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
       const url = `${API_BASE}/storage${objectPath}`;
       localStorage.setItem("coincash-profile-photo", url);
       setPhotoUrl(url);
+      setPhotoStored(true);
       flashSaved();
     } catch { alert("No se pudo subir la foto"); }
     finally { setUploading(false); if (fileRef.current) fileRef.current.value = ""; }
@@ -78,6 +80,7 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
   function removePhoto() {
     localStorage.removeItem("coincash-profile-photo");
     setPhotoUrl(null);
+    setPhotoStored(false);
     flashSaved();
   }
 
@@ -156,7 +159,7 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
             style={{ position: "relative", width: 72, height: 72, borderRadius: "50%", cursor: "pointer", flexShrink: 0, border: `2px solid ${TEAL}` }}
           >
             {photoUrl ? (
-              <img src={photoUrl} alt="Perfil" style={{ width: "100%", height: "100%", borderRadius: "50%", objectFit: "cover" }} onError={() => setPhotoUrl(null)} />
+              <img src={photoUrl} alt="Perfil" style={{ width: "100%", height: "100%", borderRadius: "50%", objectFit: "cover" }} onError={() => { setPhotoUrl(null); }} />
             ) : (
               <div style={{ width: "100%", height: "100%", borderRadius: "50%", background: "linear-gradient(135deg,#00FFC6,#0080FF)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, fontWeight: 800, color: "#0B1220" }}>
                 {ccId.slice(-2)}
@@ -169,15 +172,15 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
 
           <div style={{ flex: 1 }}>
             <p style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>
-              {photoUrl ? "Foto de perfil" : "Cambiar foto"}
+              {photoStored ? "Foto de perfil" : "Cambiar foto"}
             </p>
             <p style={{ margin: "4px 0 0", fontSize: 12, color: MUTED }}>
               Toca el círculo para elegir una imagen
             </p>
             {uploading && <p style={{ margin: "4px 0 0", fontSize: 12, color: TEAL }}>Subiendo...</p>}
 
-            {/* Delete button — only visible when there's a photo */}
-            {photoUrl && !uploading && (
+            {/* Delete button — visible when there's a stored photo (even if broken) */}
+            {photoStored && !uploading && (
               <button
                 onClick={removePhoto}
                 style={{
