@@ -6,7 +6,7 @@ import router from "./routes";
 import {
   ensureUsersTable, ensureMessagesTable,
   ensureChatUsersTable, ensureChatContactsTable,
-  ensureDmTables,
+  ensureDmTables, ensureVisitsTable,
 } from "./lib/db";
 
 const app: Express = express();
@@ -47,6 +47,7 @@ if (existsSync(walletGuardDist)) {
     await ensureChatUsersTable();
     await ensureChatContactsTable();
     await ensureDmTables();
+    await ensureVisitsTable();
   } catch (err: any) {
     console.error("[app] DB bootstrap failed:", err?.message);
   }

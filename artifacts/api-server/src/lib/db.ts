@@ -655,3 +655,56 @@ export async function getDmMessages(
   );
   return res.rows;
 }
+
+// ── Visit tracking ─────────────────────────────────────────────────────────────
+
+/** Create the visit_log table if it doesn't already exist. */
+export async function ensureVisitsTable(): Promise<void> {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS visit_log (
+      id           SERIAL    PRIMARY KEY,
+      country      TEXT      NOT NULL DEFAULT 'Desconocido',
+      country_code TEXT      NOT NULL DEFAULT 'xx',
+      visited_at   TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS visit_log_visited_at_idx ON visit_log (visited_at)
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS visit_log_country_code_idx ON visit_log (country_code)
+  `);
+  console.log("[db] visit_log table ready");
+}
+
+/** Record a single visit. */
+export async function recordVisit(country: string, countryCode: string): Promise<void> {
+  await pool.query(
+    `INSERT INTO visit_log (country, country_code) VALUES ($1, $2)`,
+    [country, countryCode],
+  );
+}
+
+/** Return total visits and per-country breakdown. */
+export async function getVisitStats(): Promise<{
+  total: number;
+  countries: { name: string; code: string; count: number }[];
+}> {
+  const totalRes = await pool.query<{ total: string }>(`SELECT COUNT(*) AS total FROM visit_log`);
+  const total = parseInt(totalRes.rows[0]?.total ?? "0", 10);
+
+  const countryRes = await pool.query<{ name: string; code: string; count: string }>(`
+    SELECT country AS name, country_code AS code, COUNT(*) AS count
+      FROM visit_log
+     GROUP BY country, country_code
+     ORDER BY count DESC
+  `);
+
+  const countries = countryRes.rows.map((r) => ({
+    name:  r.name,
+    code:  r.code,
+    count: parseInt(r.count, 10),
+  }));
+
+  return { total, countries };
+}

@@ -4,23 +4,9 @@
 // GET  /api/visit/stats — return aggregated visit stats for the admin panel
 
 import { Router } from "express";
+import { recordVisit, getVisitStats } from "../lib/db";
 
 const router = Router();
-
-// ── In-memory store ───────────────────────────────────────────────────────────
-interface CountryRecord {
-  name:  string;
-  code:  string;   // ISO 3166-1 alpha-2 for flagcdn
-  count: number;
-}
-
-const store: {
-  total:     number;
-  countries: Record<string, CountryRecord>;
-} = {
-  total:     0,
-  countries: {},
-};
 
 // ── Geolocation via ip-api.com (free, no key needed) ─────────────────────────
 async function geolocate(ip: string): Promise<{ country: string; countryCode: string } | null> {
@@ -62,26 +48,19 @@ function getClientIP(req: any): string {
 router.post("/visit", async (req, res) => {
   const ip = getClientIP(req);
 
-  store.total += 1;
-
   const geo = await geolocate(ip);
   const country     = geo?.country     ?? "Desconocido";
   const countryCode = geo?.countryCode ?? "xx";
 
-  if (!store.countries[countryCode]) {
-    store.countries[countryCode] = { name: country, code: countryCode, count: 0 };
-  }
-  store.countries[countryCode].count += 1;
+  await recordVisit(country, countryCode);
 
   res.json({ ok: true, country, countryCode });
 });
 
 // ── GET /api/visit/stats ──────────────────────────────────────────────────────
-router.get("/visit/stats", (_req, res) => {
-  const countries = Object.values(store.countries)
-    .sort((a, b) => b.count - a.count);
-
-  res.json({ total: store.total, countries });
+router.get("/visit/stats", async (_req, res) => {
+  const stats = await getVisitStats();
+  res.json(stats);
 });
 
 export default router;
