@@ -112,18 +112,14 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
     month: "2-digit",
     year: "numeric",
   });
-  const formattedBalance = balanceUSDT.toLocaleString("en-US", {
+  const fmtUSDT = new Intl.NumberFormat("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
-  const formattedIn = totalInUSDT.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-  const formattedOut = totalOutUSDT.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
+  const formattedBalance = fmtUSDT.format(balanceUSDT);
+  const formattedIn      = fmtUSDT.format(totalInUSDT);
+  const formattedOut     = fmtUSDT.format(totalOutUSDT);
+  const formattedVolume  = fmtUSDT.format(totalInUSDT + totalOutUSDT);
 
   // Which risk segments are active (full opacity vs 20%)
   const seg1Active = riskScore > 0;   // Bajo    0-25
@@ -401,7 +397,7 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
                 </TableRow>
                 <TableRow>
                   <TableCell>Volumen Total USDT</TableCell>
-                  <TableCell>${(totalInUSDT + totalOutUSDT).toLocaleString("en-US", { maximumFractionDigits: 0 })}</TableCell>
+                  <TableCell>{formattedVolume} USDT</TableCell>
                   <TableCell>
                     <Badge
                       variant={totalVolumeUSDT > 1000000 ? "destructive" : totalVolumeUSDT > 100000 ? "outline" : "default"}

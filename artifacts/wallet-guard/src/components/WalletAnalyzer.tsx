@@ -466,6 +466,14 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
     totalInUSDT  = Number.isFinite(totalInUSDT)  ? Math.min(totalInUSDT,  1e12) : 0;
     totalOutUSDT = Number.isFinite(totalOutUSDT) ? Math.min(totalOutUSDT, 1e12) : 0;
 
+    // Derive USDT balance from transfer sums so all 4 display values are
+    // computed from the same source (prevents chain-field vs. transfer-sum drift).
+    // Only override when we have actual transfer data; otherwise keep the
+    // on-chain trc20 field value (accurate for wallets with no recent transfers).
+    if (trc20TxIn + trc20TxOut > 0) {
+      balanceUSDT = Math.max(0, totalInUSDT - totalOutUSDT);
+    }
+
     // 5. Live USDT blacklist check for unique counterparties not already flagged
     try {
       const alreadyFlagged = new Set(riskyCounterparties.map((r) => r.address));
