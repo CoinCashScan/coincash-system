@@ -14,17 +14,18 @@ interface CountryRecord {
   count: number;
 }
 
+const WINDOW_MS   = 24 * 60 * 60 * 1000; // 24 hours
+const MAX_PER_IP  = 2;                    // max visits per IP within the window
+
 const store: {
   total:     number;
   countries: Record<string, CountryRecord>;
-  recentIPs: Map<string, number>;          // IP → last-seen timestamp (throttle duplicates)
+  ipLog:     Map<string, number[]>;   // IP → list of visit timestamps within the last 24 h
 } = {
   total:     0,
   countries: {},
-  recentIPs: new Map(),
+  ipLog:     new Map(),
 };
-
-const THROTTLE_MS = 30_000; // same IP only counts once per 30 s
 
 // ── Geolocation via ip-api.com (free, no key needed) ─────────────────────────
 async function geolocate(ip: string): Promise<{ country: string; countryCode: string } | null> {
@@ -64,22 +65,26 @@ function getClientIP(req: any): string {
 
 // ── POST /api/visit ───────────────────────────────────────────────────────────
 router.post("/visit", async (req, res) => {
-  const ip = getClientIP(req);
-
-  // Throttle: ignore if we saw this IP very recently
+  const ip  = getClientIP(req);
   const now = Date.now();
-  const lastSeen = store.recentIPs.get(ip);
-  if (lastSeen && now - lastSeen < THROTTLE_MS) {
+
+  // Get existing timestamps for this IP, keeping only those within the 24 h window
+  const timestamps = (store.ipLog.get(ip) ?? []).filter((t) => now - t < WINDOW_MS);
+
+  // Reject if the IP has already been counted MAX_PER_IP times in this window
+  if (timestamps.length >= MAX_PER_IP) {
     res.json({ ok: true, throttled: true });
     return;
   }
-  store.recentIPs.set(ip, now);
 
-  // Keep recentIPs from growing forever
-  if (store.recentIPs.size > 10_000) {
-    const cutoff = now - THROTTLE_MS * 2;
-    for (const [k, v] of store.recentIPs) {
-      if (v < cutoff) store.recentIPs.delete(k);
+  // Record this visit timestamp
+  timestamps.push(now);
+  store.ipLog.set(ip, timestamps);
+
+  // Periodically evict fully-expired IP entries to avoid unbounded memory growth
+  if (store.ipLog.size > 10_000) {
+    for (const [k, ts] of store.ipLog) {
+      if (ts.every((t) => now - t >= WINDOW_MS)) store.ipLog.delete(k);
     }
   }
 
