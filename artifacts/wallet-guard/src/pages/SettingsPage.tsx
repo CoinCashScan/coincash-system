@@ -156,7 +156,6 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
       {/* Header */}
       <div style={{ background: CARD, borderBottom: `1px solid ${BORDER}`, padding: "20px 16px 16px" }}>
         <p style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Ajustes</p>
-        <p style={{ margin: "4px 0 0", fontSize: 11, color: MUTED }}>Tu perfil y preferencias</p>
       </div>
 
       {/* Profile photo */}
