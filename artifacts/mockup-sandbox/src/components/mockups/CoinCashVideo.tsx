@@ -1,459 +1,353 @@
-import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Shield, Search, Lock, AlertTriangle, CheckCircle, Smartphone } from 'lucide-react';
+import { motion, AnimatePresence } from "framer-motion";
+import { useEffect, useState } from "react";
+import { Apple, Share, PlusSquare, ShieldCheck, ChevronUp } from "lucide-react";
 
-const SCENE_DURATIONS = [4000, 5000, 6000, 5000, 5000, 4000];
-const TOTAL_SCENES = SCENE_DURATIONS.length;
-
-const easeOutQuart = [0.25, 1, 0.5, 1];
+const SCENE_DURATIONS = [5000, 8000, 10000, 7000];
 
 export default function CoinCashVideo() {
   const [currentScene, setCurrentScene] = useState(0);
-  const [isClient, setIsClient] = useState(false);
 
   useEffect(() => {
-    setIsClient(true);
-  }, []);
-
-  useEffect(() => {
-    if (!isClient) return;
-
-    let timeout: NodeJS.Timeout;
-    const playScene = () => {
-      timeout = setTimeout(() => {
-        setCurrentScene((prev) => (prev + 1) % TOTAL_SCENES);
-      }, SCENE_DURATIONS[currentScene]);
+    let timer: NodeJS.Timeout;
+    const playScene = (index: number) => {
+      timer = setTimeout(() => {
+        const nextScene = (index + 1) % SCENE_DURATIONS.length;
+        setCurrentScene(nextScene);
+        playScene(nextScene);
+      }, SCENE_DURATIONS[index]);
     };
+    playScene(currentScene);
+    return () => clearTimeout(timer);
+  }, [currentScene]);
 
-    playScene();
-    return () => clearTimeout(timeout);
-  }, [currentScene, isClient]);
-
-  if (!isClient) return null;
+  // Persistent background element
+  const bgColors = ["#0B0F14", "#0D141C", "#0B0F14", "#0B0F14"];
 
   return (
-    <div className="w-full h-screen bg-black flex items-center justify-center overflow-hidden">
-      {/* 9:16 Canvas for Instagram Reel */}
-      <div className="relative w-full max-w-[56.25vh] h-full sm:h-screen sm:aspect-[9/16] bg-[#0B0F14] text-[#E5E7EB] font-sans overflow-hidden shadow-2xl">
-        
-        {/* PERSISTENT BACKGROUND */}
-        <div className="absolute inset-0 z-0 opacity-30">
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-[#00FFC6]/10 via-[#0B0F14] to-[#0B0F14] z-0" />
-          <div className="absolute inset-0 opacity-[0.03] bg-[url('https://grainy-gradients.vercel.app/noise.svg')]" />
-        </div>
+    <div className="w-full h-screen relative overflow-hidden bg-[#0B0F14] text-white flex items-center justify-center font-sans select-none aspect-video">
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
+        .font-display { font-family: 'Space Grotesk', sans-serif; }
+      `}</style>
 
-        {/* Global persistent drifting shapes */}
-        <motion.div
-          className="absolute w-[150%] h-[150%] rounded-full blur-[100px] pointer-events-none z-0"
-          animate={{
-            background: 
-              currentScene === 2 ? 'radial-gradient(circle, rgba(239,68,68,0.15) 0%, rgba(11,15,20,0) 60%)' :
-              currentScene === 4 ? 'radial-gradient(circle, rgba(0,255,198,0.2) 0%, rgba(11,15,20,0) 60%)' :
-              'radial-gradient(circle, rgba(0,255,198,0.12) 0%, rgba(11,15,20,0) 60%)',
-            x: currentScene % 2 === 0 ? '10%' : '-10%',
-            y: currentScene % 3 === 0 ? '5%' : '-15%',
-            scale: currentScene === 2 ? 1.3 : 1,
-          }}
-          transition={{ duration: 4, ease: 'easeInOut' }}
-        />
+      {/* Persistent Background */}
+      <motion.div
+        className="absolute inset-0 z-0"
+        animate={{ backgroundColor: bgColors[currentScene] }}
+        transition={{ duration: 2 }}
+      >
+        <div className="absolute inset-0 opacity-20" style={{ backgroundImage: 'radial-gradient(circle at 50% 50%, #1a2a4a 0%, transparent 50%)' }} />
+        <div className="absolute inset-0 opacity-[0.03] mix-blend-overlay pointer-events-none" style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg viewBox=%220 0 200 200%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cfilter id=%22noiseFilter%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.65%22 numOctaves=%223%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23noiseFilter)%22/%3E%3C/svg%3E")' }}></div>
+      </motion.div>
 
-        {/* FOREGROUND SCENES */}
-        <div className="relative z-10 w-full h-full flex flex-col">
-          <AnimatePresence mode="wait">
-            {currentScene === 0 && <Scene1 key="s1" />}
-            {currentScene === 1 && <Scene2 key="s2" />}
-            {currentScene === 2 && <Scene3 key="s3" />}
-            {currentScene === 3 && <Scene4 key="s4" />}
-            {currentScene === 4 && <Scene5 key="s5" />}
-            {currentScene === 5 && <Scene6 key="s6" />}
-          </AnimatePresence>
-        </div>
-      </div>
+      {/* Persistent Accent Glow */}
+      <motion.div
+        className="absolute w-[40vw] h-[40vw] rounded-full blur-[120px] bg-[#00FFC6]/10 z-0"
+        animate={{
+          x: currentScene === 0 ? '0vw' : currentScene === 1 ? '-20vw' : currentScene === 2 ? '20vw' : '0vw',
+          y: currentScene === 0 ? '0vh' : currentScene === 1 ? '20vh' : currentScene === 2 ? '-10vh' : '0vh',
+          scale: currentScene === 3 ? 1.5 : 1,
+        }}
+        transition={{ duration: 3, ease: "easeInOut" }}
+      />
+
+      <AnimatePresence mode="wait">
+        {currentScene === 0 && <Scene1 key="scene-1" />}
+        {currentScene === 1 && <Scene2 key="scene-2" />}
+        {currentScene === 2 && <Scene3 key="scene-3" />}
+        {currentScene === 3 && <Scene4 key="scene-4" />}
+      </AnimatePresence>
     </div>
   );
 }
 
-// SCENE 1: Hook
 function Scene1() {
   return (
     <motion.div
-      className="absolute inset-0 flex flex-col items-center justify-center px-8"
+      className="absolute inset-0 z-10 flex flex-col items-center justify-center"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      exit={{ opacity: 0, scale: 1.1, filter: 'blur(10px)' }}
-      transition={{ duration: 0.8, ease: easeOutQuart }}
+      exit={{ opacity: 0, scale: 1.1, filter: "blur(10px)" }}
+      transition={{ duration: 1 }}
     >
       <motion.div
-        initial={{ scale: 0.5, opacity: 0, rotateX: 90 }}
-        animate={{ scale: 1, opacity: 1, rotateX: 0 }}
-        transition={{ delay: 0.2, duration: 1, type: "spring", bounce: 0.4 }}
-        className="mb-12 relative"
+        initial={{ y: 50, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ duration: 1, delay: 0.5, ease: [0.16, 1, 0.3, 1] }}
+        className="text-center"
       >
-        <div className="absolute inset-0 bg-[#00FFC6] blur-[50px] opacity-20 rounded-full" />
-        <Shield className="w-32 h-32 text-[#00FFC6] relative z-10 drop-shadow-[0_0_20px_rgba(0,255,198,0.5)]" />
-      </motion.div>
-      
-      <motion.div className="text-center" initial="hidden" animate="visible" variants={{
-        visible: { transition: { staggerChildren: 0.2 } }
-      }}>
-        <motion.h1 
-          className="text-4xl font-black text-white tracking-tight leading-tight mb-4"
-          variants={{
-            hidden: { y: 40, opacity: 0 },
-            visible: { y: 0, opacity: 1, transition: { duration: 0.8, ease: easeOutQuart } }
-          }}
+        <motion.div 
+          className="w-24 h-24 bg-[#1a2a4a] rounded-3xl mx-auto mb-8 flex items-center justify-center border border-[#00FFC6]/30 shadow-[0_0_30px_rgba(0,255,198,0.2)]"
+          initial={{ scale: 0, rotate: -20 }}
+          animate={{ scale: 1, rotate: 0 }}
+          transition={{ duration: 1, delay: 0.2, type: "spring", stiffness: 200, damping: 20 }}
         >
-          Tus fondos en TRON...
-        </motion.h1>
-        <motion.h2 
-          className="text-5xl font-black text-[#00FFC6] leading-tight"
-          style={{ textShadow: '0 0 30px rgba(0,255,198,0.4)' }}
-          variants={{
-            hidden: { y: 20, opacity: 0 },
-            visible: { y: 0, opacity: 1, transition: { duration: 0.8, ease: easeOutQuart } }
-          }}
-        >
-          ¿Están seguros?
-        </motion.h2>
+          <ShieldCheck className="w-12 h-12 text-[#00FFC6]" strokeWidth={1.5} />
+        </motion.div>
+        
+        <h1 className="font-display text-5xl md:text-7xl font-bold tracking-tight text-white mb-6">
+          Instala <span className="text-[#00FFC6]">CoinCash</span>
+        </h1>
+        <p className="text-xl md:text-3xl text-gray-400 font-display tracking-wide">
+          en tu iPhone en 3 pasos
+        </p>
       </motion.div>
     </motion.div>
   );
 }
 
-// SCENE 2: The Solution / Scanner Intro
 function Scene2() {
-  const [typed, setTyped] = useState("");
-  const fullAddress = "TJw...9XqZ";
+  return (
+    <motion.div
+      className="absolute inset-0 z-10 flex flex-col items-center justify-center"
+      initial={{ opacity: 0, scale: 0.9 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, x: "-10vw" }}
+      transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+    >
+      <div className="flex w-full max-w-5xl items-center justify-between px-12">
+        <div className="w-1/2 pr-12 text-left">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.4 }}
+          >
+            <div className="inline-block px-4 py-1.5 rounded-full border border-[#00FFC6]/30 bg-[#00FFC6]/10 text-[#00FFC6] font-display text-sm uppercase tracking-widest mb-6">
+              Paso 1
+            </div>
+          </motion.div>
+          
+          <motion.h2 
+            className="font-display text-5xl md:text-6xl font-bold tracking-tight text-white mb-6 leading-tight"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.6 }}
+          >
+            Abre <br/><span className="text-[#00FFC6]">hardsoftcomputer.com</span><br/> en Safari
+          </motion.h2>
+          
+          <motion.div
+            className="flex items-center space-x-3 text-gray-400 mt-8 bg-white/5 px-6 py-4 rounded-2xl border border-white/10 w-max"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 1 }}
+          >
+            <Apple className="w-6 h-6" />
+            <span className="font-display text-lg">Usa Safari — no Chrome</span>
+          </motion.div>
+        </div>
+
+        <div className="w-1/2 flex justify-center">
+          <motion.div
+            className="w-[300px] h-[600px] rounded-[3rem] border-8 border-[#1a2a4a] bg-black relative overflow-hidden shadow-2xl"
+            initial={{ y: 100, opacity: 0, rotateY: 20 }}
+            animate={{ y: 0, opacity: 1, rotateY: 0 }}
+            transition={{ duration: 1.2, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
+            style={{ perspective: 1000 }}
+          >
+            {/* Safari Top Bar */}
+            <div className="absolute top-0 w-full h-16 bg-[#1a2a4a]/80 backdrop-blur-md flex items-end justify-center pb-2 z-20 border-b border-white/10">
+              <div className="w-48 h-8 bg-black/50 rounded-lg flex items-center justify-center space-x-2 text-sm text-gray-300">
+                <ShieldCheck className="w-4 h-4 text-[#00FFC6]" />
+                <span className="font-display">hardsoftcomputer.com</span>
+              </div>
+            </div>
+            
+            <div className="mt-24 p-6 text-center">
+              <ShieldCheck className="w-16 h-16 text-[#00FFC6] mx-auto mb-4" />
+              <div className="h-4 w-32 bg-white/20 rounded mx-auto mb-2" />
+              <div className="h-3 w-48 bg-white/10 rounded mx-auto" />
+            </div>
+
+            {/* Bottom Nav */}
+            <div className="absolute bottom-0 w-full h-24 bg-[#1a2a4a]/80 backdrop-blur-md flex items-start justify-center pt-4 space-x-12 z-20 border-t border-white/10">
+              <div className="w-6 h-6 bg-white/20 rounded-full" />
+              <motion.div 
+                className="relative"
+                animate={{ y: [0, -10, 0] }}
+                transition={{ duration: 2, repeat: Infinity, delay: 2 }}
+              >
+                <Share className="w-7 h-7 text-[#00FFC6]" />
+                <motion.div className="absolute -inset-2 border-2 border-[#00FFC6] rounded-md opacity-0"
+                  animate={{ opacity: [0, 1, 0], scale: [0.8, 1.2, 1.4] }}
+                  transition={{ duration: 2, repeat: Infinity, delay: 2 }}
+                />
+              </motion.div>
+              <div className="w-6 h-6 bg-white/20 rounded-full" />
+            </div>
+          </motion.div>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+function Scene3() {
+  const [step, setStep] = useState(0);
 
   useEffect(() => {
-    let i = 0;
-    const interval = setInterval(() => {
-      if (i <= fullAddress.length) {
-        setTyped(fullAddress.substring(0, i));
-        i++;
-      } else {
-        clearInterval(interval);
-      }
-    }, 150);
-    return () => clearInterval(interval);
+    const t1 = setTimeout(() => setStep(1), 3500);
+    const t2 = setTimeout(() => setStep(2), 7000);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
   }, []);
 
   return (
     <motion.div
-      className="absolute inset-0 flex flex-col items-center justify-center px-8"
-      initial={{ opacity: 0, y: 50 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -50, filter: 'blur(10px)' }}
-      transition={{ duration: 0.8, ease: easeOutQuart }}
+      className="absolute inset-0 z-10 flex items-center justify-center"
+      initial={{ opacity: 0, x: "10vw" }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, filter: "blur(20px)", scale: 1.2 }}
+      transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
     >
-      <motion.h2 
-        className="text-3xl font-bold text-center mb-12"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.3, duration: 0.8 }}
-      >
-        Analiza cualquier <br/>
-        <span className="text-[#00FFC6]">billetera en segundos</span>
-      </motion.h2>
-      
-      <motion.div 
-        className="bg-[#0B1220] border border-[#1E2736] rounded-3xl p-8 w-full max-w-sm shadow-[0_0_50px_rgba(0,255,198,0.1)] relative overflow-hidden"
-        initial={{ opacity: 0, scale: 0.8, rotateY: 20 }}
-        animate={{ opacity: 1, scale: 1, rotateY: 0 }}
-        transition={{ delay: 0.4, duration: 1, type: "spring", bounce: 0.4 }}
-        style={{ perspective: 1000 }}
-      >
-        <div className="flex items-center space-x-4 mb-8 pb-6 border-b border-[#1E2736]">
-          <Search className="w-8 h-8 text-[#00FFC6]" />
-          <span className="text-xl font-medium text-gray-300">Auditoría TRON</span>
+      <div className="flex w-full max-w-6xl items-center justify-center space-x-16">
+        
+        {/* Left Side: Dynamic Text */}
+        <div className="w-[40%] relative h-[200px] flex items-center">
+          <AnimatePresence mode="wait">
+            {step === 0 && (
+              <motion.div key="s1"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                className="absolute"
+              >
+                <div className="inline-block px-4 py-1.5 rounded-full border border-[#00FFC6]/30 bg-[#00FFC6]/10 text-[#00FFC6] font-display text-sm uppercase tracking-widest mb-4">Paso 2</div>
+                <h3 className="font-display text-4xl font-bold text-white leading-tight">
+                  Toca el botón <span className="text-[#00FFC6]">Compartir</span> <ChevronUp className="inline w-8 h-8 text-[#00FFC6]" />
+                  <br/>en la barra inferior
+                </h3>
+              </motion.div>
+            )}
+            {step === 1 && (
+              <motion.div key="s2"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                className="absolute"
+              >
+                <div className="inline-block px-4 py-1.5 rounded-full border border-[#00FFC6]/30 bg-[#00FFC6]/10 text-[#00FFC6] font-display text-sm uppercase tracking-widest mb-4">Paso 3</div>
+                <h3 className="font-display text-4xl font-bold text-white leading-tight">
+                  Selecciona <br/>
+                  <span className="text-[#00FFC6]">"Agregar a pantalla de inicio"</span>
+                </h3>
+              </motion.div>
+            )}
+            {step === 2 && (
+              <motion.div key="s3"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                className="absolute"
+              >
+                <div className="inline-block px-4 py-1.5 rounded-full border border-[#00FFC6]/30 bg-[#00FFC6]/10 text-[#00FFC6] font-display text-sm uppercase tracking-widest mb-4">Listo</div>
+                <h3 className="font-display text-5xl font-bold text-white leading-tight">
+                  ¡Listo! <br/><span className="text-[#00FFC6]">Toca Agregar</span>
+                </h3>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
-        
-        <div className="bg-[#0B0F14] rounded-xl p-4 mb-6 border border-[#1E2736] flex items-center justify-between">
-          <span className="text-2xl font-mono text-[#E5E7EB]">
-            {typed}<span className="animate-pulse text-[#00FFC6]">_</span>
-          </span>
+
+        {/* Right Side: Phone frame with attached image */}
+        <div className="w-[45%] flex justify-center perspective-[1200px]">
+          <motion.div
+            className="w-[320px] h-[650px] rounded-[3rem] border-8 border-[#1a2a4a] bg-black overflow-hidden relative shadow-[0_20px_50px_rgba(0,0,0,0.5)]"
+            animate={{
+              rotateY: step === 0 ? -10 : step === 1 ? -5 : 0,
+              scale: step === 2 ? 1.05 : 1,
+            }}
+            transition={{ duration: 1.5, ease: [0.16, 1, 0.3, 1] }}
+          >
+            {/* The attached asset */}
+            <img 
+              src="/attached_assets/IMG_6330_1773871334992.png" 
+              alt="CoinCash Install"
+              className="w-full h-full object-cover"
+            />
+            
+            {/* Overlays / Callouts */}
+            <AnimatePresence>
+              {step === 0 && (
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.5 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="absolute bottom-[20px] left-1/2 -translate-x-1/2 w-16 h-16 border-4 border-[#00FFC6] rounded-xl shadow-[0_0_20px_#00FFC6]"
+                />
+              )}
+              {step === 1 && (
+                <motion.div 
+                  initial={{ opacity: 0, x: 50 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0 }}
+                  className="absolute bottom-[200px] right-[20px] w-[280px] h-[50px] border-4 border-[#00FFC6] rounded-xl shadow-[0_0_20px_#00FFC6] bg-[#00FFC6]/10"
+                />
+              )}
+              {step === 2 && (
+                <motion.div 
+                  initial={{ opacity: 0, y: -20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  className="absolute top-[30px] right-[15px] px-3 py-1 border-2 border-[#00FFC6] rounded-lg shadow-[0_0_20px_#00FFC6] bg-[#00FFC6]/20"
+                >
+                  <span className="text-[#00FFC6] font-bold text-sm">Agregar</span>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.div>
         </div>
-        
-        <motion.div 
-          className="w-full h-2 bg-[#1E2736] rounded-full overflow-hidden"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: typed.length === fullAddress.length ? 1 : 0 }}
-        >
-          <motion.div 
-            className="h-full bg-gradient-to-r from-[#00FFC6] to-[#00B8A9]"
-            initial={{ width: '0%' }}
-            animate={{ width: typed.length === fullAddress.length ? '100%' : '0%' }}
-            transition={{ delay: 0.5, duration: 2, ease: "linear" }}
-          />
-        </motion.div>
-        
-        <motion.div 
-          className="mt-6 text-center text-sm text-[#00FFC6] font-medium"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: typed.length === fullAddress.length ? 1 : 0 }}
-          transition={{ delay: 0.5, duration: 0.5 }}
-        >
-          Escaneando blockchain...
-        </motion.div>
-
-        {/* Scanner beam */}
-        <motion.div
-          className="absolute left-0 right-0 h-24 bg-gradient-to-b from-transparent via-[rgba(0,255,198,0.2)] to-transparent"
-          initial={{ top: '-30%' }}
-          animate={{ top: typed.length === fullAddress.length ? '130%' : '-30%' }}
-          transition={{ delay: 0.5, duration: 1.5, ease: "linear", repeat: Infinity }}
-        />
-      </motion.div>
-    </motion.div>
-  );
-}
-
-// SCENE 3: Risk Results
-function Scene3() {
-  return (
-    <motion.div
-      className="absolute inset-0 flex flex-col items-center justify-center px-6"
-      initial={{ opacity: 0, scale: 1.1 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.9, filter: 'blur(10px)' }}
-      transition={{ duration: 0.8, ease: easeOutQuart }}
-    >
-      <motion.h2 
-        className="text-4xl font-bold text-center mb-10 leading-tight"
-        initial={{ y: -30, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ delay: 0.2 }}
-      >
-        Detecta <span className="text-red-500">fraude</span><br/>antes de operar
-      </motion.h2>
-
-      <div className="w-full space-y-6">
-        {/* Red Alert Card */}
-        <motion.div 
-          className="bg-[#0B1220] border border-red-500/30 rounded-3xl p-6 relative overflow-hidden"
-          initial={{ x: -100, opacity: 0 }}
-          animate={{ x: 0, opacity: 1 }}
-          transition={{ delay: 0.5, duration: 0.8, type: "spring", bounce: 0.4 }}
-        >
-          <div className="absolute top-0 right-0 w-32 h-32 bg-red-500/10 blur-[40px] rounded-full" />
-          
-          <div className="flex items-center space-x-4 mb-6">
-            <div className="p-3 bg-red-500/20 rounded-full">
-              <AlertTriangle className="w-6 h-6 text-red-500" />
-            </div>
-            <h3 className="text-xl font-black text-red-500 tracking-wide">RIESGO ALTO</h3>
-          </div>
-          
-          <div className="space-y-3">
-            <div className="flex justify-between items-center p-3 bg-red-500/10 rounded-xl border border-red-500/20">
-              <span className="text-gray-300 text-sm">Reportes</span>
-              <span className="text-red-400 font-bold">4 Detecciones</span>
-            </div>
-            <div className="flex justify-between items-center p-3 bg-red-500/10 rounded-xl border border-red-500/20">
-              <span className="text-gray-300 text-sm">Fondos Ilícitos</span>
-              <span className="text-red-400 font-bold">98% Prob.</span>
-            </div>
-          </div>
-        </motion.div>
-
-        {/* Green Safe Card */}
-        <motion.div 
-          className="bg-[#0B1220] border border-[#00FFC6]/30 rounded-3xl p-6 relative overflow-hidden"
-          initial={{ x: 100, opacity: 0 }}
-          animate={{ x: 0, opacity: 1 }}
-          transition={{ delay: 1.5, duration: 0.8, type: "spring", bounce: 0.4 }}
-        >
-          <div className="absolute top-0 right-0 w-32 h-32 bg-[#00FFC6]/10 blur-[40px] rounded-full" />
-          
-          <div className="flex items-center space-x-4 mb-6">
-            <div className="p-3 bg-[#00FFC6]/20 rounded-full">
-              <CheckCircle className="w-6 h-6 text-[#00FFC6]" />
-            </div>
-            <h3 className="text-xl font-black text-[#00FFC6] tracking-wide">BILLETERA SEGURA</h3>
-          </div>
-          
-          <div className="space-y-3">
-            <div className="flex justify-between items-center p-3 bg-[#00FFC6]/10 rounded-xl border border-[#00FFC6]/20">
-              <span className="text-gray-300 text-sm">Historial</span>
-              <span className="text-[#00FFC6] font-bold">Limpio</span>
-            </div>
-          </div>
-        </motion.div>
       </div>
     </motion.div>
   );
 }
 
-// SCENE 4: Chat Intro
 function Scene4() {
   return (
     <motion.div
-      className="absolute inset-0 flex flex-col items-center justify-center px-8 text-center"
-      initial={{ opacity: 0, scale: 1.2 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, filter: 'blur(20px)' }}
-      transition={{ duration: 1, ease: easeOutQuart }}
+      className="absolute inset-0 z-10 flex flex-col items-center justify-center"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0, scale: 0.9 }}
+      transition={{ duration: 1.2, ease: [0.16, 1, 0.3, 1] }}
     >
-      <motion.div 
-        className="w-40 h-40 rounded-full bg-[#0B1220] border-[3px] border-[#00FFC6] flex items-center justify-center mb-10 relative"
-        style={{ boxShadow: '0 0 60px rgba(0,255,198,0.2)' }}
-        initial={{ scale: 0, rotate: -180 }}
-        animate={{ scale: 1, rotate: 0 }}
-        transition={{ delay: 0.2, duration: 1, type: "spring", stiffness: 150 }}
-      >
-        <Lock className="w-20 h-20 text-[#00FFC6]" />
+      <div className="text-center w-full max-w-4xl flex flex-col items-center">
         
-        {/* Orbiting particles */}
-        {[0, 1, 2].map((i) => (
-          <motion.div
-            key={i}
-            className="absolute w-4 h-4 bg-[#00FFC6] rounded-full blur-[2px]"
-            animate={{ rotate: 360 }}
-            transition={{
-              rotate: { duration: 3, ease: "linear", repeat: Infinity, delay: i * 1 },
-            }}
-            style={{ originX: '5rem', originY: '5rem', left: '-2.5rem', top: '-2.5rem' }}
-          />
-        ))}
-      </motion.div>
-
-      <motion.h2 
-        className="text-4xl font-black text-white mb-4 leading-tight"
-        initial={{ opacity: 0, y: 30 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.6, duration: 0.8 }}
-      >
-        Chat Privado
-      </motion.h2>
-      <motion.h2 
-        className="text-5xl font-black text-[#00FFC6] leading-none"
-        style={{ textShadow: '0 0 30px rgba(0,255,198,0.4)' }}
-        initial={{ opacity: 0, y: 30 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.8, duration: 0.8 }}
-      >
-        E2E Cifrado
-      </motion.h2>
-      
-      <motion.p
-        className="text-xl text-gray-400 mt-8"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 1.2, duration: 0.8 }}
-      >
-        Soporte 100% anónimo.<br/>Nadie más puede leer.
-      </motion.p>
-    </motion.div>
-  );
-}
-
-// SCENE 5: Chat UI
-function Scene5() {
-  return (
-    <motion.div
-      className="absolute inset-0 flex items-center justify-center p-6"
-      initial={{ opacity: 0, x: '100%' }}
-      animate={{ opacity: 1, x: 0 }}
-      exit={{ opacity: 0, x: '-100%' }}
-      transition={{ duration: 0.8, ease: easeOutQuart }}
-    >
-      <div className="relative w-full max-w-sm h-[60vh] bg-[#0B1220] border border-[#1E2736] rounded-[2.5rem] shadow-2xl p-6 flex flex-col justify-end overflow-hidden">
-        {/* Header */}
-        <div className="absolute top-0 left-0 right-0 bg-[#1E2736]/80 backdrop-blur-xl p-4 flex items-center space-x-4 border-b border-[#1E2736] z-10">
-          <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#00FFC6] to-blue-500 flex items-center justify-center text-black font-bold text-lg">CC</div>
-          <div>
-            <div className="font-bold text-white text-lg">Soporte CC</div>
-            <div className="text-xs text-[#00FFC6] flex items-center mt-1"><Lock className="w-3 h-3 mr-1" /> Cifrado activo</div>
-          </div>
-        </div>
-
-        {/* Messages */}
-        <div className="space-y-6 mt-20 relative z-0">
-          <motion.div 
-            className="self-start max-w-[85%] bg-[#1E2736] text-white p-4 rounded-2xl rounded-tl-sm shadow-lg"
-            initial={{ opacity: 0, x: -50, scale: 0.8 }}
-            animate={{ opacity: 1, x: 0, scale: 1 }}
-            transition={{ delay: 0.6, type: 'spring', bounce: 0.4 }}
-          >
-            <span className="text-base">Necesito verificar una transacción urgente.</span>
-          </motion.div>
-
-          <div className="flex justify-end">
+        {/* App Icon Reveal */}
+        <motion.div
+          initial={{ y: 100, scale: 0.5, opacity: 0 }}
+          animate={{ y: 0, scale: 1, opacity: 1 }}
+          transition={{ duration: 1.5, type: "spring", stiffness: 100, damping: 20 }}
+          className="relative mb-12"
+        >
+          <div className="w-32 h-32 bg-[#1a2a4a] rounded-[2rem] flex items-center justify-center border border-white/10 shadow-[0_20px_50px_rgba(0,255,198,0.3)] overflow-hidden">
+            <ShieldCheck className="w-16 h-16 text-[#00FFC6]" strokeWidth={1.5} />
             <motion.div 
-              className="max-w-[85%] bg-[#00FFC6] text-black p-4 rounded-2xl rounded-tr-sm font-medium shadow-lg relative overflow-hidden"
-              initial={{ opacity: 0, x: 50, scale: 0.8 }}
-              animate={{ opacity: 1, x: 0, scale: 1 }}
-              transition={{ delay: 1.6, type: 'spring', bounce: 0.4 }}
-            >
-              <span className="text-base relative z-10">Pásame la dirección, la reviso por nuestra red segura.</span>
-              
-              {/* Encryption scramble effect */}
-              <motion.div 
-                className="absolute inset-0 bg-black flex items-center justify-center text-[#00FFC6] font-mono text-xs break-all p-2 z-20"
-                initial={{ opacity: 1 }}
-                animate={{ opacity: 0 }}
-                transition={{ delay: 2.2, duration: 0.6 }}
-              >
-                0x8F92A3B4...E41C9
-              </motion.div>
-            </motion.div>
+              className="absolute inset-0 bg-gradient-to-tr from-transparent via-[#00FFC6]/20 to-transparent"
+              animate={{ x: ['-100%', '100%'] }}
+              transition={{ duration: 2, repeat: Infinity, repeatDelay: 1 }}
+            />
           </div>
-        </div>
+        </motion.div>
+
+        <motion.h2
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 1, delay: 0.5 }}
+          className="font-display text-5xl md:text-6xl font-bold tracking-tight text-white mb-6"
+        >
+          Ya tienes <span className="text-[#00FFC6]">CoinCash</span>
+        </motion.h2>
+
+        <motion.p
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 1, delay: 0.8 }}
+          className="text-xl md:text-2xl text-gray-400 font-display tracking-widest uppercase"
+        >
+          Análisis de seguridad TRON <br/> en tiempo real
+        </motion.p>
+        
       </div>
-    </motion.div>
-  );
-}
-
-// SCENE 6: Outro / CTA
-function Scene6() {
-  return (
-    <motion.div
-      className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-b from-[#0B0F14] to-[#0A1929] px-8"
-      initial={{ opacity: 0, scale: 1.2 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 1, ease: easeOutQuart }}
-    >
-      <motion.div
-        className="relative"
-        initial={{ y: -50, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ delay: 0.2, duration: 1, type: "spring" }}
-      >
-        <div className="absolute inset-0 bg-[#00FFC6] blur-[80px] opacity-30 rounded-full" />
-        <Smartphone className="w-32 h-32 text-white relative z-10 drop-shadow-2xl" />
-        <Shield className="w-16 h-16 text-[#00FFC6] absolute -bottom-4 -right-4 z-20 drop-shadow-[0_0_15px_rgba(0,255,198,1)]" />
-      </motion.div>
-
-      <motion.h1 
-        className="text-5xl font-black text-white tracking-tight mt-12 mb-4 text-center leading-tight"
-        initial={{ y: 30, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ delay: 0.6, duration: 0.8 }}
-      >
-        Protege tu <br/>
-        <span className="text-[#00FFC6] drop-shadow-[0_0_20px_rgba(0,255,198,0.3)]">crypto hoy</span>
-      </motion.h1>
-
-      <motion.h2
-        className="text-2xl text-gray-400 font-bold mt-2"
-        initial={{ y: 30, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ delay: 0.8, duration: 0.8 }}
-      >
-        CoinCash Scanner
-      </motion.h2>
-
-      <motion.div
-        className="mt-12 w-full"
-        initial={{ scale: 0.8, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        transition={{ delay: 1.2, type: "spring", bounce: 0.6 }}
-      >
-        <div className="bg-[#00FFC6] text-black font-black text-xl py-5 px-8 rounded-full text-center shadow-[0_0_30px_rgba(0,255,198,0.4)] uppercase tracking-wider">
-          Descarga Gratis
-        </div>
-      </motion.div>
     </motion.div>
   );
 }
