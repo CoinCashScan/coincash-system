@@ -193,7 +193,7 @@ function SceneIntro() {
           Instala <span style={{ color: "#00FFC6" }}>CoinCash</span>
         </h1>
         <p style={{ fontSize: "clamp(15px,2vw,28px)", color: "rgba(255,255,255,0.45)" }}>
-          en tu iPhone en 4 pasos
+          desde Safari en 4 pasos
         </p>
       </motion.div>
     </motion.div>
@@ -205,8 +205,8 @@ function Scene1() {
   return (
     <StepLayout
       badge="Paso 1"
-      title={<>Abre <span style={{ color: "#00FFC6" }}>hardsoftcomputer.com</span> en tu navegador</>}
-      note="Funciona en Safari y en Brave. Verás la app de CoinCash."
+      title={<>Abre <span style={{ color: "#00FFC6" }}>hardsoftcomputer.com</span> en <span style={{ color: "#00FFC6" }}>Safari</span></>}
+      note="⚠️ Debe ser Safari — no Chrome ni otro navegador."
       imgSrc={`${BASE}step1-safari.jpg`}
       dot={{ bottom: "5%", right: "6%", transform: "translate(0,0)" }}
       phoneRight
