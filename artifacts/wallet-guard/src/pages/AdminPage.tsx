@@ -50,6 +50,7 @@ interface ConvSummary {
   lastMessage: string;
   lastTime:    string;
   lastSender:  string;
+  photoUrl?:   string | null;
 }
 
 interface ChatMessage {
@@ -452,8 +453,11 @@ export default function AdminPage() {
                       display: "flex", alignItems: "center", justifyContent: "center",
                       fontSize: 16,
                       border: hasUnread ? "2px solid #00FFC6" : "2px solid transparent",
+                      overflow: "hidden",
                     }}>
-                      👤
+                      {c.photoUrl
+                        ? <img src={c.photoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        : "👤"}
                     </div>
                     {hasUnread && (
                       <div style={{
@@ -519,8 +523,10 @@ export default function AdminPage() {
           onClick={() => setSelectedUser(null)}
           style={{ background: "none", border: "none", color: "#00FFC6", cursor: "pointer", fontSize: 24, padding: "0 4px", lineHeight: 1, display: "flex", alignItems: "center" }}
         >‹</button>
-        <div style={{ width: 34, height: 34, borderRadius: "50%", background: "#1E2736", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15 }}>
-          👤
+        <div style={{ width: 34, height: 34, borderRadius: "50%", background: "#1E2736", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, overflow: "hidden", flexShrink: 0 }}>
+          {conversations.find(c => c.userId === selectedUser)?.photoUrl
+            ? <img src={conversations.find(c => c.userId === selectedUser)!.photoUrl!} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            : "👤"}
         </div>
         <div>
           <div style={{ fontWeight: 600, fontSize: 14, fontFamily: "monospace" }}>{selectedUser}</div>

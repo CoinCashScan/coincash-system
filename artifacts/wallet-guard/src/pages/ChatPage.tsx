@@ -94,6 +94,15 @@ export default function ChatPage() {
         localStorage.setItem("coincash-cc-id", id!);
       }
       setMyCcId(id);
+      // Sync profile photo to backend so admin can see it
+      const photoUrl = localStorage.getItem("coincash-profile-photo");
+      if (photoUrl && id) {
+        fetch(`${API}/chat/update-photo`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ coincashId: id, photoUrl }),
+        }).catch(() => {});
+      }
     })();
   }, []);
 

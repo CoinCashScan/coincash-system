@@ -15,6 +15,7 @@ import {
   saveChatMessage, getChatMessages, getConversation,
   getOrCreateChatUser, getChatUserById, getAllChatUsers,
   addChatContact, getChatContacts, getConversationsForSupport,
+  updateChatUserPhoto,
 } from "../lib/db";
 
 const SUPPORT_ID = "CC-SUPPORT";
@@ -298,6 +299,21 @@ router.get("/chat/messages/:user1/:user2", async (req, res) => {
   } catch (err: any) {
     console.error("[chat] conversation fetch error:", err?.message);
     return res.status(500).json({ error: "Failed to fetch conversation" });
+  }
+});
+
+// ── POST /api/chat/update-photo ───────────────────────────────────────────────
+router.post("/chat/update-photo", async (req, res) => {
+  const { coincashId, photoUrl } = req.body ?? {};
+  if (!coincashId || !VALID_ID(coincashId) || typeof photoUrl !== "string") {
+    return res.status(400).json({ error: "coincashId and photoUrl required" });
+  }
+  try {
+    await updateChatUserPhoto(coincashId, photoUrl);
+    return res.json({ ok: true });
+  } catch (err: any) {
+    console.error("[chat] update-photo error:", err?.message);
+    return res.status(500).json({ error: "Failed to update photo" });
   }
 });
 

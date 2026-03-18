@@ -252,6 +252,7 @@ export async function ensureChatUsersTable(): Promise<void> {
   await pool.query(`ALTER TABLE chat_users ADD COLUMN IF NOT EXISTS name      TEXT NOT NULL DEFAULT ''`);
   await pool.query(`ALTER TABLE chat_users ADD COLUMN IF NOT EXISTS role      TEXT NOT NULL DEFAULT 'user'`);
   await pool.query(`ALTER TABLE chat_users ADD COLUMN IF NOT EXISTS linked_to TEXT`);
+  await pool.query(`ALTER TABLE chat_users ADD COLUMN IF NOT EXISTS photo_url TEXT`);
 
   // 1. Seed CC-SUPPORT system account
   await pool.query(
@@ -301,6 +302,14 @@ export async function getChatUserById(coincashId: string): Promise<ChatUserRecor
     [coincashId],
   );
   return res.rows[0] ?? null;
+}
+
+/** Update a user's profile photo URL. */
+export async function updateChatUserPhoto(coincashId: string, photoUrl: string): Promise<void> {
+  await pool.query(
+    `UPDATE chat_users SET photo_url = $2 WHERE coincash_id = $1`,
+    [coincashId, photoUrl],
+  );
 }
 
 /** Return all regular (non-system) chat users. Used by broadcast. */
@@ -453,11 +462,12 @@ export interface ConversationSummary {
  */
 export async function getConversationsForSupport(): Promise<ConversationSummary[]> {
   const res = await pool.query<ConversationSummary>(`
-    SELECT DISTINCT ON (user_id)
-      user_id       AS "userId",
-      message       AS "lastMessage",
-      timestamp     AS "lastTime",
-      sender_coincash_id AS "lastSender"
+    SELECT DISTINCT ON (sub.user_id)
+      sub.user_id        AS "userId",
+      sub.message        AS "lastMessage",
+      sub.timestamp      AS "lastTime",
+      sub.sender_coincash_id AS "lastSender",
+      cu.photo_url       AS "photoUrl"
     FROM (
       SELECT
         CASE
@@ -471,7 +481,8 @@ export async function getConversationsForSupport(): Promise<ConversationSummary[
       WHERE sender_coincash_id = 'CC-SUPPORT'
          OR receiver_coincash_id = 'CC-SUPPORT'
     ) sub
-    ORDER BY user_id, "lastTime" DESC
+    LEFT JOIN chat_users cu ON cu.coincash_id = sub.user_id
+    ORDER BY sub.user_id, "lastTime" DESC
   `);
   // Second sort: by time descending across all users
   return res.rows.sort(
