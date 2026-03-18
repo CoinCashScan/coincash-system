@@ -51,7 +51,16 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
   const [saved,        setSaved]        = useState(false);
   const [visitStats, setVisitStats] = useState<{ total: number; today: number; online: number; countries: { name: string; code: string; count: number }[] } | null>(null);
 
-  const fileRef = useRef<HTMLInputElement>(null);
+  // Crop modal state
+  const [cropSrc,        setCropSrc]        = useState<string | null>(null);
+  const [cropOffset,     setCropOffset]     = useState({ x: 0, y: 0 });
+  const [cropScale,      setCropScale]      = useState(1);
+  const [cropImgNatural, setCropImgNatural] = useState({ w: 300, h: 300 });
+
+  const fileRef       = useRef<HTMLInputElement>(null);
+  const cropCanvasRef = useRef<HTMLCanvasElement>(null);
+  const cropDragRef   = useRef<{ startX: number; startY: number; ox: number; oy: number } | null>(null);
+  const cropPinchRef  = useRef<{ dist: number; scale: number } | null>(null);
 
   // Fetch visit stats
   useEffect(() => {
@@ -71,21 +80,94 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
     if (stored === "true") setPushEnabled(true);
   }, []);
 
-  async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+  function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith("image/")) { alert("Solo se permiten imágenes"); return; }
-    setUploading(true);
-    try {
-      const objectPath = await uploadFile(file);
-      const url = `${API_BASE}/storage${objectPath}`;
-      localStorage.setItem("coincash-profile-photo", url);
-      setPhotoUrl(url);
-      setPhotoStored(true);
-      flashSaved();
-    } catch { alert("No se pudo subir la foto"); }
-    finally { setUploading(false); if (fileRef.current) fileRef.current.value = ""; }
+    if (fileRef.current) fileRef.current.value = "";
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const src = ev.target?.result as string;
+      const img = new Image();
+      img.onload = () => {
+        const CROP = 260;
+        const minDim = Math.min(img.naturalWidth, img.naturalHeight);
+        setCropImgNatural({ w: img.naturalWidth, h: img.naturalHeight });
+        setCropScale(CROP / minDim);
+        setCropOffset({ x: 0, y: 0 });
+        setCropSrc(src);
+      };
+      img.src = src;
+    };
+    reader.readAsDataURL(file);
   }
+
+  async function confirmCrop() {
+    if (!cropSrc) return;
+    const CROP = 260;
+    const canvas = cropCanvasRef.current!;
+    canvas.width = CROP;
+    canvas.height = CROP;
+    const ctx = canvas.getContext("2d")!;
+    const img = new Image();
+    img.onload = async () => {
+      ctx.clearRect(0, 0, CROP, CROP);
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(CROP / 2, CROP / 2, CROP / 2, 0, Math.PI * 2);
+      ctx.clip();
+      const drawW = cropImgNatural.w * cropScale;
+      const drawH = cropImgNatural.h * cropScale;
+      ctx.drawImage(img, CROP / 2 + cropOffset.x - drawW / 2, CROP / 2 + cropOffset.y - drawH / 2, drawW, drawH);
+      ctx.restore();
+      canvas.toBlob(async (blob) => {
+        if (!blob) return;
+        setCropSrc(null);
+        setUploading(true);
+        try {
+          const f = new File([blob], "profile.jpg", { type: "image/jpeg" });
+          const objectPath = await uploadFile(f);
+          const url = `${API_BASE}/storage${objectPath}`;
+          localStorage.setItem("coincash-profile-photo", url);
+          setPhotoUrl(url);
+          setPhotoStored(true);
+          flashSaved();
+        } catch { alert("No se pudo subir la foto"); }
+        finally { setUploading(false); }
+      }, "image/jpeg", 0.9);
+    };
+    img.src = cropSrc;
+  }
+
+  function onCropTouchStart(e: React.TouchEvent) {
+    if (e.touches.length === 1) {
+      cropDragRef.current = { startX: e.touches[0].clientX, startY: e.touches[0].clientY, ox: cropOffset.x, oy: cropOffset.y };
+      cropPinchRef.current = null;
+    } else if (e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      cropPinchRef.current = { dist: Math.hypot(dx, dy), scale: cropScale };
+      cropDragRef.current = null;
+    }
+  }
+  function onCropTouchMove(e: React.TouchEvent) {
+    e.preventDefault();
+    if (e.touches.length === 1 && cropDragRef.current) {
+      setCropOffset({ x: cropDragRef.current.ox + e.touches[0].clientX - cropDragRef.current.startX, y: cropDragRef.current.oy + e.touches[0].clientY - cropDragRef.current.startY });
+    } else if (e.touches.length === 2 && cropPinchRef.current) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      setCropScale(Math.max(0.3, Math.min(6, cropPinchRef.current.scale * (Math.hypot(dx, dy) / cropPinchRef.current.dist))));
+    }
+  }
+  function onCropTouchEnd() { cropDragRef.current = null; cropPinchRef.current = null; }
+  function onCropMouseDown(e: React.MouseEvent) { cropDragRef.current = { startX: e.clientX, startY: e.clientY, ox: cropOffset.x, oy: cropOffset.y }; }
+  function onCropMouseMove(e: React.MouseEvent) {
+    if (!cropDragRef.current) return;
+    setCropOffset({ x: cropDragRef.current.ox + e.clientX - cropDragRef.current.startX, y: cropDragRef.current.oy + e.clientY - cropDragRef.current.startY });
+  }
+  function onCropMouseUp() { cropDragRef.current = null; }
+  function onCropWheel(e: React.WheelEvent) { e.preventDefault(); setCropScale(s => Math.max(0.3, Math.min(6, s - e.deltaY * 0.002))); }
 
   function removePhoto() {
     localStorage.removeItem("coincash-profile-photo");
@@ -153,6 +235,59 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
 
   return (
     <div style={{ minHeight: "100vh", background: BG, color: TEXT, fontFamily: "'Inter',sans-serif", paddingBottom: 80 }}>
+
+      {/* Crop modal */}
+      {cropSrc && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.93)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 20 }}>
+          <p style={{ margin: 0, fontSize: 17, fontWeight: 700, color: "#fff" }}>Ajusta tu foto</p>
+          <p style={{ margin: "-12px 0 0", fontSize: 12, color: MUTED }}>Arrastra · Pellizca para hacer zoom</p>
+
+          {/* Circular crop area */}
+          <div
+            style={{ width: 260, height: 260, borderRadius: "50%", overflow: "hidden", border: `3px solid ${TEAL}`, position: "relative", cursor: "grab", userSelect: "none", touchAction: "none", boxShadow: `0 0 0 9999px rgba(0,0,0,0.6)` }}
+            onTouchStart={onCropTouchStart}
+            onTouchMove={onCropTouchMove}
+            onTouchEnd={onCropTouchEnd}
+            onMouseDown={onCropMouseDown}
+            onMouseMove={onCropMouseMove}
+            onMouseUp={onCropMouseUp}
+            onMouseLeave={onCropMouseUp}
+            onWheel={onCropWheel}
+          >
+            <img
+              src={cropSrc}
+              alt="crop"
+              draggable={false}
+              style={{
+                position: "absolute", top: "50%", left: "50%",
+                transform: `translate(-50%, -50%) translate(${cropOffset.x}px, ${cropOffset.y}px) scale(${cropScale})`,
+                transformOrigin: "center", pointerEvents: "none", maxWidth: "none",
+              }}
+            />
+          </div>
+
+          {/* Zoom slider */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, width: 240 }}>
+            <span style={{ fontSize: 12, color: MUTED }}>−</span>
+            <input type="range" min={0.3} max={6} step={0.01} value={cropScale}
+              onChange={e => setCropScale(parseFloat(e.target.value))}
+              style={{ flex: 1, accentColor: TEAL }} />
+            <span style={{ fontSize: 12, color: MUTED }}>+</span>
+          </div>
+
+          {/* Buttons */}
+          <div style={{ display: "flex", gap: 12 }}>
+            <button onClick={() => setCropSrc(null)} style={{ padding: "12px 28px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.2)", background: "transparent", color: "#fff", fontSize: 15, fontWeight: 600, cursor: "pointer" }}>
+              Cancelar
+            </button>
+            <button onClick={confirmCrop} style={{ padding: "12px 28px", borderRadius: 12, border: "none", background: TEAL, color: "#0B1220", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
+              Confirmar
+            </button>
+          </div>
+          <canvas ref={cropCanvasRef} style={{ display: "none" }} />
+        </div>
+      )}
+
       {/* Header */}
       <div style={{ background: CARD, borderBottom: `1px solid ${BORDER}`, padding: "20px 16px 16px" }}>
         <p style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Ajustes</p>
