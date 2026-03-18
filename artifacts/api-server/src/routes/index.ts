@@ -13,6 +13,7 @@ import storageRouter from "./storage";
 import pushRouter from "./push";
 import visitsRouter from "./visits";
 import authRouter from "./auth";
+import scanRouter from "./scan";
 
 const router: IRouter = Router();
 
@@ -30,5 +31,6 @@ router.use(storageRouter);
 router.use(pushRouter);
 router.use(visitsRouter);
 router.use(authRouter);
+router.use(scanRouter);
 
 export default router;

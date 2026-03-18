@@ -560,6 +560,13 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
       setReportData(data);
       setShowReport(true);
 
+      // Register scan analytics event (fire-and-forget)
+      fetch("/api/scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet: trimmed }),
+      }).catch(() => {});
+
       // Smooth-scroll to results so mobile users see them immediately
       setTimeout(() => {
         resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
