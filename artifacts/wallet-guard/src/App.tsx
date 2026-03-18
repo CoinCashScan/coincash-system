@@ -9,7 +9,6 @@ import ChatPage from "@/pages/ChatPage";
 import AdminPage from "@/pages/AdminPage";
 import SettingsPage from "@/pages/SettingsPage";
 import VideoPage from "@/pages/VideoPage";
-import CoinCashVideoAd from "@/pages/CoinCashVideoAd";
 import IOSInstallBanner from "@/components/IOSInstallBanner";
 import { API_BASE } from "@/lib/apiConfig";
 
@@ -29,36 +28,16 @@ function MainApp() {
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
-  const isAdmin  = hash === "#soporte-admin";
-  const isVideo  = hash === "#video";
-  const isVideoAd = hash === "#video-ad";
+  const isAdmin = hash === "#soporte-admin";
+  const isVideo = hash === "#video";
 
   useEffect(() => {
-    if (isAdmin || isVideo || isVideoAd) return;
+    if (isAdmin || isVideo) return;
     fetch(`${API_BASE}/visit`, { method: "POST" }).catch(() => {});
-  }, [isAdmin, isVideo, isVideoAd]);
+  }, [isAdmin, isVideo]);
 
-  if (isAdmin)   return <AdminPage />;
-  if (isVideo)   return <VideoPage />;
-  if (isVideoAd) return (
-    <div style={{ position: "relative", width: "100vw", height: "100vh", overflow: "hidden" }}>
-      <CoinCashVideoAd />
-      <button
-        onClick={() => { window.location.hash = ""; }}
-        style={{
-          position: "fixed", top: 16, left: 16, zIndex: 999,
-          background: "rgba(11,18,32,0.85)", border: "1px solid rgba(0,255,198,0.25)",
-          borderRadius: 20, padding: "6px 14px 6px 10px",
-          display: "flex", alignItems: "center", gap: 6,
-          color: "#00FFC6", fontSize: 13, fontWeight: 600,
-          cursor: "pointer", backdropFilter: "blur(8px)",
-          fontFamily: "'Inter', sans-serif",
-        }}
-      >
-        <span style={{ fontSize: 18, lineHeight: 1 }}>‹</span> Volver
-      </button>
-    </div>
-  );
+  if (isAdmin) return <AdminPage />;
+  if (isVideo) return <VideoPage />;
 
   return (
     <div style={{ minHeight: "100vh", background: "#0B0F14" }}>
