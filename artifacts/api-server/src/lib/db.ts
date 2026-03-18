@@ -732,6 +732,66 @@ export async function hasPinSet(ccId: string): Promise<boolean> {
   return res.rows[0]?.exists ?? false;
 }
 
+// ── Scan analytics ─────────────────────────────────────────────────────────────
+
+/** Create the scan_log table if it doesn't already exist. */
+export async function ensureScanTable(): Promise<void> {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS scan_log (
+      id           SERIAL    PRIMARY KEY,
+      wallet       TEXT      NOT NULL,
+      ip           TEXT      NOT NULL DEFAULT '',
+      country      TEXT      NOT NULL DEFAULT 'Desconocido',
+      country_code TEXT      NOT NULL DEFAULT 'xx',
+      scanned_at   TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS scan_log_scanned_at_idx  ON scan_log (scanned_at)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS scan_log_country_code_idx ON scan_log (country_code)`);
+  console.log("[db] scan_log table ready");
+}
+
+/** Record a single scan event. */
+export async function recordScan(wallet: string, ip: string, country: string, countryCode: string): Promise<void> {
+  await pool.query(
+    `INSERT INTO scan_log (wallet, ip, country, country_code) VALUES ($1, $2, $3, $4)`,
+    [wallet, ip, country, countryCode],
+  );
+}
+
+/** Return scan statistics. */
+export async function getScanStats(): Promise<{
+  total: number;
+  today: number;
+  byCountry: { name: string; code: string; count: number }[];
+  recent: { id: number; wallet: string; country: string; country_code: string; scanned_at: string }[];
+}> {
+  const [totalRes, todayRes, countryRes, recentRes] = await Promise.all([
+    pool.query<{ total: string }>(`SELECT COUNT(*) AS total FROM scan_log`),
+    pool.query<{ total: string }>(`SELECT COUNT(*) AS total FROM scan_log WHERE scanned_at >= DATE_TRUNC('day', NOW())`),
+    pool.query<{ name: string; code: string; count: string }>(`
+      SELECT country AS name, country_code AS code, COUNT(*) AS count
+        FROM scan_log
+       GROUP BY country, country_code
+       ORDER BY count DESC
+       LIMIT 20
+    `),
+    pool.query<{ id: number; wallet: string; country: string; country_code: string; scanned_at: string }>(`
+      SELECT id, wallet, country, country_code, scanned_at
+        FROM scan_log
+       ORDER BY scanned_at DESC
+       LIMIT 50
+    `),
+  ]);
+
+  return {
+    total:     parseInt(totalRes.rows[0]?.total  ?? "0", 10),
+    today:     parseInt(todayRes.rows[0]?.total  ?? "0", 10),
+    byCountry: countryRes.rows.map(r => ({ name: r.name, code: r.code, count: parseInt(r.count, 10) })),
+    recent:    recentRes.rows,
+  };
+}
+
 /** Return total visits, today's visits, online count and per-country breakdown. */
 export async function getVisitStats(): Promise<{
   total: number;
