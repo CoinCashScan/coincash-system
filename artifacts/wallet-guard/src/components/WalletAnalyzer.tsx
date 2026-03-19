@@ -715,6 +715,12 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
             <span>Scan QR</span>
           </button>
         </div>
+
+        {/* Discrete legal note */}
+        <p style={{ textAlign: "center", fontSize: 10, color: "rgba(255,255,255,0.22)", marginTop: 12, lineHeight: 1.5 }}>
+          Análisis informativo basado en datos públicos. No constituye asesoramiento financiero.{" "}
+          <a href="#legal" style={{ color: "rgba(0,255,198,0.45)", textDecoration: "none" }}>Aviso legal</a>
+        </p>
       </div>
 
       {/* ── Results (only shown after analysis) ── */}

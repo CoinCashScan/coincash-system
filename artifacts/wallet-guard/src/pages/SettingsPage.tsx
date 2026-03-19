@@ -471,6 +471,31 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
         </div>
       )}
 
+      {/* Legal links */}
+      <div style={{ margin: "24px 16px 32px", display: "flex", justifyContent: "center", gap: 6, flexWrap: "wrap" }}>
+        {[
+          { label: "Términos",    hash: "#legal" },
+          { label: "Privacidad", hash: "#legal" },
+          { label: "Aviso legal", hash: "#legal" },
+        ].map((l) => (
+          <a
+            key={l.label}
+            href={l.hash}
+            style={{
+              fontSize: 11, color: MUTED, textDecoration: "none",
+              padding: "4px 10px", borderRadius: 20,
+              border: `1px solid ${BORDER}`,
+              background: "rgba(255,255,255,0.03)",
+              transition: "color 0.2s",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = TEAL)}
+            onMouseLeave={(e) => (e.currentTarget.style.color = MUTED)}
+          >
+            {l.label}
+          </a>
+        ))}
+      </div>
+
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );

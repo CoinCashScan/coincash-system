@@ -10,6 +10,7 @@ import AdminPage from "@/pages/AdminPage";
 import SettingsPage from "@/pages/SettingsPage";
 import VideoPage from "@/pages/VideoPage";
 import InstallVideoPage from "@/pages/InstallVideoPage";
+import LegalPage from "@/pages/LegalPage";
 import IOSInstallBanner from "@/components/IOSInstallBanner";
 import { API_BASE } from "@/lib/apiConfig";
 
@@ -32,15 +33,17 @@ function MainApp() {
   const isAdmin   = hash === "#soporte-admin";
   const isVideo   = hash === "#video";
   const isInstall = hash === "#instalar";
+  const isLegal   = hash === "#legal";
 
   useEffect(() => {
-    if (isAdmin || isVideo || isInstall) return;
+    if (isAdmin || isVideo || isInstall || isLegal) return;
     fetch(`${API_BASE}/visit`, { method: "POST" }).catch(() => {});
-  }, [isAdmin, isVideo, isInstall]);
+  }, [isAdmin, isVideo, isInstall, isLegal]);
 
   if (isAdmin)   return <AdminPage />;
   if (isVideo)   return <VideoPage />;
   if (isInstall) return <InstallVideoPage />;
+  if (isLegal)   return <LegalPage />;
 
   return (
     <div style={{ minHeight: "100vh", background: "#0B0F14" }}>
