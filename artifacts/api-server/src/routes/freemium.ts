@@ -62,10 +62,11 @@ router.post("/freemium/identify", async (req, res) => {
     const fp   = ((req.body?.fp)   ?? "").trim().slice(0, 64);
     const ua   = ((req.body?.ua)   ?? "").slice(0, 512);
     const hint = ((req.body?.hint) ?? "").trim();
-    const ip   = (
-      (req.headers["x-forwarded-for"] as string) ?? req.socket?.remoteAddress ?? ""
-    );
+    const xfwd = (req.headers["x-forwarded-for"] as string) ?? "";
+    const ip   = xfwd || req.socket?.remoteAddress || "";
+    console.log(`[identify] fp=${fp.slice(0,8)}… ua=${ua.slice(0,40)}… xfwd="${xfwd}" ip="${ip}" hint=${hint}`);
     const ccId = await identifyDevice(fp, ua, ip, hint);
+    console.log(`[identify] → ccId=${ccId}`);
     return res.json({ ccId });
   } catch (err: any) {
     console.error("[freemium/identify]", err?.message);
