@@ -1,27 +1,24 @@
 // @ts-nocheck
 // Visit tracking routes
-// POST /api/visit       — register a new visitor (called by the frontend on load)
+// POST /api/visit       — register a new visitor (called by frontend on load)
 // GET  /api/visit/stats — return aggregated visit stats for the admin panel
 
 import { Router } from "express";
 import { recordVisit, getVisitStats } from "../lib/db";
+import { checkVisit } from "../lib/antiBot";
 
 const router = Router();
 
-// ── Geolocation via ip-api.com (free, no key needed) ─────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
 async function geolocate(ip: string): Promise<{ country: string; countryCode: string } | null> {
-  // Skip private / loopback addresses
   if (
-    !ip ||
-    ip === "::1" ||
-    ip.startsWith("127.") ||
-    ip.startsWith("10.") ||
-    ip.startsWith("192.168.") ||
-    ip.startsWith("172.")
+    !ip || ip === "::1" ||
+    ip.startsWith("127.") || ip.startsWith("10.") ||
+    ip.startsWith("192.168.") || ip.startsWith("172.")
   ) {
     return { country: "Local", countryCode: "xx" };
   }
-
   try {
     const res = await fetch(`http://ip-api.com/json/${ip}?fields=status,country,countryCode`, {
       signal: AbortSignal.timeout(3000),
@@ -38,23 +35,32 @@ async function geolocate(ip: string): Promise<{ country: string; countryCode: st
 function getClientIP(req: any): string {
   const forwarded = req.headers["x-forwarded-for"];
   if (forwarded) {
-    const first = (typeof forwarded === "string" ? forwarded : forwarded[0]).split(",")[0].trim();
-    return first;
+    return (typeof forwarded === "string" ? forwarded : forwarded[0]).split(",")[0].trim();
   }
   return req.socket?.remoteAddress ?? req.ip ?? "";
 }
 
+function getUserAgent(req: any): string {
+  return (req.headers["user-agent"] ?? "").toString();
+}
+
 // ── POST /api/visit ───────────────────────────────────────────────────────────
 router.post("/visit", async (req, res) => {
-  const ip = getClientIP(req);
+  const ip        = getClientIP(req);
+  const userAgent = getUserAgent(req);
 
-  const geo = await geolocate(ip);
+  // Only count unique, non-bot visits (1 per IP per 30 min)
+  const shouldCount = checkVisit(ip, userAgent);
+  if (!shouldCount) {
+    return res.json({ ok: true, counted: false });
+  }
+
+  const geo         = await geolocate(ip);
   const country     = geo?.country     ?? "Desconocido";
   const countryCode = geo?.countryCode ?? "xx";
 
   await recordVisit(country, countryCode);
-
-  res.json({ ok: true, country, countryCode });
+  res.json({ ok: true, counted: true, country, countryCode });
 });
 
 // ── GET /api/visit/stats ──────────────────────────────────────────────────────
