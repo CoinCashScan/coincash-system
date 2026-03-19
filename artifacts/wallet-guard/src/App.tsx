@@ -51,29 +51,32 @@ function MainApp() {
   if (isInstall) return <InstallVideoPage />;
   if (isLegal)   return <LegalPage />;
 
-  return (
-    <>
-      {/* Main app renders immediately in background while splash is visible */}
+  // Splash is the ONLY thing rendered until it finishes — no scanner flicker
+  if (showSplash) {
+    return (
       <div style={{ minHeight: "100vh", background: "#0B0F14" }}>
-        <div style={{ display: tab === "scanner" ? "block" : "none" }}>
-          <ScannerPage />
-        </div>
+        <SplashScreen onDone={handleSplashDone} />
+      </div>
+    );
+  }
 
-        <div style={{ display: tab === "soporte" ? "block" : "none" }}>
-          <ChatPage />
-        </div>
-
-        <div style={{ display: tab === "settings" ? "block" : "none" }}>
-          <SettingsPage onOpenSupport={() => setTab("soporte")} />
-        </div>
-
-        <BottomNav active={tab} onChange={setTab} />
-        <IOSInstallBanner />
+  return (
+    <div style={{ minHeight: "100vh", background: "#0B0F14" }}>
+      <div style={{ display: tab === "scanner" ? "block" : "none" }}>
+        <ScannerPage />
       </div>
 
-      {/* Splash sits on top via position:fixed; unmounts after fade-out */}
-      {showSplash && <SplashScreen onDone={handleSplashDone} />}
-    </>
+      <div style={{ display: tab === "soporte" ? "block" : "none" }}>
+        <ChatPage />
+      </div>
+
+      <div style={{ display: tab === "settings" ? "block" : "none" }}>
+        <SettingsPage onOpenSupport={() => setTab("soporte")} />
+      </div>
+
+      <BottomNav active={tab} onChange={setTab} />
+      <IOSInstallBanner />
+    </div>
   );
 }
 
