@@ -6,18 +6,7 @@ import {
 import { useDmSocket, type DmMsg } from "@/hooks/useDmSocket";
 import { encryptMessage, decryptMessage } from "@/lib/dmCrypto";
 import { API_BASE } from "@/lib/apiConfig";
-
-// ── helpers ────────────────────────────────────────────────────────────────────
-function getCcId(): string {
-  // Unified key shared with ChatPage / SettingsPage
-  let id = localStorage.getItem("coincash-cc-id");
-  if (!id) {
-    const digits = Math.floor(Math.random() * 1_000_000).toString().padStart(6, "0");
-    id = `CC-${digits}`;
-    localStorage.setItem("coincash-cc-id", id);
-  }
-  return id;
-}
+import { resolveIdentity } from "@/lib/identity";
 
 async function uploadFile(file: File): Promise<string> {
   const r = await fetch(`${API_BASE}/storage/uploads/request-url`, {
@@ -467,8 +456,15 @@ function DmChat({ myId, contactId, contactName, onBack }: { myId: string; contac
 // MAIN DM PAGE
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function DmPage() {
-  const [myId]                  = useState<string>(getCcId);
+  const [myId, setMyId]         = useState<string>(() => localStorage.getItem("coincash-cc-id") ?? "");
   const [contacts, setContacts] = useState<Contact[]>([]);
+
+  // Resolve persistent identity on mount
+  useEffect(() => {
+    resolveIdentity().then((id) => {
+      if (id !== myId) setMyId(id);
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const [activeChat, setActiveChat] = useState<string | null>(null);
   const [overlayHeight, setOverlayHeight] = useState(() => window.visualViewport?.height ?? window.innerHeight);
 

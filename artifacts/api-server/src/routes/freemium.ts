@@ -24,6 +24,7 @@ import {
   getAllUsersWithPlans,
   getPendingUpgrades,
   getFreemiumStats,
+  identifyDevice,
   FREE_SCAN_LIMIT,
   PRO_DURATION_DAYS,
 } from "../lib/db";
@@ -39,6 +40,26 @@ function adminGuard(req: any, res: any): boolean {
   }
   return true;
 }
+
+// ── POST /api/freemium/identify ───────────────────────────────────────────────
+// Resolves a persistent CC-ID from browser fingerprint + IP + UA.
+// Body: { fp: string, ua: string, hint?: string }
+// Returns: { ccId: string }
+router.post("/freemium/identify", async (req, res) => {
+  try {
+    const fp   = ((req.body?.fp)   ?? "").trim().slice(0, 64);
+    const ua   = ((req.body?.ua)   ?? "").slice(0, 512);
+    const hint = ((req.body?.hint) ?? "").trim();
+    const ip   = (
+      (req.headers["x-forwarded-for"] as string) ?? req.socket?.remoteAddress ?? ""
+    );
+    const ccId = await identifyDevice(fp, ua, ip, hint);
+    return res.json({ ccId });
+  } catch (err: any) {
+    console.error("[freemium/identify]", err?.message);
+    return res.status(500).json({ error: "identify failed" });
+  }
+});
 
 // ── GET /api/freemium/status ──────────────────────────────────────────────────
 router.get("/freemium/status", async (req, res) => {

@@ -2,14 +2,10 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { Paperclip } from "lucide-react";
 import { useChatSocket } from "@/hooks/useChatSocket";
 import { API_BASE } from "@/lib/apiConfig";
+import { resolveIdentity } from "@/lib/identity";
 
 const SUPPORT_ID = "CC-SUPPORT";
 const API = API_BASE;
-
-function generateCcId() {
-  const n = Math.floor(Math.random() * 1_000_000);
-  return `CC-${String(n).padStart(6, "0")}`;
-}
 
 function timeStr(ts: string) {
   return new Date(ts).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
@@ -89,34 +85,26 @@ export default function ChatPage() {
     } catch { /* ignore */ }
   }, [myCcId, loadHistory, mergeMessages]);
 
-  // Init: get or create CC-ID
+  // Init: resolve persistent CC-ID via backend fingerprinting
   useEffect(() => {
-    (async () => {
-      let id = localStorage.getItem("coincash-cc-id");
-      if (!id || !/^CC-\d{6}$/.test(id)) {
-        const candidate = generateCcId();
-        try {
-          const res  = await fetch(`${API}/chat/create-user`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ coincashId: candidate }),
-          });
-          const data = await res.json();
-          id = data.coincashId ?? candidate;
-        } catch { id = candidate; }
-        localStorage.setItem("coincash-cc-id", id!);
-      }
+    resolveIdentity().then((id) => {
       setMyCcId(id);
+      // Register in chat system
+      fetch(`${API}/chat/create-user`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ coincashId: id }),
+      }).catch(() => {});
       // Sync profile photo to backend so admin can see it
       const photoUrl = localStorage.getItem("coincash-profile-photo");
-      if (photoUrl && id) {
+      if (photoUrl) {
         fetch(`${API}/chat/update-photo`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ coincashId: id, photoUrl }),
         }).catch(() => {});
       }
-    })();
+    });
   }, []);
 
   // Initial history load

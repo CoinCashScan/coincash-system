@@ -841,6 +841,112 @@ export async function getScanStats(): Promise<{
 
 export const FREE_SCAN_LIMIT = 5;
 
+// ── Device identification ─────────────────────────────────────────────────────
+
+/**
+ * Create the device_ids table that maps browser fingerprints to CC-IDs.
+ * Safe to re-run (IF NOT EXISTS / ADD COLUMN IF NOT EXISTS).
+ */
+export async function ensureDeviceTable(): Promise<void> {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS device_ids (
+      fp_hash    TEXT PRIMARY KEY,
+      cc_id      TEXT NOT NULL,
+      ua_hash    TEXT NOT NULL DEFAULT '',
+      last_ip    TEXT NOT NULL DEFAULT '',
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS device_ids_cc_id_idx ON device_ids (cc_id)
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS device_ids_ua_ip_idx ON device_ids (ua_hash, last_ip)
+  `);
+  console.log("[db] device_ids table ready");
+}
+
+/** Hash text with node's built-in crypto (sync). */
+function quickHash(text: string): string {
+  const { createHash } = require("crypto");
+  return createHash("sha256").update(text).digest("hex");
+}
+
+/**
+ * Look up an existing CC-ID for the given fingerprint / UA+IP combination.
+ * If none found, generate a fresh CC-ID and persist it.
+ * The `hint` is the ccId already stored on the client (localStorage) — we
+ * prefer it when no device record exists yet so we don't orphan an account
+ * that may already have scan history or PRO status.
+ */
+export async function identifyDevice(
+  fpHash: string,
+  ua: string,
+  ip: string,
+  hint?: string,
+): Promise<string> {
+  const uaHash  = quickHash(ua);
+  const safeIp  = (ip ?? "").split(",")[0].trim().slice(0, 64);
+
+  // 1. Primary lookup: fingerprint is the most stable signal
+  if (fpHash) {
+    const row = await pool.query<{ cc_id: string }>(
+      `SELECT cc_id FROM device_ids WHERE fp_hash = $1 LIMIT 1`,
+      [fpHash],
+    );
+    if (row.rows.length > 0) {
+      // Update UA + IP for freshness (non-critical)
+      pool.query(
+        `UPDATE device_ids SET ua_hash = $2, last_ip = $3 WHERE fp_hash = $1`,
+        [fpHash, uaHash, safeIp],
+      ).catch(() => {});
+      return row.rows[0].cc_id;
+    }
+  }
+
+  // 2. Fallback: same UA + IP combination (different browser clearing cookies)
+  if (uaHash && safeIp) {
+    const row = await pool.query<{ cc_id: string }>(
+      `SELECT cc_id FROM device_ids WHERE ua_hash = $1 AND last_ip = $2 LIMIT 1`,
+      [uaHash, safeIp],
+    );
+    if (row.rows.length > 0) {
+      const ccId = row.rows[0].cc_id;
+      // Back-fill fingerprint so future lookups are faster
+      if (fpHash) {
+        pool.query(
+          `INSERT INTO device_ids (fp_hash, cc_id, ua_hash, last_ip)
+           VALUES ($1, $2, $3, $4) ON CONFLICT (fp_hash) DO NOTHING`,
+          [fpHash, ccId, uaHash, safeIp],
+        ).catch(() => {});
+      }
+      return ccId;
+    }
+  }
+
+  // 3. New device — reuse hint ccId if provided, else generate fresh
+  let ccId = hint && /^CC-\d{6}$/.test(hint) ? hint : generateCoinCashId();
+
+  // Ensure user row exists in users table
+  await pool.query(
+    `INSERT INTO users (coincash_id, wallet_address, plan, email)
+     VALUES ($1, '', 'free', '') ON CONFLICT (coincash_id) DO NOTHING`,
+    [ccId],
+  );
+
+  // Persist device record
+  if (fpHash) {
+    await pool.query(
+      `INSERT INTO device_ids (fp_hash, cc_id, ua_hash, last_ip)
+       VALUES ($1, $2, $3, $4) ON CONFLICT (fp_hash) DO UPDATE
+         SET cc_id = EXCLUDED.cc_id, ua_hash = EXCLUDED.ua_hash, last_ip = EXCLUDED.last_ip`,
+      [fpHash, ccId, uaHash, safeIp],
+    );
+  }
+
+  return ccId;
+}
+
 /** Add plan column to users + create scan_limits table. Safe to re-run. */
 export async function ensureFreemiumTable(): Promise<void> {
   // Add plan column to existing users table

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import QRCode from "qrcode";
 import { API_BASE } from "@/lib/apiConfig";
+import { resolveIdentity } from "@/lib/identity";
 import { ScanSearch, Loader2, QrCode, X, CheckCircle2, AlertTriangle, ShieldAlert,
          Copy, Check, CheckCheck, Activity, Zap, Hash, Shield } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -232,15 +233,6 @@ interface WalletAnalyzerProps {
 }
 
 // ── Freemium helpers ─────────────────────────────────────────────────────────
-function getCcId(): string {
-  let id = localStorage.getItem("coincash-cc-id");
-  if (!id) {
-    const digits = Math.floor(Math.random() * 1_000_000).toString().padStart(6, "0");
-    id = `CC-${digits}`;
-    localStorage.setItem("coincash-cc-id", id);
-  }
-  return id;
-}
 
 interface FreemiumStatus {
   plan:       "free" | "pro";
@@ -294,8 +286,15 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
   const [upgradeSending,   setUpgradeSending]   = useState(false);
   const [qrDataUrl,        setQrDataUrl]        = useState<string>("");
   const [copiedAddr,       setCopiedAddr]       = useState(false);
-  const ccId = getCcId();
+  const [ccId, setCcId] = useState<string>(() => localStorage.getItem("coincash-cc-id") ?? "");
   const resultRef = useRef<HTMLDivElement>(null);
+
+  // Resolve persistent identity (fingerprint-backed) on mount
+  useEffect(() => {
+    resolveIdentity().then((id) => {
+      if (id !== ccId) setCcId(id);
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const PRO_ADDRESS = "TM2cRRegda1gQAQY9hGbg6DMscN7okNVA1";
 
@@ -307,13 +306,13 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
     }).then(setQrDataUrl).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Load freemium status on mount + poll every 30s (picks up admin PRO activations)
+  // Load freemium status whenever ccId is known, then poll every 30s
   useEffect(() => {
+    if (!ccId) return;
     fetchFreemiumStatus(ccId).then(setFreemium);
     const t = setInterval(() => {
       fetchFreemiumStatus(ccId).then((s) => {
         setFreemium((prev) => {
-          // If plan changed to pro, reset the "Ya pagué" flow
           if (prev.plan !== "pro" && s.plan === "pro") {
             setUpgradeRequested(false);
           }
@@ -322,7 +321,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
       });
     }, 30_000);
     return () => clearInterval(t);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ccId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sync daily stats from localStorage on mount
   useEffect(() => {
