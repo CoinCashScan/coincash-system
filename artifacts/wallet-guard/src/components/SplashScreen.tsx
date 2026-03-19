@@ -26,12 +26,12 @@ const KEYFRAMES = `
 @keyframes cc-dot-pulse {
   0%, 100% {
     opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
+    transform: scale(1);
     box-shadow: 0 0 6px 3px rgba(0,220,160,0.55);
   }
   50% {
     opacity: 0.35;
-    transform: translate(-50%, -50%) scale(1.2);
+    transform: scale(1.2);
     box-shadow: 0 0 14px 6px rgba(0,220,160,0.20);
   }
 }
@@ -125,35 +125,36 @@ export default function SplashScreen({ onDone }: Props) {
           }}
         />
 
-        {/* ── Wordmark logo with pulse-glow overlay on the green dot ── */}
-        <div style={{ position: "relative", display: "inline-block" }}>
-          <img
-            src="/cc-logo-text.png"
-            alt="CoinCash"
-            style={{
-              width:     "min(260px, 72vw)",
-              objectFit: "contain",
-              display:   "block",
-              animation: "cc-fade-up 0.6s ease 0.35s both",
-            }}
-          />
-          {/*
-            Solid overlay that sits EXACTLY over the green dot baked into
-            the wordmark image — covers the static dot so only this div
-            is visible. The pulse animation then grows + glows it smoothly.
-            transform: translate(-50%,-50%) is baked into the keyframe so
-            the origin is the dot's center, not its top-left corner.
-          */}
-          <div style={{
-            position:     "absolute",
-            top:          "14%",
-            left:         "37%",
-            width:        13,
-            height:       13,
+        {/* ── Wordmark: CSS text so dot position is exact and "Cash" is green ── */}
+        <div style={{
+          display:       "flex",
+          alignItems:    "center",
+          gap:           0,
+          animation:     "cc-fade-up 0.6s ease 0.35s both",
+          fontFamily:    "'Inter', 'Helvetica Neue', Arial, sans-serif",
+          fontWeight:    800,
+          fontSize:      "clamp(30px, 9vw, 40px)",
+          letterSpacing: "-0.5px",
+          lineHeight:    1,
+          userSelect:    "none",
+        }}>
+          <span style={{ color: "#FFFFFF" }}>Coin</span>
+
+          {/* Single animated green dot between Coin and Cash */}
+          <span style={{
+            display:      "inline-block",
+            width:        10,
+            height:       10,
             borderRadius: "50%",
             background:   "#00DCA0",
+            margin:       "0 3px",
+            flexShrink:   0,
+            alignSelf:    "flex-start",
+            marginTop:    4,
             animation:    "cc-dot-pulse 1.5s ease-in-out 0.9s infinite",
           }} />
+
+          <span style={{ color: "#00DCA0" }}>Cash</span>
         </div>
 
         {/* ── Tagline ── */}
