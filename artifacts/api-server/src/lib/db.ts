@@ -863,6 +863,23 @@ export async function ensureFreemiumTable(): Promise<void> {
   console.log("[db] freemium (plan + scan_limits) ready");
 }
 
+/**
+ * Batch-expire all PRO users whose 30-day window has passed.
+ * Returns the number of users downgraded.
+ * Called by the background scheduler in app.ts every hour.
+ */
+export async function expireProUsers(): Promise<number> {
+  const res = await pool.query(
+    `UPDATE users
+        SET plan = 'free', pro_activated_at = NULL
+      WHERE plan = 'pro'
+        AND pro_activated_at IS NOT NULL
+        AND pro_activated_at + INTERVAL '30 days' < NOW()
+      RETURNING coincash_id`,
+  );
+  return res.rowCount ?? 0;
+}
+
 /** Ensure a minimal user row exists for a CC-ID (upsert with defaults). */
 export async function ensureFreemiumUser(ccId: string): Promise<void> {
   await pool.query(

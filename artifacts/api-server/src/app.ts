@@ -8,7 +8,7 @@ import {
   ensureChatUsersTable, ensureChatContactsTable,
   ensureDmTables, ensureVisitsTable, ensureAccountPinsTable,
   ensureScanTable, ensureFreemiumTable,
-  deleteOldChatMessages,
+  deleteOldChatMessages, expireProUsers,
 } from "./lib/db";
 
 const app: Express = express();
@@ -54,7 +54,7 @@ if (existsSync(walletGuardDist)) {
     await ensureScanTable();
     await ensureFreemiumTable();
 
-    // Run immediately on start, then every hour
+    // ── Chat message cleanup (every hour) ────────────────────────────────────
     const runCleanup = async () => {
       try {
         const deleted = await deleteOldChatMessages();
@@ -64,7 +64,21 @@ if (existsSync(walletGuardDist)) {
       }
     };
     await runCleanup();
-    setInterval(runCleanup, 60 * 60 * 1000); // every hour
+    setInterval(runCleanup, 60 * 60 * 1000);
+
+    // ── PRO expiry job (every hour) ───────────────────────────────────────────
+    // Proactively downgrades any PRO user whose 30-day window has passed,
+    // even if they haven't visited the app recently.
+    const runProExpiry = async () => {
+      try {
+        const expired = await expireProUsers();
+        if (expired > 0) console.log(`[pro-expiry] Downgraded ${expired} expired PRO user(s) to free`);
+      } catch (err: any) {
+        console.error("[pro-expiry] Failed:", err?.message);
+      }
+    };
+    await runProExpiry(); // run once at startup to catch any already-expired users
+    setInterval(runProExpiry, 60 * 60 * 1000); // then every hour
   } catch (err: any) {
     console.error("[app] DB bootstrap failed:", err?.message);
   }
