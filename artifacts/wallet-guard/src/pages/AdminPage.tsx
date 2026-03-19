@@ -446,7 +446,7 @@ export default function AdminPage() {
               Aún no hay conversaciones
             </div>
           ) : (
-            conversations.map((c) => {
+            conversations.map((c, idx) => {
               const hasUnread = unreadUsers.has(c.userId);
               return (
                 <button
@@ -464,7 +464,7 @@ export default function AdminPage() {
                     transition: "background 0.2s",
                   }}
                 >
-                  {/* Avatar with unread pulse */}
+                  {/* Avatar with unread pulse — no photo, always generic icon */}
                   <div style={{ position: "relative", flexShrink: 0 }}>
                     <div style={{
                       width: 42, height: 42, borderRadius: "50%",
@@ -474,9 +474,7 @@ export default function AdminPage() {
                       border: hasUnread ? "2px solid #00FFC6" : "2px solid transparent",
                       overflow: "hidden",
                     }}>
-                      {c.photoUrl
-                        ? <img src={c.photoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                        : "👤"}
+                      👤
                     </div>
                     {hasUnread && (
                       <div style={{
@@ -495,8 +493,7 @@ export default function AdminPage() {
                         fontWeight: hasUnread ? 700 : 600,
                         fontSize: 13,
                         color: hasUnread ? "#00FFC6" : "#E5E7EB",
-                        fontFamily: "monospace",
-                      }}>{c.userId}</span>
+                      }}>{`Usuario ${idx + 1}`}</span>
                       <span style={{ fontSize: 11, color: hasUnread ? "#00FFC6" : "#6B7280", flexShrink: 0, fontWeight: hasUnread ? 600 : 400 }}>
                         {timeStr(c.lastTime)}
                       </span>

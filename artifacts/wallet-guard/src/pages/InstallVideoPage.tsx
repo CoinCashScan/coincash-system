@@ -44,7 +44,7 @@ function PhoneFrame({ src, children, scale = 1 }: { src: string; children?: Reac
       boxShadow: "0 24px 70px rgba(0,0,0,0.7), 0 0 0 1px rgba(0,255,198,0.15)",
       flexShrink: 0,
     }}>
-      <img src={src} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top" }} />
+      <img src={src} alt="" style={{ width: "100%", height: "100%", objectFit: "contain", objectPosition: "center" }} />
       {children}
     </div>
   );
