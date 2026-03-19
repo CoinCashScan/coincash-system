@@ -69,8 +69,8 @@ router.post("/scan", async (req, res) => {
     return res.status(status).json({ ok: false, blocked, message: msg });
   }
 
-  const geo = await geolocate(ip);
-  await recordScan(wallet, ip, geo.country, geo.countryCode).catch(() => {});
+  const geo = await geolocate(ip);                         // IP used for country lookup only
+  await recordScan(wallet, geo.country, geo.countryCode).catch(() => {}); // IP not persisted
   res.json({ ok: true });
 });
 

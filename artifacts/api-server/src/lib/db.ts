@@ -790,11 +790,11 @@ export async function ensureScanTable(): Promise<void> {
   console.log("[db] scan_log table ready");
 }
 
-/** Record a single scan event. */
-export async function recordScan(wallet: string, ip: string, country: string, countryCode: string): Promise<void> {
+/** Record a single scan event. IP is NOT stored — used only in-memory for anti-abuse. */
+export async function recordScan(wallet: string, country: string, countryCode: string): Promise<void> {
   await pool.query(
-    `INSERT INTO scan_log (wallet, ip, country, country_code) VALUES ($1, $2, $3, $4)`,
-    [wallet, ip, country, countryCode],
+    `INSERT INTO scan_log (wallet, ip, country, country_code) VALUES ($1, '', $2, $3)`,
+    [wallet, country, countryCode],
   );
 }
 
