@@ -648,7 +648,13 @@ export default function AdminPage() {
                       Sin usuarios registrados
                     </div>
                   ) : (
-                    planesUsers.map((u) => {
+                    [...planesUsers]
+                      .sort((a, b) => {
+                        // PRO first; within same plan keep server order (most recent first)
+                        if (a.plan === b.plan) return 0;
+                        return a.plan === "pro" ? -1 : 1;
+                      })
+                      .map((u) => {
                       const isPro    = u.plan === "pro";
                       const isBusy   = actionBusy === u.ccId;
                       const isPending = !!u.upgradeRequestedAt;
