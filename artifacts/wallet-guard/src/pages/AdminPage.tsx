@@ -521,6 +521,17 @@ function AdminPanelInner() {
                 {connected ? "● En línea" : "○ Conectando…"}
               </div>
             </div>
+            <button
+              onClick={() => { sessionStorage.removeItem(SESSION_KEY); window.location.reload(); }}
+              title="Cerrar sesión"
+              style={{
+                background: "rgba(255,77,79,0.08)", border: "1px solid rgba(255,77,79,0.25)",
+                borderRadius: 8, color: "#FF4D4F", fontSize: 11, fontWeight: 700,
+                padding: "5px 10px", cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
+              }}
+            >
+              Cerrar sesión
+            </button>
           </div>
           <div style={{ fontSize: 11, color: "#4B5563", margin: "6px 0 12px" }}>Panel de agente · {ADMIN_CC_ID}</div>
 
