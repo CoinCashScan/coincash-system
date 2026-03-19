@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -12,6 +12,7 @@ import VideoPage from "@/pages/VideoPage";
 import InstallVideoPage from "@/pages/InstallVideoPage";
 import LegalPage from "@/pages/LegalPage";
 import IOSInstallBanner from "@/components/IOSInstallBanner";
+import SplashScreen from "@/components/SplashScreen";
 import { API_BASE } from "@/lib/apiConfig";
 
 const queryClient = new QueryClient();
@@ -24,21 +25,26 @@ function MainApp() {
   const [tab, setTab] = useState<Tab>("scanner");
   const [hash, setHash] = useState<string>(getHash);
 
+  const isAdmin   = hash === "#soporte-admin";
+  const isVideo   = hash === "#video";
+  const isInstall = hash === "#instalar";
+  const isLegal   = hash === "#legal";
+  const isSpecial = isAdmin || isVideo || isInstall || isLegal;
+
+  // Show splash only on the regular app (not on admin/hash routes)
+  const [showSplash, setShowSplash] = useState(!isSpecial);
+  const handleSplashDone = useCallback(() => setShowSplash(false), []);
+
   useEffect(() => {
     const onHash = () => setHash(window.location.hash);
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
-  const isAdmin   = hash === "#soporte-admin";
-  const isVideo   = hash === "#video";
-  const isInstall = hash === "#instalar";
-  const isLegal   = hash === "#legal";
-
   useEffect(() => {
-    if (isAdmin || isVideo || isInstall || isLegal) return;
+    if (isSpecial) return;
     fetch(`${API_BASE}/visit`, { method: "POST" }).catch(() => {});
-  }, [isAdmin, isVideo, isInstall, isLegal]);
+  }, [isSpecial]);
 
   if (isAdmin)   return <AdminPage />;
   if (isVideo)   return <VideoPage />;
@@ -46,22 +52,28 @@ function MainApp() {
   if (isLegal)   return <LegalPage />;
 
   return (
-    <div style={{ minHeight: "100vh", background: "#0B0F14" }}>
-      <div style={{ display: tab === "scanner" ? "block" : "none" }}>
-        <ScannerPage />
+    <>
+      {/* Main app renders immediately in background while splash is visible */}
+      <div style={{ minHeight: "100vh", background: "#0B0F14" }}>
+        <div style={{ display: tab === "scanner" ? "block" : "none" }}>
+          <ScannerPage />
+        </div>
+
+        <div style={{ display: tab === "soporte" ? "block" : "none" }}>
+          <ChatPage />
+        </div>
+
+        <div style={{ display: tab === "settings" ? "block" : "none" }}>
+          <SettingsPage onOpenSupport={() => setTab("soporte")} />
+        </div>
+
+        <BottomNav active={tab} onChange={setTab} />
+        <IOSInstallBanner />
       </div>
 
-      <div style={{ display: tab === "soporte" ? "block" : "none" }}>
-        <ChatPage />
-      </div>
-
-      <div style={{ display: tab === "settings" ? "block" : "none" }}>
-        <SettingsPage onOpenSupport={() => setTab("soporte")} />
-      </div>
-
-      <BottomNav active={tab} onChange={setTab} />
-      <IOSInstallBanner />
-    </div>
+      {/* Splash sits on top via position:fixed; unmounts after fade-out */}
+      {showSplash && <SplashScreen onDone={handleSplashDone} />}
+    </>
   );
 }
 
