@@ -112,15 +112,16 @@ export default function SplashScreen({ onDone }: Props) {
         padding:       "0 24px",
       }}>
 
-        {/* ── Icon logo — clean, no extra elements ── */}
+        {/* ── Icon logo — original image, mix-blend-mode:screen makes black transparent ── */}
         <img
-          src="/cc-logo-icon.png"
+          src="/cc-logo-icon-orig.png"
           alt="CoinCash icon"
           style={{
-            width:     120,
-            height:    120,
-            objectFit: "contain",
-            animation: "cc-icon-glow 2.6s ease-in-out infinite",
+            width:        140,
+            height:       140,
+            objectFit:    "contain",
+            mixBlendMode: "screen",
+            animation:    "cc-icon-glow 2.6s ease-in-out infinite",
           }}
         />
 
