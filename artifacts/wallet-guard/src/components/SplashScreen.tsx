@@ -25,11 +25,11 @@ const KEYFRAMES = `
 }
 @keyframes cc-dot-pulse {
   0%, 100% {
-    transform: translateX(-50%) scale(1);
+    scale: 1;
     box-shadow: 0 0 4px rgba(0,255,198,0.4);
   }
   50% {
-    transform: translateX(-50%) scale(1.2);
+    scale: 1.2;
     box-shadow: 0 0 12px rgba(0,255,198,1);
   }
 }
@@ -140,19 +140,28 @@ export default function SplashScreen({ onDone }: Props) {
           <span>Co</span>
 
           {/* Dotless "ı" (U+0131) — no built-in tittle, green dot is the only one */}
-          <span style={{ position: "relative", display: "inline-block" }}>
+          <span style={{ position: "relative", display: "inline-block", lineHeight: "inherit" }}>
             ı
+            {/*
+              bottom: 100%  → always flush above the top of this span
+              marginBottom: 1px → tiny gap between dot and letter
+              transform: translateX(-50%) → centered, set here NOT in keyframe
+              The keyframe only animates `scale` and `box-shadow`, never touches transform.
+            */}
             <span style={{
-              position:     "absolute",
-              top:          "-10px",
-              left:         "50%",
-              display:      "block",
-              width:        8,
-              height:       8,
-              borderRadius: "50%",
-              background:   "#00FFC6",
-              boxShadow:    "0 0 8px rgba(0,255,198,0.8)",
-              animation:    "cc-dot-pulse 1.5s ease-in-out infinite",
+              position:        "absolute",
+              bottom:          "100%",
+              left:            "50%",
+              marginBottom:    "1px",
+              display:         "block",
+              width:           8,
+              height:          8,
+              borderRadius:    "50%",
+              background:      "#00FFC6",
+              transform:       "translateX(-50%)",
+              transformOrigin: "center center",
+              boxShadow:       "0 0 8px rgba(0,255,198,0.8)",
+              animation:       "cc-dot-pulse 1.5s ease-in-out infinite",
             }} />
           </span>
 
