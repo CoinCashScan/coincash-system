@@ -4,7 +4,7 @@
 // GET  /api/visit/stats — return aggregated visit stats for the admin panel
 
 import { Router } from "express";
-import { recordVisit, getVisitStats } from "../lib/db";
+import { recordVisit, getVisitStats, resetVisitStats } from "../lib/db";
 import { checkVisit } from "../lib/antiBot";
 
 const router = Router();
@@ -67,6 +67,21 @@ router.post("/visit", async (req, res) => {
 router.get("/visit/stats", async (_req, res) => {
   const stats = await getVisitStats();
   res.json(stats);
+});
+
+// ── DELETE /api/visit/reset ───────────────────────────────────────────────────
+// Admin only — deletes all visit records and returns fresh empty stats.
+router.delete("/visit/reset", async (req, res) => {
+  const key = (req.headers["x-admin-key"] ?? req.query.key) as string | undefined;
+  if (key !== "CoinCashAdmin2026") return res.status(401).json({ error: "Unauthorized" });
+  try {
+    const deleted = await resetVisitStats();
+    console.log(`[visits] Reset: deleted ${deleted} visit records`);
+    return res.json({ ok: true, deleted });
+  } catch (err: any) {
+    console.error("[visits] reset error:", err?.message);
+    return res.status(500).json({ error: "Reset failed" });
+  }
 });
 
 export default router;

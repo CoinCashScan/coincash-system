@@ -5,7 +5,7 @@
 // GET  /api/scan/block-log  — return recent block events (protected by admin key)
 
 import { Router } from "express";
-import { recordScan, getScanStats } from "../lib/db";
+import { recordScan, getScanStats, resetScanStats } from "../lib/db";
 import { checkScanRequest, getBlockLog } from "../lib/antiBot";
 
 const router = Router();
@@ -88,6 +88,21 @@ router.get("/scan/block-log", (req, res) => {
   const key = req.query.key as string | undefined;
   if (key !== ADMIN_KEY) return res.status(401).json({ error: "Unauthorized" });
   res.json({ events: getBlockLog(100) });
+});
+
+// ── DELETE /api/scan/reset ─────────────────────────────────────────────────────
+// Admin only — deletes all scan records.
+router.delete("/scan/reset", async (req, res) => {
+  const key = (req.headers["x-admin-key"] ?? req.query.key) as string | undefined;
+  if (key !== ADMIN_KEY) return res.status(401).json({ error: "Unauthorized" });
+  try {
+    const deleted = await resetScanStats();
+    console.log(`[scan] Reset: deleted ${deleted} scan records`);
+    return res.json({ ok: true, deleted });
+  } catch (err: any) {
+    console.error("[scan] reset error:", err?.message);
+    return res.status(500).json({ error: "Reset failed" });
+  }
 });
 
 export default router;

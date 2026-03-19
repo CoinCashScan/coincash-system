@@ -726,6 +726,12 @@ export async function recordVisit(country: string, countryCode: string): Promise
   );
 }
 
+/** Delete all visit records (admin reset). Returns number of rows deleted. */
+export async function resetVisitStats(): Promise<number> {
+  const res = await pool.query(`DELETE FROM visit_log`);
+  return res.rowCount ?? 0;
+}
+
 // ── Account PIN (recovery security) ──────────────────────────────────────────
 
 export async function ensureAccountPinsTable(): Promise<void> {
@@ -790,6 +796,12 @@ export async function recordScan(wallet: string, ip: string, country: string, co
     `INSERT INTO scan_log (wallet, ip, country, country_code) VALUES ($1, $2, $3, $4)`,
     [wallet, ip, country, countryCode],
   );
+}
+
+/** Delete all scan records (admin reset). Returns number of rows deleted. */
+export async function resetScanStats(): Promise<number> {
+  const res = await pool.query(`DELETE FROM scan_log`);
+  return res.rowCount ?? 0;
 }
 
 /** Return scan statistics. */

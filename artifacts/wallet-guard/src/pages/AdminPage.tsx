@@ -128,7 +128,40 @@ export default function AdminPage() {
   const [planesStats,   setPlanesStats]   = useState<PlanesStats | null>(null);
   const [pendingUsers,  setPendingUsers]  = useState<PendingUser[]>([]);
   const [planesLoading, setPlanesLoading] = useState(false);
-  const [actionBusy,    setActionBusy]    = useState<string | null>(null); // ccId being acted on
+  const [actionBusy,    setActionBusy]    = useState<string | null>(null);
+
+  // ── Reset stats state ─────────────────────────────────────────────────────
+  const [resetModal, setResetModal] = useState<null | "visitas" | "scans">(null);
+  const [resetBusy,  setResetBusy]  = useState(false);
+  const [resetToast, setResetToast] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setResetToast(msg);
+    setTimeout(() => setResetToast(null), 3500);
+  };
+
+  const handleReset = async () => {
+    if (!resetModal) return;
+    setResetBusy(true);
+    try {
+      const endpoint = resetModal === "visitas" ? "visit" : "scan";
+      const res = await fetch(`${API}/${endpoint}/reset?key=${SCAN_KEY}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Error del servidor");
+      // Refresh the relevant stats immediately
+      if (resetModal === "visitas") {
+        await fetchVisitStats();
+      } else {
+        await fetchScanStats();
+      }
+      setResetModal(null);
+      showToast("Estadísticas reiniciadas correctamente");
+    } catch {
+      setResetModal(null);
+      showToast("Error al reiniciar. Intenta de nuevo.");
+    } finally {
+      setResetBusy(false);
+    }
+  };
 
   const fetchPlanesData = useCallback(async () => {
     try {
@@ -401,6 +434,19 @@ export default function AdminPage() {
               <span style={{ fontSize: 11, color: "#6B7280" }}>Actualización en tiempo real · cada 5 s</span>
             </div>
 
+            {/* Reset button — Visitas */}
+            <button
+              onClick={() => setResetModal("visitas")}
+              style={{
+                marginBottom: 14, width: "100%", padding: "8px 0",
+                background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.1)",
+                borderRadius: 10, color: "#6B7280", fontSize: 11, fontWeight: 600,
+                cursor: "pointer", fontFamily: "inherit", letterSpacing: "0.03em",
+              }}
+            >
+              🗑 Reiniciar estadísticas de visitas
+            </button>
+
             {/* Country cards */}
             {visitStats.countries.length === 0 ? (
               <div style={{ textAlign: "center", padding: "40px 24px", color: "#4B5563" }}>
@@ -474,6 +520,19 @@ export default function AdminPage() {
               <div style={{ textAlign: "center", padding: "40px", color: "#4B5563" }}>Cargando…</div>
             ) : (
               <>
+                {/* Reset button — Scans */}
+                <button
+                  onClick={() => setResetModal("scans")}
+                  style={{
+                    marginBottom: 14, width: "100%", padding: "8px 0",
+                    background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.1)",
+                    borderRadius: 10, color: "#6B7280", fontSize: 11, fontWeight: 600,
+                    cursor: "pointer", fontFamily: "inherit", letterSpacing: "0.03em",
+                  }}
+                >
+                  🗑 Reiniciar estadísticas de scans
+                </button>
+
                 {/* Total / Hoy */}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
                   {[{ label: "Total scans", value: scanStats.total }, { label: "Hoy", value: scanStats.today }].map((item, i) => (
@@ -769,6 +828,73 @@ export default function AdminPage() {
           )}
         </div>
         )}
+
+        {/* ── Confirmation Modal ── */}
+        {resetModal && (
+          <div style={{
+            position: "fixed", inset: 0, zIndex: 9999,
+            background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            padding: "24px",
+          }}>
+            <div style={{
+              background: "#111827", border: "1px solid rgba(255,255,255,0.1)",
+              borderRadius: 18, padding: "24px 20px", maxWidth: 320, width: "100%",
+              boxShadow: "0 24px 80px rgba(0,0,0,0.6)",
+            }}>
+              <div style={{ fontSize: 28, textAlign: "center", marginBottom: 12 }}>⚠️</div>
+              <p style={{ margin: "0 0 8px", fontSize: 14, fontWeight: 700, color: "#F9FAFB", textAlign: "center" }}>
+                ¿Reiniciar estadísticas?
+              </p>
+              <p style={{ margin: "0 0 20px", fontSize: 12, color: "#9CA3AF", textAlign: "center", lineHeight: 1.5 }}>
+                ¿Seguro que deseas reiniciar todas las estadísticas de{" "}
+                <strong style={{ color: "#E5E7EB" }}>{resetModal}</strong>?
+                Esta acción no se puede deshacer.
+              </p>
+              <div style={{ display: "flex", gap: 10 }}>
+                <button
+                  onClick={() => setResetModal(null)}
+                  disabled={resetBusy}
+                  style={{
+                    flex: 1, padding: "10px 0", border: "1px solid rgba(255,255,255,0.12)",
+                    borderRadius: 10, background: "rgba(255,255,255,0.05)",
+                    color: "#9CA3AF", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+                  }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleReset}
+                  disabled={resetBusy}
+                  style={{
+                    flex: 1, padding: "10px 0", border: "none",
+                    borderRadius: 10, background: resetBusy ? "rgba(239,68,68,0.3)" : "#EF4444",
+                    color: "#fff", fontSize: 13, fontWeight: 700, cursor: resetBusy ? "not-allowed" : "pointer",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  {resetBusy ? "Reiniciando…" : "Confirmar"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Toast notification ── */}
+        {resetToast && (
+          <div style={{
+            position: "fixed", bottom: 80, left: "50%", transform: "translateX(-50%)",
+            zIndex: 9999, background: "#111827",
+            border: "1px solid rgba(0,255,198,0.3)", borderRadius: 12,
+            padding: "10px 18px", fontSize: 13, fontWeight: 600, color: "#00FFC6",
+            boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+            whiteSpace: "nowrap", maxWidth: "90vw",
+            animation: "fadeIn 0.2s ease",
+          }}>
+            ✓ {resetToast}
+          </div>
+        )}
+
       </div>
     );
   }
