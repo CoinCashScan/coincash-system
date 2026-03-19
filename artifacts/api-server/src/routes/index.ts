@@ -15,6 +15,7 @@ import visitsRouter from "./visits";
 import authRouter from "./auth";
 import scanRouter from "./scan";
 import tronRouter from "./tron";
+import freemiumRouter from "./freemium";
 
 const router: IRouter = Router();
 
@@ -34,5 +35,6 @@ router.use(visitsRouter);
 router.use(authRouter);
 router.use(scanRouter);
 router.use(tronRouter);
+router.use(freemiumRouter);
 
 export default router;

@@ -230,6 +230,54 @@ interface WalletAnalyzerProps {
   onAddressConsumed?: () => void;
 }
 
+// ── Freemium helpers ─────────────────────────────────────────────────────────
+function getCcId(): string {
+  let id = localStorage.getItem("coincash-cc-id");
+  if (!id) {
+    const digits = Math.floor(Math.random() * 1_000_000).toString().padStart(6, "0");
+    id = `CC-${digits}`;
+    localStorage.setItem("coincash-cc-id", id);
+  }
+  return id;
+}
+
+interface FreemiumStatus {
+  plan:       "free" | "pro";
+  scansToday: number;
+  limit:      number;
+  canScan:    boolean;
+  remaining:  number | null;
+}
+
+const DEFAULT_FREEMIUM: FreemiumStatus = { plan: "free", scansToday: 0, limit: 5, canScan: true, remaining: 5 };
+
+async function fetchFreemiumStatus(ccId: string): Promise<FreemiumStatus> {
+  try {
+    const res = await fetch(`${API_BASE}/freemium/status?ccId=${encodeURIComponent(ccId)}`);
+    if (!res.ok) return DEFAULT_FREEMIUM;
+    return await res.json();
+  } catch {
+    return DEFAULT_FREEMIUM;
+  }
+}
+
+async function recordFreemiumScan(ccId: string): Promise<FreemiumStatus> {
+  try {
+    const res = await fetch(`${API_BASE}/freemium/record`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ ccId }),
+    });
+    const data = await res.json();
+    if (res.status === 429) {
+      return { plan: "free", scansToday: data.scansToday ?? 5, limit: data.limit ?? 5, canScan: false, remaining: 0 };
+    }
+    return await fetchFreemiumStatus(ccId);
+  } catch {
+    return DEFAULT_FREEMIUM;
+  }
+}
+
 const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerProps = {}) => {
   const [address, setAddress] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -239,7 +287,14 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
   const [dailyStats, setDailyStats] = useState<DailyStats>(() => getDailyStats());
   const [rateLimitMessage, setRateLimitMessage] = useState<string | null>(null);
   const [copiedAddress, setCopiedAddress] = useState(false);
+  const [freemium, setFreemium] = useState<FreemiumStatus>(DEFAULT_FREEMIUM);
+  const ccId = getCcId();
   const resultRef = useRef<HTMLDivElement>(null);
+
+  // Load freemium status on mount
+  useEffect(() => {
+    fetchFreemiumStatus(ccId).then(setFreemium);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sync daily stats from localStorage on mount
   useEffect(() => {
@@ -580,6 +635,11 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
       return;
     }
 
+    // ── Freemium gate: check limit before running the scan ──────────────────
+    const latestStatus = await fetchFreemiumStatus(ccId);
+    setFreemium(latestStatus);
+    if (!latestStatus.canScan) return; // UI already shows the limit message
+
     setIsAnalyzing(true);
     setShowReport(false);
     setRateLimitMessage(null);
@@ -594,6 +654,9 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ wallet: trimmed }),
       }).catch(() => {});
+
+      // Record freemium usage, update counter
+      recordFreemiumScan(ccId).then(setFreemium);
 
       // Smooth-scroll to results so mobile users see them immediately
       setTimeout(() => {
@@ -676,22 +739,47 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
 
         {/* Action buttons — stacked */}
         <div className="flex flex-col gap-2.5">
+          {/* ── Freemium limit message ─────────────────────────────────────── */}
+          {!freemium.canScan && (
+            <div className="rounded-xl px-4 py-3"
+              style={{
+                background: "rgba(255,75,79,0.08)",
+                border: "1px solid rgba(255,75,79,0.35)",
+                borderLeft: "4px solid #FF4D4F",
+              }}>
+              <p className="text-sm font-semibold text-center" style={{ color: "#FF4D4F", marginBottom: 4 }}>
+                ⛔ Has alcanzado el límite gratuito.
+              </p>
+              <p className="text-xs text-center" style={{ color: "rgba(255,255,255,0.5)" }}>
+                Actualiza a <strong style={{ color: "#00FFC6" }}>CoinCash Pro</strong> para scans ilimitados.
+              </p>
+            </div>
+          )}
+
           <button
             id="wg-analyze-btn"
             type="button"
             onClick={() => handleAnalyze()}
-            disabled={isAnalyzing}
+            disabled={isAnalyzing || !freemium.canScan}
             className="flex w-full items-center justify-center gap-2 rounded-xl py-3.5 px-4 text-sm font-bold text-white transition-opacity active:opacity-80"
             style={{
-              background: isAnalyzing
-                ? "rgba(59,130,246,0.4)"
-                : "linear-gradient(135deg,#2563EB 0%,#1D4ED8 100%)",
-              boxShadow: isAnalyzing ? "none" : "0 0 20px rgba(59,130,246,0.35)",
+              background: !freemium.canScan
+                ? "rgba(255,75,79,0.2)"
+                : isAnalyzing
+                  ? "rgba(59,130,246,0.4)"
+                  : "linear-gradient(135deg,#2563EB 0%,#1D4ED8 100%)",
+              boxShadow: isAnalyzing || !freemium.canScan ? "none" : "0 0 20px rgba(59,130,246,0.35)",
+              cursor: !freemium.canScan ? "not-allowed" : "pointer",
             }}>
             {isAnalyzing ? (
               <>
                 <Loader2 style={{ width: 16, height: 16 }} className="animate-spin" />
                 <span>Analizando...</span>
+              </>
+            ) : !freemium.canScan ? (
+              <>
+                <Shield style={{ width: 16, height: 16 }} />
+                <span>Límite diario alcanzado</span>
               </>
             ) : (
               <>
@@ -716,8 +804,18 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
           </button>
         </div>
 
+        {/* Subtle scan counter for free users */}
+        {freemium.plan === "free" && freemium.canScan && (
+          <p style={{ textAlign: "center", fontSize: 10, color: "rgba(255,255,255,0.28)", marginTop: 8 }}>
+            <span style={{ color: freemium.remaining === 1 ? "#F59E0B" : "rgba(0,255,198,0.55)", fontWeight: 600 }}>
+              {freemium.remaining ?? (freemium.limit - freemium.scansToday)}
+            </span>
+            {" "}de {freemium.limit} scans gratuitos restantes hoy
+          </p>
+        )}
+
         {/* Discrete legal note */}
-        <p style={{ textAlign: "center", fontSize: 10, color: "rgba(255,255,255,0.22)", marginTop: 12, lineHeight: 1.5 }}>
+        <p style={{ textAlign: "center", fontSize: 10, color: "rgba(255,255,255,0.22)", marginTop: 8, lineHeight: 1.5 }}>
           Análisis informativo basado en datos públicos. No constituye asesoramiento financiero.{" "}
           <a href="#legal" style={{ color: "rgba(0,255,198,0.45)", textDecoration: "none" }}>Aviso legal</a>
         </p>

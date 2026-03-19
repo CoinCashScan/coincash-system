@@ -803,6 +803,65 @@ export async function getScanStats(): Promise<{
   };
 }
 
+// ── Freemium ──────────────────────────────────────────────────────────────────
+
+export const FREE_SCAN_LIMIT = 5;
+
+/** Add plan column to users + create scan_limits table. Safe to re-run. */
+export async function ensureFreemiumTable(): Promise<void> {
+  // Add plan column to existing users table
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS plan TEXT NOT NULL DEFAULT 'free'`);
+  // Daily scan counter per CC-ID
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS scan_limits (
+      cc_id      TEXT NOT NULL,
+      scan_date  DATE NOT NULL DEFAULT CURRENT_DATE,
+      scan_count INT  NOT NULL DEFAULT 0,
+      PRIMARY KEY (cc_id, scan_date)
+    )
+  `);
+  console.log("[db] freemium (plan + scan_limits) ready");
+}
+
+/** Get the plan for a CC-ID. Falls back to 'free' if not found. */
+export async function getUserPlan(ccId: string): Promise<"free" | "pro"> {
+  const res = await pool.query<{ plan: string }>(
+    `SELECT plan FROM users WHERE coincash_id = $1 LIMIT 1`,
+    [ccId],
+  );
+  return (res.rows[0]?.plan === "pro" ? "pro" : "free");
+}
+
+/** How many scans this CC-ID has done today. */
+export async function getScanCountToday(ccId: string): Promise<number> {
+  const res = await pool.query<{ scan_count: number }>(
+    `SELECT scan_count FROM scan_limits WHERE cc_id = $1 AND scan_date = CURRENT_DATE`,
+    [ccId],
+  );
+  return res.rows[0]?.scan_count ?? 0;
+}
+
+/** Increment today's scan count for a CC-ID. Returns the new total. */
+export async function incrementScanCount(ccId: string): Promise<number> {
+  const res = await pool.query<{ scan_count: number }>(
+    `INSERT INTO scan_limits (cc_id, scan_date, scan_count)
+     VALUES ($1, CURRENT_DATE, 1)
+     ON CONFLICT (cc_id, scan_date) DO UPDATE
+       SET scan_count = scan_limits.scan_count + 1
+     RETURNING scan_count`,
+    [ccId],
+  );
+  return res.rows[0]?.scan_count ?? 1;
+}
+
+/** Set user plan (free | pro). Upserts into users table. */
+export async function setUserPlan(ccId: string, plan: "free" | "pro"): Promise<void> {
+  await pool.query(
+    `UPDATE users SET plan = $2 WHERE coincash_id = $1`,
+    [ccId, plan],
+  );
+}
+
 /** Return total visits, today's visits, online count and per-country breakdown. */
 export async function getVisitStats(): Promise<{
   total: number;
