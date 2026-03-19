@@ -55,6 +55,7 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
   // ── PRO upgrade ──────────────────────────────────────────────────────────
   const PRO_ADDRESS     = "TM2cRRegda1gQAQY9hGbg6DMscN7okNVA1";
   const [userPlan,         setUserPlan]         = useState<"free"|"pro">("free");
+  const [daysRemaining,    setDaysRemaining]    = useState<number | null>(null);
   const [proQr,            setProQr]            = useState<string>("");
   const [copiedAddr,       setCopiedAddr]       = useState(false);
   const [upgradeEmail,     setUpgradeEmail]     = useState("");
@@ -90,7 +91,10 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
     const checkPlan = () => {
       fetch(`${API_BASE}/freemium/status?ccId=${encodeURIComponent(ccId)}`)
         .then(r => r.json())
-        .then(d => { if (d.plan) setUserPlan(d.plan); })
+        .then(d => {
+          if (d.plan) setUserPlan(d.plan);
+          setDaysRemaining(typeof d.daysRemaining === "number" ? d.daysRemaining : null);
+        })
         .catch(() => {});
     };
     checkPlan();
@@ -447,10 +451,61 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
 
         {/* Content */}
         {userPlan === "pro" ? (
-          <div style={{ padding: "20px 16px", textAlign: "center" }}>
-            <p style={{ margin: 0, fontSize: 28 }}>🎉</p>
-            <p style={{ margin: "8px 0 4px", fontSize: 15, fontWeight: 700, color: TEAL }}>¡Eres usuario PRO!</p>
-            <p style={{ margin: 0, fontSize: 12, color: MUTED }}>Disfruta de scans ilimitados.</p>
+          <div style={{ padding: "16px" }}>
+            {/* Success header */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+              <span style={{ fontSize: 24 }}>🎉</span>
+              <div>
+                <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: TEAL }}>¡Eres usuario PRO!</p>
+                <p style={{ margin: "2px 0 0", fontSize: 11, color: MUTED }}>Scans ilimitados activos</p>
+              </div>
+            </div>
+
+            {/* Days remaining block */}
+            {daysRemaining !== null && (() => {
+              const pct    = Math.round((daysRemaining / 30) * 100);
+              const urgent = daysRemaining <= 5;
+              const barColor = urgent ? "#F59E0B" : TEAL;
+              return (
+                <div style={{ background: "rgba(255,255,255,0.04)", border: `1px solid ${urgent ? "rgba(245,158,11,0.3)" : "rgba(0,255,198,0.15)"}`, borderRadius: 10, padding: "12px 14px" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                    <span style={{ fontSize: 12, color: urgent ? "#F59E0B" : MUTED, fontWeight: 600 }}>
+                      {urgent ? "⚠ Vence pronto" : "⏱ Próximo pago"}
+                    </span>
+                    <span style={{ fontFamily: "monospace", fontSize: 22, fontWeight: 800, color: barColor }}>
+                      {daysRemaining}
+                      <span style={{ fontSize: 11, fontWeight: 400, color: MUTED, marginLeft: 4 }}>días</span>
+                    </span>
+                  </div>
+
+                  {/* Progress bar */}
+                  <div style={{ height: 6, background: "rgba(255,255,255,0.07)", borderRadius: 3, overflow: "hidden" }}>
+                    <div style={{
+                      height: "100%",
+                      width: `${pct}%`,
+                      background: urgent
+                        ? "linear-gradient(90deg,#F59E0B,#FBBF24)"
+                        : "linear-gradient(90deg,#00FFC6,#00B8A9)",
+                      borderRadius: 3,
+                      transition: "width 0.5s ease",
+                    }} />
+                  </div>
+
+                  <p style={{ margin: "8px 0 0", fontSize: 11, color: MUTED, lineHeight: 1.4 }}>
+                    {urgent
+                      ? `Renueva antes de que expire para no perder el acceso PRO.`
+                      : `Tu plan se renueva en ${daysRemaining} días. Envía 10 USDT (TRC20) para continuar.`}
+                  </p>
+
+                  {/* Renewal reminder */}
+                  {urgent && (
+                    <p style={{ margin: "8px 0 0", fontSize: 11, color: "#F59E0B", fontWeight: 600 }}>
+                      Dirección de renovación: <span style={{ fontFamily: "monospace", color: TEAL }}>{PRO_ADDRESS}</span>
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         ) : (
           <div style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 12 }}>

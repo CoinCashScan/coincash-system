@@ -15,6 +15,7 @@ import { Router } from "express";
 import {
   ensureFreemiumUser,
   getUserPlan,
+  getProDaysRemaining,
   getScanCountToday,
   incrementScanCount,
   setUserPlan,
@@ -24,6 +25,7 @@ import {
   getPendingUpgrades,
   getFreemiumStats,
   FREE_SCAN_LIMIT,
+  PRO_DURATION_DAYS,
 } from "../lib/db";
 
 const router  = Router();
@@ -52,14 +54,21 @@ router.get("/freemium/status", async (req, res) => {
       getScanCountToday(ccId),
     ]);
 
-    const isPro     = plan === "pro";
-    const canScan   = isPro || scansToday < FREE_SCAN_LIMIT;
-    const remaining = isPro ? null : Math.max(0, FREE_SCAN_LIMIT - scansToday);
+    const isPro         = plan === "pro";
+    const canScan       = isPro || scansToday < FREE_SCAN_LIMIT;
+    const remaining     = isPro ? null : Math.max(0, FREE_SCAN_LIMIT - scansToday);
+    const daysRemaining = isPro ? await getProDaysRemaining(ccId) : null;
+    const proExpiresAt  = daysRemaining !== null
+      ? new Date(Date.now() + daysRemaining * 86_400_000).toISOString()
+      : null;
 
-    return res.json({ plan, scansToday, limit: FREE_SCAN_LIMIT, canScan, remaining });
+    return res.json({
+      plan, scansToday, limit: FREE_SCAN_LIMIT, canScan, remaining,
+      daysRemaining, proExpiresAt, proDurationDays: PRO_DURATION_DAYS,
+    });
   } catch (err: any) {
     console.error("[freemium] status error:", err?.message);
-    return res.json({ plan: "free", scansToday: 0, limit: FREE_SCAN_LIMIT, canScan: true, remaining: FREE_SCAN_LIMIT });
+    return res.json({ plan: "free", scansToday: 0, limit: FREE_SCAN_LIMIT, canScan: true, remaining: FREE_SCAN_LIMIT, daysRemaining: null, proExpiresAt: null, proDurationDays: PRO_DURATION_DAYS });
   }
 });
 

@@ -815,6 +815,8 @@ export async function ensureFreemiumTable(): Promise<void> {
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT NOT NULL DEFAULT ''`);
   // Timestamp when user requested upgrade (pending payment)
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS upgrade_requested_at TIMESTAMP`);
+  // Timestamp when PRO was activated (used to calculate 30-day expiry)
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS pro_activated_at TIMESTAMP`);
   // Daily scan counter per CC-ID
   await pool.query(`
     CREATE TABLE IF NOT EXISTS scan_limits (
@@ -837,13 +839,45 @@ export async function ensureFreemiumUser(ccId: string): Promise<void> {
   );
 }
 
-/** Get the plan for a CC-ID. Falls back to 'free' if not found. */
+export const PRO_DURATION_DAYS = 30;
+
+/** Get the plan for a CC-ID, auto-expiring PRO after 30 days. Falls back to 'free'. */
 export async function getUserPlan(ccId: string): Promise<"free" | "pro"> {
-  const res = await pool.query<{ plan: string }>(
-    `SELECT plan FROM users WHERE coincash_id = $1 LIMIT 1`,
+  const res = await pool.query<{ plan: string; pro_activated_at: string | null }>(
+    `SELECT plan, pro_activated_at FROM users WHERE coincash_id = $1 LIMIT 1`,
     [ccId],
   );
-  return (res.rows[0]?.plan === "pro" ? "pro" : "free");
+  const row = res.rows[0];
+  if (!row || row.plan !== "pro") return "free";
+
+  // Auto-expire if 30 days have passed
+  if (row.pro_activated_at) {
+    const expiry = new Date(row.pro_activated_at);
+    expiry.setDate(expiry.getDate() + PRO_DURATION_DAYS);
+    if (new Date() > expiry) {
+      // Downgrade silently
+      await pool.query(
+        `UPDATE users SET plan = 'free', pro_activated_at = NULL WHERE coincash_id = $1`,
+        [ccId],
+      );
+      return "free";
+    }
+  }
+  return "pro";
+}
+
+/** Return the number of days remaining in the PRO subscription (null if not PRO). */
+export async function getProDaysRemaining(ccId: string): Promise<number | null> {
+  const res = await pool.query<{ pro_activated_at: string | null; plan: string }>(
+    `SELECT plan, pro_activated_at FROM users WHERE coincash_id = $1 LIMIT 1`,
+    [ccId],
+  );
+  const row = res.rows[0];
+  if (!row || row.plan !== "pro" || !row.pro_activated_at) return null;
+  const expiry = new Date(row.pro_activated_at);
+  expiry.setDate(expiry.getDate() + PRO_DURATION_DAYS);
+  const msLeft = expiry.getTime() - Date.now();
+  return Math.max(0, Math.ceil(msLeft / (1000 * 60 * 60 * 24)));
 }
 
 /** How many scans this CC-ID has done today. */
@@ -868,12 +902,23 @@ export async function incrementScanCount(ccId: string): Promise<number> {
   return res.rows[0]?.scan_count ?? 1;
 }
 
-/** Set user plan (free | pro). */
+/** Set user plan (free | pro). Records activation timestamp for PRO; clears it for free. */
 export async function setUserPlan(ccId: string, plan: "free" | "pro"): Promise<void> {
-  await pool.query(
-    `UPDATE users SET plan = $2, upgrade_requested_at = NULL WHERE coincash_id = $1`,
-    [ccId, plan],
-  );
+  if (plan === "pro") {
+    await pool.query(
+      `UPDATE users
+          SET plan = 'pro', upgrade_requested_at = NULL, pro_activated_at = NOW()
+        WHERE coincash_id = $1`,
+      [ccId],
+    );
+  } else {
+    await pool.query(
+      `UPDATE users
+          SET plan = 'free', upgrade_requested_at = NULL, pro_activated_at = NULL
+        WHERE coincash_id = $1`,
+      [ccId],
+    );
+  }
 }
 
 /** Reset today's scan count for a CC-ID. */
