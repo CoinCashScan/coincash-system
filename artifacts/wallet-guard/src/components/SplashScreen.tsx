@@ -23,9 +23,17 @@ const KEYFRAMES = `
   from { opacity: 0; transform: translateY(14px); }
   to   { opacity: 1; transform: translateY(0); }
 }
-@keyframes cc-pulse-dot {
-  0%, 100% { opacity: 1;   transform: scale(1); box-shadow: 0 0 0 0 rgba(25,195,125,0.6); }
-  50%       { opacity: 0.8; transform: scale(1.35); box-shadow: 0 0 0 6px rgba(25,195,125,0); }
+@keyframes cc-dot-pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 0 5px 2px rgba(0,255,198,0.50);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(1.2);
+    box-shadow: 0 0 10px 4px rgba(0,255,198,0.18);
+  }
 }
 @keyframes cc-bar-fill {
   from { width: 0%; }
@@ -83,13 +91,14 @@ export default function SplashScreen({ onDone }: Props) {
     >
       {/* Ambient radial glow behind logo */}
       <div style={{
-        position:     "absolute",
-        top: "38%", left: "50%",
-        transform:    "translate(-50%, -50%)",
-        width:        340,
-        height:       340,
-        borderRadius: "50%",
-        background:   "radial-gradient(circle, rgba(0,255,198,0.09) 0%, transparent 70%)",
+        position:      "absolute",
+        top:           "38%",
+        left:          "50%",
+        transform:     "translate(-50%, -50%)",
+        width:         340,
+        height:        340,
+        borderRadius:  "50%",
+        background:    "radial-gradient(circle, rgba(0,255,198,0.09) 0%, transparent 70%)",
         pointerEvents: "none",
       }} />
 
@@ -103,42 +112,48 @@ export default function SplashScreen({ onDone }: Props) {
         padding:       "0 24px",
       }}>
 
-        {/* ── Icon logo ── */}
-        <div style={{ position: "relative" }}>
-          <img
-            src="/cc-logo-icon.png"
-            alt="CoinCash icon"
-            style={{
-              width:     120,
-              height:    120,
-              objectFit: "contain",
-              animation: "cc-icon-glow 2.6s ease-in-out infinite",
-            }}
-          />
-          {/* Pulse dot — live indicator */}
-          <div style={{
-            position:     "absolute",
-            top:          6,
-            right:        6,
-            width:        13,
-            height:       13,
-            borderRadius: "50%",
-            background:   "#19C37D",
-            border:       "2.5px solid #0A0E18",
-            animation:    "cc-pulse-dot 1.5s ease-in-out infinite",
-          }} />
-        </div>
-
-        {/* ── Wordmark logo ── */}
+        {/* ── Icon logo — clean, no extra elements ── */}
         <img
-          src="/cc-logo-text.png"
-          alt="CoinCash"
+          src="/cc-logo-icon.png"
+          alt="CoinCash icon"
           style={{
-            width:     "min(260px, 72vw)",
+            width:     120,
+            height:    120,
             objectFit: "contain",
-            animation: "cc-fade-up 0.6s ease 0.35s both",
+            animation: "cc-icon-glow 2.6s ease-in-out infinite",
           }}
         />
+
+        {/* ── Wordmark logo with pulse-glow overlay on the green dot ── */}
+        <div style={{ position: "relative", display: "inline-block" }}>
+          <img
+            src="/cc-logo-text.png"
+            alt="CoinCash"
+            style={{
+              width:     "min(260px, 72vw)",
+              objectFit: "contain",
+              display:   "block",
+              animation: "cc-fade-up 0.6s ease 0.35s both",
+            }}
+          />
+          {/*
+            Transparent overlay sized to sit on top of the green dot
+            that is baked into the wordmark image.
+            The dot is between "n" and "C" (roughly 37% from left, 12% from top).
+            No background — only the animated box-shadow creates the glow.
+          */}
+          <div style={{
+            position:     "absolute",
+            top:          "10%",
+            left:         "37%",
+            width:        11,
+            height:       11,
+            borderRadius: "50%",
+            background:   "transparent",
+            animation:    "cc-dot-pulse 1.2s ease-in-out infinite",
+            animationDelay: "0.9s",
+          }} />
+        </div>
 
         {/* ── Tagline ── */}
         <p style={{
