@@ -25,14 +25,12 @@ const KEYFRAMES = `
 }
 @keyframes cc-dot-pulse {
   0%, 100% {
-    opacity: 1;
     transform: translateX(-50%) scale(1);
-    box-shadow: 0 0 6px 3px rgba(0,220,160,0.55);
+    box-shadow: 0 0 4px rgba(0,255,198,0.4);
   }
   50% {
-    opacity: 0.35;
     transform: translateX(-50%) scale(1.2);
-    box-shadow: 0 0 14px 6px rgba(0,220,160,0.20);
+    box-shadow: 0 0 12px rgba(0,255,198,1);
   }
 }
 @keyframes cc-bar-fill {
@@ -141,11 +139,9 @@ export default function SplashScreen({ onDone }: Props) {
           {/* "Co" plain */}
           <span>Co</span>
 
-          {/* "i" container — dot lives here, centered on the letter */}
+          {/* Dotless "ı" (U+0131) — no built-in tittle, green dot is the only one */}
           <span style={{ position: "relative", display: "inline-block" }}>
-            {/* The letter i */}
-            i
-            {/* Dot: absolute, centered on the i's tittle position */}
+            ı
             <span style={{
               position:     "absolute",
               top:          "-10px",
@@ -154,8 +150,9 @@ export default function SplashScreen({ onDone }: Props) {
               width:        8,
               height:       8,
               borderRadius: "50%",
-              background:   "#00DCA0",
-              animation:    "cc-dot-pulse 1.5s ease-in-out 0.9s infinite",
+              background:   "#00FFC6",
+              boxShadow:    "0 0 8px rgba(0,255,198,0.8)",
+              animation:    "cc-dot-pulse 1.5s ease-in-out infinite",
             }} />
           </span>
 
