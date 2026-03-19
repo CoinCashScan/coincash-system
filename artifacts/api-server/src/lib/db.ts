@@ -863,6 +863,9 @@ export async function ensureDeviceTable(): Promise<void> {
   await pool.query(`
     CREATE INDEX IF NOT EXISTS device_ids_ua_ip_idx ON device_ids (ua_hash, last_ip)
   `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS device_ids_ip_idx ON device_ids (last_ip)
+  `);
   console.log("[db] device_ids table ready");
 }
 
@@ -904,15 +907,15 @@ export async function identifyDevice(
     }
   }
 
-  // 2. Fallback: same UA + IP combination (different browser clearing cookies)
-  if (uaHash && safeIp) {
+  // 2. Fallback: same IP regardless of browser/UA — unifies all browsers on same device/network
+  if (safeIp) {
     const row = await pool.query<{ cc_id: string }>(
-      `SELECT cc_id FROM device_ids WHERE ua_hash = $1 AND last_ip = $2 LIMIT 1`,
-      [uaHash, safeIp],
+      `SELECT cc_id FROM device_ids WHERE last_ip = $1 ORDER BY created_at ASC LIMIT 1`,
+      [safeIp],
     );
     if (row.rows.length > 0) {
       const ccId = row.rows[0].cc_id;
-      // Back-fill fingerprint so future lookups are faster
+      // Back-fill this browser's fingerprint so future lookups are instant
       if (fpHash) {
         pool.query(
           `INSERT INTO device_ids (fp_hash, cc_id, ua_hash, last_ip)
