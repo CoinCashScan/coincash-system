@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from "react";
+import ccLogoIconOrig from "@/assets/cc-logo-icon-orig.png";
 
 const KEYFRAMES = `
 @keyframes cc-splash-in {
@@ -156,7 +157,7 @@ export default function SplashScreen({ onDone }: Props) {
 
         {/* Icon */}
         <img
-          src="/cc-logo-icon-orig.png"
+          src={ccLogoIconOrig}
           alt="CoinCash icon"
           style={{
             width: 140, height: 140,

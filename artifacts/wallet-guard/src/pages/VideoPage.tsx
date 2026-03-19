@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Lock, AlertTriangle, CheckCircle, Shield } from 'lucide-react';
+import coincashLogo from '@/assets/coincash-logo.png';
 
-const LOGO_URL = `${import.meta.env.BASE_URL}coincash-logo.png`;
+const LOGO_URL = coincashLogo;
 
 const SCENE_DURATIONS = [3500, 5500, 4500, 5500, 4500, 4500, 3500];
 const TOTAL_SCENES = SCENE_DURATIONS.length;

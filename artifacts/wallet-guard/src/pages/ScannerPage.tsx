@@ -1,4 +1,5 @@
 import WalletAnalyzer from "@/components/WalletAnalyzer";
+import logoSrc from "@/assets/logo.png";
 
 interface ScannerPageProps {
   prefillAddress?: string;
@@ -18,7 +19,7 @@ const ScannerPage = ({ prefillAddress, onAddressConsumed }: ScannerPageProps) =>
         padding: "40px 24px 20px",
       }}>
         <img
-          src={`${import.meta.env.BASE_URL}logo.png`}
+          src={logoSrc}
           alt="CoinCash"
           style={{ width: "200px", height: "auto", objectFit: "contain" }}
         />
