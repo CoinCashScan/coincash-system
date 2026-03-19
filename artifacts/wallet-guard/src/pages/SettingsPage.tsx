@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Camera, Bell, BellOff, Check, Headphones, ChevronRight, Trash2 } from "lucide-react";
+import { Camera, Bell, BellOff, Check, Copy, Headphones, ChevronRight, Trash2 } from "lucide-react";
 import { API_BASE } from "@/lib/apiConfig";
 
 const TEAL   = "#00FFC6";
@@ -49,6 +49,7 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
   const [pushLoading,  setPushLoading]  = useState(false);
   const [pushSupport,  setPushSupport]  = useState(true);
   const [saved,        setSaved]        = useState(false);
+  const [copiedId,     setCopiedId]     = useState(false);
   const [visitStats, setVisitStats] = useState<{ total: number; today: number; online: number; countries: { name: string; code: string; count: number }[] } | null>(null);
 
   // Crop modal state
@@ -350,6 +351,41 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
           </div>
         </div>
         <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handlePhotoChange} />
+      </div>
+
+      {/* CC ID card */}
+      <div style={{ margin: "16px 16px 0", padding: "14px 16px", background: CARD, borderRadius: 12, border: `1px solid ${BORDER}` }}>
+        <p style={{ margin: "0 0 8px", fontSize: 11, color: MUTED, textTransform: "uppercase", letterSpacing: "0.08em" }}>Tu ID de usuario</p>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{
+            flex: 1, fontFamily: "monospace", fontSize: 20, fontWeight: 700,
+            color: TEAL, letterSpacing: "0.05em",
+          }}>
+            {ccId}
+          </span>
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText(ccId).then(() => {
+                setCopiedId(true);
+                setTimeout(() => setCopiedId(false), 2000);
+              });
+            }}
+            style={{
+              background: copiedId ? "rgba(0,255,198,0.15)" : "rgba(255,255,255,0.06)",
+              border: `1px solid ${copiedId ? "rgba(0,255,198,0.4)" : BORDER}`,
+              borderRadius: 8, padding: "6px 12px", cursor: "pointer",
+              display: "flex", alignItems: "center", gap: 5,
+              color: copiedId ? TEAL : MUTED, fontSize: 12, fontWeight: 600,
+              transition: "all 0.2s",
+            }}
+          >
+            {copiedId ? <Check size={13} /> : <Copy size={13} />}
+            {copiedId ? "Copiado" : "Copiar"}
+          </button>
+        </div>
+        <p style={{ margin: "6px 0 0", fontSize: 11, color: "rgba(255,255,255,0.22)", lineHeight: 1.4 }}>
+          Usa este ID para identificar tu cuenta o contactar soporte.
+        </p>
       </div>
 
       {/* Push notifications */}
