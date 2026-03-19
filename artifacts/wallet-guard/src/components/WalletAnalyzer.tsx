@@ -52,6 +52,33 @@ function getScoreCardConfig(score: number): { label: string; color: string; bg: 
   return             { label: "Bajo riesgo",           color: GREEN,   bg: "linear-gradient(135deg,#001A0E 0%,#000F08 100%)" };
 }
 
+function getRiskMessage(score: number): { nivel: string; mensaje: string; color: string; icono: string } {
+  if (score >= 81) return {
+    nivel:   "Severo",
+    mensaje: "Alto riesgo detectado. No se recomienda interactuar con esta billetera.",
+    color:   DANGER,
+    icono:   "⛔",
+  };
+  if (score >= 61) return {
+    nivel:   "Alto",
+    mensaje: "Se han detectado patrones de riesgo. Evita enviar fondos sin verificar completamente.",
+    color:   ORANGE,
+    icono:   "🚨",
+  };
+  if (score >= 31) return {
+    nivel:   "Moderado",
+    mensaje: "Esta billetera presenta actividad inusual. Se recomienda precaución antes de interactuar.",
+    color:   AMBER,
+    icono:   "⚠️",
+  };
+  return {
+    nivel:   "Bajo",
+    mensaje: "Esta billetera no presenta señales relevantes de riesgo. Puedes interactuar con normalidad, manteniendo buenas prácticas.",
+    color:   GREEN,
+    icono:   "✅",
+  };
+}
+
 // Daily stats helpers (localStorage)
 interface DailyStats { date: string; analyzed: number; highRisk: number; }
 function getDailyStats(): DailyStats {
@@ -785,6 +812,51 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                       </button>
                     </div>
                   </div>
+                );
+              })()}
+
+              {/* ── Risk recommendation card ── */}
+              {(() => {
+                const score = computeRiskScore(reportData);
+                const { nivel, mensaje, color, icono } = getRiskMessage(score);
+                return (
+                  <motion.div
+                    key={score}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.35, ease: "easeOut" }}
+                    className="rounded-2xl p-4 mb-4"
+                    style={{
+                      background: `${color}0D`,
+                      border: `1px solid ${color}35`,
+                      boxShadow: `0 4px 20px ${color}10`,
+                    }}
+                  >
+                    <div className="flex items-start gap-3">
+                      {/* Icon */}
+                      <span style={{ fontSize: 22, lineHeight: 1, flexShrink: 0, marginTop: 1 }}>{icono}</span>
+
+                      <div className="flex flex-col gap-1 min-w-0">
+                        {/* Level badge */}
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <span
+                            className="text-[10px] font-bold uppercase tracking-widest"
+                            style={{ color }}
+                          >
+                            RECOMENDACIÓN · NIVEL {nivel.toUpperCase()}
+                          </span>
+                        </div>
+
+                        {/* Message */}
+                        <p
+                          className="text-sm leading-relaxed"
+                          style={{ color: "rgba(255,255,255,0.75)" }}
+                        >
+                          {mensaje}
+                        </p>
+                      </div>
+                    </div>
+                  </motion.div>
                 );
               })()}
 
