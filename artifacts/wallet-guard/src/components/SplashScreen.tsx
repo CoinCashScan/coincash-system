@@ -26,13 +26,13 @@ const KEYFRAMES = `
 @keyframes cc-dot-pulse {
   0%, 100% {
     opacity: 1;
-    transform: scale(1);
-    box-shadow: 0 0 5px 2px rgba(0,255,198,0.50);
+    transform: translate(-50%, -50%) scale(1);
+    box-shadow: 0 0 6px 3px rgba(0,220,160,0.55);
   }
   50% {
-    opacity: 0.4;
-    transform: scale(1.2);
-    box-shadow: 0 0 10px 4px rgba(0,255,198,0.18);
+    opacity: 0.35;
+    transform: translate(-50%, -50%) scale(1.2);
+    box-shadow: 0 0 14px 6px rgba(0,220,160,0.20);
   }
 }
 @keyframes cc-bar-fill {
@@ -138,21 +138,21 @@ export default function SplashScreen({ onDone }: Props) {
             }}
           />
           {/*
-            Transparent overlay sized to sit on top of the green dot
-            that is baked into the wordmark image.
-            The dot is between "n" and "C" (roughly 37% from left, 12% from top).
-            No background — only the animated box-shadow creates the glow.
+            Solid overlay that sits EXACTLY over the green dot baked into
+            the wordmark image — covers the static dot so only this div
+            is visible. The pulse animation then grows + glows it smoothly.
+            transform: translate(-50%,-50%) is baked into the keyframe so
+            the origin is the dot's center, not its top-left corner.
           */}
           <div style={{
             position:     "absolute",
-            top:          "10%",
+            top:          "14%",
             left:         "37%",
-            width:        11,
-            height:       11,
+            width:        13,
+            height:       13,
             borderRadius: "50%",
-            background:   "transparent",
-            animation:    "cc-dot-pulse 1.2s ease-in-out infinite",
-            animationDelay: "0.9s",
+            background:   "#00DCA0",
+            animation:    "cc-dot-pulse 1.5s ease-in-out 0.9s infinite",
           }} />
         </div>
 
