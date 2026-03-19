@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import QRCode from "qrcode";
 import { Camera, Bell, BellOff, Check, Copy, Headphones, ChevronRight, Trash2 } from "lucide-react";
 import { API_BASE } from "@/lib/apiConfig";
 
@@ -50,6 +51,16 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
   const [pushSupport,  setPushSupport]  = useState(true);
   const [saved,        setSaved]        = useState(false);
   const [copiedId,     setCopiedId]     = useState(false);
+
+  // ── PRO upgrade ──────────────────────────────────────────────────────────
+  const PRO_ADDRESS     = "TM2cRRegda1gQAQY9hGbg6DMscN7okNVA1";
+  const [userPlan,         setUserPlan]         = useState<"free"|"pro">("free");
+  const [proQr,            setProQr]            = useState<string>("");
+  const [copiedAddr,       setCopiedAddr]       = useState(false);
+  const [upgradeEmail,     setUpgradeEmail]     = useState("");
+  const [upgradeSending,   setUpgradeSending]   = useState(false);
+  const [upgradeRequested, setUpgradeRequested] = useState(false);
+
   const [visitStats, setVisitStats] = useState<{ total: number; today: number; online: number; countries: { name: string; code: string; count: number }[] } | null>(null);
 
   // Crop modal state
@@ -70,6 +81,22 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
       .then(d => setVisitStats(d))
       .catch(() => {});
   }, []);
+
+  // Generate PRO payment QR + fetch current plan (poll every 30s to catch admin activations)
+  useEffect(() => {
+    QRCode.toDataURL(PRO_ADDRESS, { width: 200, margin: 2, color: { dark: "#000000", light: "#FFFFFF" } })
+      .then(setProQr).catch(() => {});
+
+    const checkPlan = () => {
+      fetch(`${API_BASE}/freemium/status?ccId=${encodeURIComponent(ccId)}`)
+        .then(r => r.json())
+        .then(d => { if (d.plan) setUserPlan(d.plan); })
+        .catch(() => {});
+    };
+    checkPlan();
+    const t = setInterval(checkPlan, 30_000);
+    return () => clearInterval(t);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Check push permission on mount
   useEffect(() => {
@@ -386,6 +413,153 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
         <p style={{ margin: "6px 0 0", fontSize: 11, color: "rgba(255,255,255,0.22)", lineHeight: 1.4 }}>
           Usa este ID para identificar tu cuenta o contactar soporte.
         </p>
+      </div>
+
+      {/* ── CoinCash PRO upgrade card ── */}
+      <div style={{ margin: "16px 16px 0", border: `1px solid ${userPlan === "pro" ? "rgba(0,255,198,0.3)" : "rgba(0,255,198,0.18)"}`, borderRadius: 14, overflow: "hidden", background: CARD }}>
+
+        {/* Header */}
+        <div style={{
+          background: userPlan === "pro"
+            ? "linear-gradient(135deg,rgba(0,255,198,0.14),rgba(0,128,255,0.08))"
+            : "linear-gradient(135deg,rgba(0,255,198,0.07),rgba(0,128,255,0.04))",
+          borderBottom: `1px solid rgba(0,255,198,0.12)`,
+          padding: "12px 16px",
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+        }}>
+          <div>
+            <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: "#fff" }}>
+              CoinCash PRO
+            </p>
+            <p style={{ margin: "2px 0 0", fontSize: 11, color: MUTED }}>
+              Scans ilimitados · Sin restricciones diarias
+            </p>
+          </div>
+          <div style={{
+            background: userPlan === "pro" ? "rgba(0,255,198,0.15)" : "rgba(0,255,198,0.08)",
+            border: `1px solid ${userPlan === "pro" ? "rgba(0,255,198,0.5)" : "rgba(0,255,198,0.25)"}`,
+            borderRadius: 8, padding: "4px 10px",
+            fontSize: 13, fontWeight: 800, color: TEAL,
+          }}>
+            {userPlan === "pro" ? "✓ Activo" : "10 USDT"}
+          </div>
+        </div>
+
+        {/* Content */}
+        {userPlan === "pro" ? (
+          <div style={{ padding: "20px 16px", textAlign: "center" }}>
+            <p style={{ margin: 0, fontSize: 28 }}>🎉</p>
+            <p style={{ margin: "8px 0 4px", fontSize: 15, fontWeight: 700, color: TEAL }}>¡Eres usuario PRO!</p>
+            <p style={{ margin: 0, fontSize: 12, color: MUTED }}>Disfruta de scans ilimitados.</p>
+          </div>
+        ) : (
+          <div style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 12 }}>
+
+            {/* Network badge */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{
+                fontSize: 10, fontWeight: 700, letterSpacing: "0.08em",
+                background: "rgba(255,50,50,0.12)", border: "1px solid rgba(255,50,50,0.3)",
+                color: "#FF6B6B", borderRadius: 6, padding: "3px 8px",
+              }}>TRC20</span>
+              <span style={{ fontSize: 11, color: MUTED }}>Red TRON · USDT</span>
+            </div>
+
+            {/* QR code */}
+            {proQr && (
+              <div style={{ display: "flex", justifyContent: "center" }}>
+                <div style={{ background: "#fff", borderRadius: 12, padding: 8, display: "inline-block" }}>
+                  <img src={proQr} alt="QR dirección de pago" style={{ width: 160, height: 160, display: "block" }} />
+                </div>
+              </div>
+            )}
+
+            {/* Address + copy */}
+            <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: "10px 12px" }}>
+              <p style={{ margin: "0 0 4px", fontSize: 10, color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                Dirección de pago
+              </p>
+              <p style={{ margin: "0 0 8px", fontFamily: "monospace", fontSize: 11, color: TEAL, wordBreak: "break-all", lineHeight: 1.5 }}>
+                {PRO_ADDRESS}
+              </p>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(PRO_ADDRESS).then(() => {
+                    setCopiedAddr(true);
+                    setTimeout(() => setCopiedAddr(false), 2500);
+                  });
+                }}
+                style={{
+                  display: "flex", alignItems: "center", gap: 6, width: "100%",
+                  justifyContent: "center",
+                  background: copiedAddr ? "rgba(0,255,198,0.12)" : "rgba(255,255,255,0.05)",
+                  border: `1px solid ${copiedAddr ? "rgba(0,255,198,0.4)" : "rgba(255,255,255,0.1)"}`,
+                  borderRadius: 8, padding: "8px 12px", cursor: "pointer",
+                  color: copiedAddr ? TEAL : MUTED,
+                  fontSize: 12, fontWeight: 600, transition: "all 0.2s",
+                }}
+              >
+                {copiedAddr ? <Check size={13} /> : <Copy size={13} />}
+                {copiedAddr ? "¡Dirección copiada!" : "Copiar dirección"}
+              </button>
+            </div>
+
+            {/* Instructions */}
+            <div style={{ background: "rgba(245,158,11,0.07)", border: "1px solid rgba(245,158,11,0.22)", borderRadius: 10, padding: "10px 12px" }}>
+              <p style={{ margin: 0, fontSize: 12, color: "rgba(255,255,255,0.7)", lineHeight: 1.6 }}>
+                Envía <strong style={{ color: "#F59E0B" }}>10 USDT (TRC20)</strong> a la dirección anterior.<br />
+                Luego presiona <strong style={{ color: TEAL }}>"Ya pagué"</strong> para activar tu plan.
+              </p>
+            </div>
+
+            {/* Ya pagué / Pending message */}
+            {upgradeRequested ? (
+              <div style={{ background: "rgba(0,255,198,0.07)", border: "1px solid rgba(0,255,198,0.28)", borderRadius: 10, padding: "12px 14px", textAlign: "center" }}>
+                <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: TEAL }}>✓ Pago en verificación.</p>
+                <p style={{ margin: "4px 0 0", fontSize: 12, color: MUTED }}>Activación en pocos minutos.</p>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <input
+                  type="email"
+                  placeholder="Tu email (opcional, para notificarte)"
+                  value={upgradeEmail}
+                  onChange={(e) => setUpgradeEmail(e.target.value)}
+                  style={{
+                    background: "rgba(255,255,255,0.05)", border: `1px solid ${BORDER}`,
+                    borderRadius: 8, padding: "9px 12px", fontSize: 12, color: "#fff",
+                    outline: "none", fontFamily: "inherit", width: "100%",
+                  }}
+                />
+                <button
+                  disabled={upgradeSending}
+                  onClick={async () => {
+                    setUpgradeSending(true);
+                    try {
+                      await fetch(`${API_BASE}/freemium/request-upgrade`, {
+                        method:  "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body:    JSON.stringify({ ccId, email: upgradeEmail.trim() }),
+                      });
+                      setUpgradeRequested(true);
+                    } catch { /* ignore */ } finally { setUpgradeSending(false); }
+                  }}
+                  style={{
+                    background: upgradeSending
+                      ? "rgba(0,255,198,0.08)"
+                      : "linear-gradient(135deg,rgba(0,200,150,0.9),rgba(0,255,198,0.8))",
+                    border: "none", borderRadius: 10, padding: "12px 0",
+                    color: upgradeSending ? "rgba(0,255,198,0.5)" : "#0B1220",
+                    fontSize: 13, fontWeight: 800,
+                    cursor: upgradeSending ? "not-allowed" : "pointer", width: "100%",
+                  }}
+                >
+                  {upgradeSending ? "Enviando…" : "💳 Ya pagué — Activar PRO"}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Push notifications */}
