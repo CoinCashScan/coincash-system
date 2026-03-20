@@ -67,27 +67,33 @@ interface CongelamientoResult {
   nivel: "ALTO" | "MEDIO" | "BAJO";
   motivos: string[];
 }
-function calcularRiesgoCongelamiento(data: CongelamientoInput): CongelamientoResult {
+function calcularRiesgoCongelamiento(data: Partial<CongelamientoInput>): CongelamientoResult {
+  const walletAgeDays      = data.walletAgeDays      ?? 0;
+  const totalVolume        = data.totalVolume        ?? 0;
+  const txCount            = data.txCount            ?? 0;
+  const exchangeInteraction = data.exchangeInteraction ?? 0;
+  const isLinkedToRiskWallet = data.isLinkedToRiskWallet ?? false;
+
   let score = 0;
   const motivos: string[] = [];
 
-  if (data.walletAgeDays < 30) {
+  if (walletAgeDays > 0 && walletAgeDays < 30) {
     score += 25;
     motivos.push("Wallet reciente (menos de 30 días)");
   }
-  if (data.totalVolume > 50_000) {
+  if (totalVolume > 50_000) {
     score += 25;
     motivos.push("Alto volumen de USDT");
   }
-  if (data.txCount > 50) {
+  if (txCount > 50) {
     score += 15;
     motivos.push("Alta actividad transaccional");
   }
-  if (data.exchangeInteraction === 0) {
+  if (exchangeInteraction === 0) {
     score += 15;
     motivos.push("Sin interacción con exchanges");
   }
-  if (data.isLinkedToRiskWallet) {
+  if (isLinkedToRiskWallet) {
     score += 20;
     motivos.push("Conexión con wallets riesgosas");
   }
@@ -1221,13 +1227,20 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
 
               {/* ── Predicción de riesgo de congelamiento ── */}
               {(() => {
-                const walletAgeDays = (Date.now() - reportData.dateCreated) / 86_400_000;
+                const dateCreated        = reportData?.dateCreated        ?? Date.now();
+                const totalInUSDT        = reportData?.totalInUSDT        ?? 0;
+                const totalOutUSDT       = reportData?.totalOutUSDT       ?? 0;
+                const totalTx            = reportData?.totalTx            ?? 0;
+                const exchangeInteractions = reportData?.exchangeInteractions ?? 0;
+                const suspiciousInteractions = reportData?.suspiciousInteractions ?? 0;
+
+                const walletAgeDays = (Date.now() - dateCreated) / 86_400_000;
                 const prediccion = calcularRiesgoCongelamiento({
-                  walletAgeDays,
-                  totalVolume: reportData.totalInUSDT + reportData.totalOutUSDT,
-                  txCount: reportData.totalTx,
-                  exchangeInteraction: reportData.exchangeInteractions,
-                  isLinkedToRiskWallet: reportData.suspiciousInteractions > 0,
+                  walletAgeDays:        walletAgeDays        || 0,
+                  totalVolume:          (totalInUSDT + totalOutUSDT) || 0,
+                  txCount:              totalTx              || 0,
+                  exchangeInteraction:  exchangeInteractions || 0,
+                  isLinkedToRiskWallet: suspiciousInteractions > 0,
                 });
 
                 const nivelColor =
