@@ -1,0 +1,126 @@
+ACTUALIZAR DISEÑO PREMIUM PARA USUARIOS PRO (BADGE + BOTÓN DORADO)
+
+OBJETIVO:
+Dar apariencia premium a usuarios PRO mostrando:
+
+1. Badge ⭐ PRO
+2. Botón "Analizar Wallet" en estilo dorado elegante
+
+---
+
+1. DETECTAR USUARIO PRO:
+
+const isPro = user.plan === "pro";
+
+---
+
+2. BADGE PRO (ARRIBA DEL SCANNER)
+
+Ubicación: al lado del logo CoinCash
+
+Ejemplo:
+
+CoinCash    ⭐ PRO
+
+Código:
+
+{isPro && ( <span className="pro-badge">⭐ PRO</span>
+)}
+
+---
+
+3. DISEÑO DEL BADGE:
+
+.pro-badge {
+background: linear-gradient(135deg, #FFD700, #FFA500);
+color: #000;
+font-weight: bold;
+font-size: 12px;
+padding: 5px 12px;
+border-radius: 20px;
+margin-left: 10px;
+box-shadow: 0 0 12px rgba(255, 215, 0, 0.6);
+animation: glow 2s infinite;
+}
+
+---
+
+4. BOTÓN DINÁMICO PRO / FREE
+
+Cambiar el botón según el plan:
+
+<button className={isPro ? "btn-pro" : "btn-normal"}>
+{isPro ? "⭐ Analizar Wallet PRO" : "Analizar Wallet"} </button>
+
+---
+
+5. ESTILO BOTÓN NORMAL (FREE)
+
+.btn-normal {
+background: linear-gradient(135deg, #3b82f6, #2563eb);
+color: #fff;
+}
+
+---
+
+6. ESTILO BOTÓN PRO (DORADO PREMIUM)
+
+.btn-pro {
+background: linear-gradient(135deg, #FFD700, #FFA500);
+color: #000;
+font-weight: bold;
+box-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
+border: none;
+transition: all 0.3s ease;
+}
+
+.btn-pro:hover {
+transform: scale(1.03);
+box-shadow: 0 0 30px rgba(255, 215, 0, 0.8);
+}
+
+---
+
+7. EFECTO BRILLO ANIMADO
+
+@keyframes glow {
+0% { box-shadow: 0 0 5px #FFD700; }
+50% { box-shadow: 0 0 20px #FFD700; }
+100% { box-shadow: 0 0 5px #FFD700; }
+}
+
+---
+
+8. EXTRA PRO (MUY IMPORTANTE)
+
+Agregar borde glow al contenedor del scanner si es PRO:
+
+.scanner-pro {
+border: 1px solid rgba(255, 215, 0, 0.5);
+box-shadow: 0 0 25px rgba(255, 215, 0, 0.2);
+}
+
+Aplicar:
+
+<div className={isPro ? "scanner scanner-pro" : "scanner"}>
+
+---
+
+9. IMPORTANTE:
+
+* Usuarios FREE no deben ver nada dorado
+* Usuarios PRO deben sentir diferencia visual inmediata
+* Todo debe verse limpio y elegante (no exagerado)
+
+---
+
+RESULTADO ESPERADO:
+
+Usuario FREE:
+→ Botón azul normal
+
+Usuario PRO:
+→ Badge ⭐ PRO visible
+→ Botón dorado premium
+→ Glow elegante en el scanner
+→ Sensación de producto exclusivo

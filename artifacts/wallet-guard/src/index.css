@@ -265,3 +265,39 @@
   70%  { box-shadow: 0 0 0 6px rgba(0, 255, 198, 0); }
   100% { box-shadow: 0 0 0 0 rgba(0, 255, 198, 0); }
 }
+
+@keyframes pro-glow {
+  0%   { box-shadow: 0 0 6px rgba(255, 215, 0, 0.55); }
+  50%  { box-shadow: 0 0 20px rgba(255, 215, 0, 0.85); }
+  100% { box-shadow: 0 0 6px rgba(255, 215, 0, 0.55); }
+}
+
+.pro-badge {
+  background: linear-gradient(135deg, #FFD700, #FFA500);
+  color: #000;
+  font-weight: 800;
+  font-size: 11px;
+  padding: 4px 11px;
+  border-radius: 20px;
+  letter-spacing: 0.04em;
+  animation: pro-glow 2.2s ease-in-out infinite;
+}
+
+.btn-pro-golden {
+  background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%) !important;
+  color: #000 !important;
+  font-weight: 800 !important;
+  box-shadow: 0 0 22px rgba(255, 215, 0, 0.5) !important;
+  border: none !important;
+  transition: all 0.3s ease !important;
+}
+
+.btn-pro-golden:hover:not(:disabled) {
+  transform: scale(1.025);
+  box-shadow: 0 0 32px rgba(255, 215, 0, 0.8) !important;
+}
+
+.scanner-card-pro {
+  border-color: rgba(255, 215, 0, 0.45) !important;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 0 28px rgba(255, 215, 0, 0.18) !important;
+}

@@ -833,15 +833,26 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
     });
   };
 
+  const isPro = freemiumLoaded && freemium.plan === "pro";
+
   return (
     <div className="flex flex-col w-full px-4 mx-auto" style={{ maxWidth: "640px" }}>
 
+      {/* ── PRO badge row ── */}
+      {isPro && (
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
+          <span className="pro-badge">⭐ PRO</span>
+        </div>
+      )}
+
       {/* ── Input card ── */}
-      <div className="rounded-2xl p-4 mb-4"
+      <div className={`rounded-2xl p-4 mb-4${isPro ? " scanner-card-pro" : ""}`}
         style={{
           background: "linear-gradient(160deg,#141A24 0%,#0D1117 100%)",
-          border: `1px solid ${BORDER}`,
-          boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+          border: `1px solid ${isPro ? "rgba(255,215,0,0.45)" : BORDER}`,
+          boxShadow: isPro
+            ? "0 8px 32px rgba(0,0,0,0.5), 0 0 28px rgba(255,215,0,0.18)"
+            : "0 8px 32px rgba(0,0,0,0.5)",
         }}>
 
         {/* Address input row */}
@@ -1101,17 +1112,24 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
             type="button"
             onClick={() => handleAnalyze()}
             disabled={isAnalyzing || !freemiumLoaded || !freemium.canScan}
-            className="flex w-full items-center justify-center gap-2 rounded-xl py-3.5 px-4 text-sm font-bold text-white transition-opacity active:opacity-80"
+            className={`flex w-full items-center justify-center gap-2 rounded-xl py-3.5 px-4 text-sm font-bold transition-opacity active:opacity-80${isPro && freemium.canScan && !isAnalyzing && freemiumLoaded ? " btn-pro-golden" : " text-white"}`}
             style={{
               background: !freemiumLoaded
                 ? "rgba(255,255,255,0.07)"
                 : !freemium.canScan
                   ? "rgba(255,75,79,0.2)"
                   : isAnalyzing
-                    ? "rgba(59,130,246,0.4)"
-                    : "linear-gradient(135deg,#2563EB 0%,#1D4ED8 100%)",
-              boxShadow: isAnalyzing || !freemium.canScan || !freemiumLoaded ? "none" : "0 0 20px rgba(59,130,246,0.35)",
+                    ? (isPro ? "rgba(255,165,0,0.4)" : "rgba(59,130,246,0.4)")
+                    : isPro
+                      ? "linear-gradient(135deg,#FFD700 0%,#FFA500 100%)"
+                      : "linear-gradient(135deg,#2563EB 0%,#1D4ED8 100%)",
+              boxShadow: isAnalyzing || !freemium.canScan || !freemiumLoaded
+                ? "none"
+                : isPro
+                  ? "0 0 22px rgba(255,215,0,0.5)"
+                  : "0 0 20px rgba(59,130,246,0.35)",
               cursor: !freemiumLoaded || !freemium.canScan ? "not-allowed" : "pointer",
+              color: isPro && freemium.canScan && !isAnalyzing && freemiumLoaded ? "#000" : undefined,
             }}>
             {!freemiumLoaded ? (
               <>
@@ -1127,6 +1145,11 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
               <>
                 <Shield style={{ width: 16, height: 16 }} />
                 <span>Límite diario alcanzado</span>
+              </>
+            ) : isPro ? (
+              <>
+                <ScanSearch style={{ width: 16, height: 16 }} />
+                <span>⭐ Analizar Wallet PRO</span>
               </>
             ) : (
               <>
