@@ -729,13 +729,45 @@ function AdminPanelInner() {
                     <div style={{ padding: "20px 14px", fontSize: 13, color: "#4B5563", textAlign: "center" }}>Sin scans aún</div>
                   )}
                   {scanStats.recent.map(r => (
-                    <div key={r.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "9px 14px", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
-                      <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>{flagEmoji(r.country_code)}</span>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 11, fontFamily: "monospace", color: "#00FFC6", wordBreak: "break-all" }}>{r.wallet}</div>
-                        <div style={{ fontSize: 10, color: "#6B7280", marginTop: 1 }}>{r.country}</div>
+                    <div key={r.id} style={{ padding: "10px 14px", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                      {/* Row 1: flag + wallet + time */}
+                      <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 5 }}>
+                        <span style={{ fontSize: 15, flexShrink: 0 }}>{flagEmoji(r.country_code)}</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 11, fontFamily: "monospace", color: "#00FFC6", wordBreak: "break-all", lineHeight: 1.3 }}>{r.wallet}</div>
+                          <div style={{ fontSize: 10, color: "#6B7280", marginTop: 1 }}>{r.country}</div>
+                        </div>
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3, flexShrink: 0 }}>
+                          <span style={{ fontSize: 10, color: "#6B7280", whiteSpace: "nowrap" }}>{timeAgo(r.scanned_at)}</span>
+                          <span style={{
+                            fontSize: 9, fontWeight: 700, letterSpacing: "0.06em", padding: "2px 7px",
+                            borderRadius: 10,
+                            background: r.plan_type === "pro" ? "rgba(167,139,250,0.15)" : "rgba(0,255,198,0.08)",
+                            color: r.plan_type === "pro" ? "#A78BFA" : "#00FFC6",
+                            border: `1px solid ${r.plan_type === "pro" ? "rgba(167,139,250,0.3)" : "rgba(0,255,198,0.2)"}`,
+                          }}>
+                            {r.plan_type === "pro" ? "PRO" : "FREE"}
+                          </span>
+                        </div>
                       </div>
-                      <span style={{ fontSize: 10, color: "#6B7280", flexShrink: 0, whiteSpace: "nowrap" }}>{timeAgo(r.scanned_at)}</span>
+                      {/* Row 2: device tracking */}
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                        {r.cc_id && (
+                          <span style={{ fontSize: 9, fontFamily: "monospace", color: "#9CA3AF", background: "rgba(255,255,255,0.04)", borderRadius: 6, padding: "2px 6px" }}>
+                            CC: {r.cc_id}
+                          </span>
+                        )}
+                        {r.device_id && (
+                          <span style={{ fontSize: 9, fontFamily: "monospace", color: "#9CA3AF", background: "rgba(255,255,255,0.04)", borderRadius: 6, padding: "2px 6px" }}>
+                            DEV: {r.device_id.slice(0, 8)}…
+                          </span>
+                        )}
+                        {r.ip_hash && (
+                          <span style={{ fontSize: 9, fontFamily: "monospace", color: "#9CA3AF", background: "rgba(255,255,255,0.04)", borderRadius: 6, padding: "2px 6px" }}>
+                            IP: {r.ip_hash.slice(0, 10)}…
+                          </span>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>

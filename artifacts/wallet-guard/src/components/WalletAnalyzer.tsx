@@ -301,6 +301,8 @@ interface WalletAnalyzerProps {
 
 // ── Freemium helpers ─────────────────────────────────────────────────────────
 
+const FREE_SCAN_LIMIT = 5;
+
 interface FreemiumStatus {
   plan:       "free" | "pro";
   scansToday: number;
