@@ -54,6 +54,51 @@ function getScoreCardConfig(score: number): { label: string; color: string; bg: 
   return             { label: "Bajo riesgo",           color: GREEN,   bg: "linear-gradient(135deg,#001A0E 0%,#000F08 100%)" };
 }
 
+// ── Predicción de riesgo de congelamiento ────────────────────────────────────
+interface CongelamientoInput {
+  walletAgeDays: number;
+  totalVolume: number;
+  txCount: number;
+  exchangeInteraction: number;
+  isLinkedToRiskWallet: boolean;
+}
+interface CongelamientoResult {
+  score: number;
+  nivel: "ALTO" | "MEDIO" | "BAJO";
+  motivos: string[];
+}
+function calcularRiesgoCongelamiento(data: CongelamientoInput): CongelamientoResult {
+  let score = 0;
+  const motivos: string[] = [];
+
+  if (data.walletAgeDays < 30) {
+    score += 25;
+    motivos.push("Wallet reciente (menos de 30 días)");
+  }
+  if (data.totalVolume > 50_000) {
+    score += 25;
+    motivos.push("Alto volumen de USDT");
+  }
+  if (data.txCount > 50) {
+    score += 15;
+    motivos.push("Alta actividad transaccional");
+  }
+  if (data.exchangeInteraction === 0) {
+    score += 15;
+    motivos.push("Sin interacción con exchanges");
+  }
+  if (data.isLinkedToRiskWallet) {
+    score += 20;
+    motivos.push("Conexión con wallets riesgosas");
+  }
+
+  let nivel: CongelamientoResult["nivel"] = "BAJO";
+  if (score >= 80) nivel = "ALTO";
+  else if (score >= 50) nivel = "MEDIO";
+
+  return { score, nivel, motivos };
+}
+
 function getRiskMessage(score: number): { nivel: string; mensaje: string; color: string; icono: string } {
   if (score >= 81) return {
     nivel:   "Severo",
@@ -1173,6 +1218,96 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
 
               {/* ── Full analysis report ── */}
               <TronAnalysisReport reportData={reportData} />
+
+              {/* ── Predicción de riesgo de congelamiento ── */}
+              {(() => {
+                const walletAgeDays = (Date.now() - reportData.dateCreated) / 86_400_000;
+                const prediccion = calcularRiesgoCongelamiento({
+                  walletAgeDays,
+                  totalVolume: reportData.totalInUSDT + reportData.totalOutUSDT,
+                  txCount: reportData.totalTx,
+                  exchangeInteraction: reportData.exchangeInteractions,
+                  isLinkedToRiskWallet: reportData.suspiciousInteractions > 0,
+                });
+
+                const nivelColor =
+                  prediccion.nivel === "ALTO"  ? "#ff4d4f" :
+                  prediccion.nivel === "MEDIO" ? "#fa8c16" :
+                                                 "#52c41a";
+                const nivelBg =
+                  prediccion.nivel === "ALTO"  ? "rgba(255,77,79,0.08)"  :
+                  prediccion.nivel === "MEDIO" ? "rgba(250,140,22,0.08)" :
+                                                 "rgba(82,196,26,0.08)";
+                const nivelBorder =
+                  prediccion.nivel === "ALTO"  ? "rgba(255,77,79,0.25)"  :
+                  prediccion.nivel === "MEDIO" ? "rgba(250,140,22,0.25)" :
+                                                 "rgba(82,196,26,0.25)";
+
+                return (
+                  <div style={{
+                    margin: "16px 0 0",
+                    borderRadius: 16,
+                    border: `1px solid ${nivelBorder}`,
+                    background: nivelBg,
+                    overflow: "hidden",
+                  }}>
+                    {/* Header */}
+                    <div style={{
+                      padding: "14px 18px",
+                      borderBottom: `1px solid ${nivelBorder}`,
+                      display: "flex", alignItems: "center", justifyContent: "space-between",
+                    }}>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: "rgba(255,255,255,0.92)" }}>
+                        ⚠️ Riesgo de congelamiento
+                      </span>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span style={{
+                          fontFamily: "monospace", fontSize: 13, fontWeight: 700,
+                          color: "rgba(255,255,255,0.45)",
+                        }}>
+                          Score: {prediccion.score}/100
+                        </span>
+                        <span style={{
+                          padding: "3px 12px", borderRadius: 20,
+                          background: nivelColor, color: "#fff",
+                          fontSize: 12, fontWeight: 800, letterSpacing: "0.06em",
+                        }}>
+                          {prediccion.nivel}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Motivos */}
+                    <div style={{ padding: "14px 18px" }}>
+                      {prediccion.motivos.length === 0 ? (
+                        <p style={{ margin: 0, fontSize: 13, color: "#52c41a" }}>
+                          ✓ Sin factores de riesgo de congelamiento detectados
+                        </p>
+                      ) : (
+                        <>
+                          <p style={{ margin: "0 0 10px", fontSize: 11, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                            Factores detectados
+                          </p>
+                          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 7 }}>
+                            {prediccion.motivos.map((m, i) => (
+                              <li key={i} style={{
+                                display: "flex", alignItems: "center", gap: 9,
+                                fontSize: 13, color: "rgba(255,255,255,0.82)",
+                              }}>
+                                <span style={{
+                                  width: 6, height: 6, borderRadius: "50%",
+                                  background: nivelColor, flexShrink: 0,
+                                }} />
+                                {m}
+                              </li>
+                            ))}
+                          </ul>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
             </motion.div>
           </AnimatePresence>
         ) : null}

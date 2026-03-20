@@ -1,0 +1,109 @@
+Agregar un sistema de predicción de congelamiento en CoinCash sin modificar el sistema actual.
+
+-----------------------------------
+OBJETIVO
+-----------------------------------
+
+Calcular el riesgo de que una wallet sea congelada (USDT TRC20) en base a su comportamiento.
+
+-----------------------------------
+FUNCIÓN PRINCIPAL
+-----------------------------------
+
+function calcularRiesgoCongelamiento(data) {
+  let score = 0;
+  let motivos = [];
+
+  // 1. Wallet reciente
+  if (data.walletAgeDays < 30) {
+    score += 25;
+    motivos.push("Wallet reciente (menos de 30 días)");
+  }
+
+  // 2. Alto volumen
+  if (data.totalVolume > 50000) {
+    score += 25;
+    motivos.push("Alto volumen de USDT");
+  }
+
+  // 3. Alta actividad
+  if (data.txCount > 50) {
+    score += 15;
+    motivos.push("Alta actividad transaccional");
+  }
+
+  // 4. Sin exchanges
+  if (data.exchangeInteraction === 0) {
+    score += 15;
+    motivos.push("Sin interacción con exchanges");
+  }
+
+  // 5. Conexión con riesgo
+  if (data.isLinkedToRiskWallet) {
+    score += 20;
+    motivos.push("Conexión con wallets riesgosas");
+  }
+
+  // Clasificación
+  let nivel = "BAJO";
+
+  if (score >= 80) nivel = "ALTO";
+  else if (score >= 50) nivel = "MEDIO";
+
+  return {
+    score,
+    nivel,
+    motivos
+  };
+}
+
+-----------------------------------
+INTEGRACIÓN
+-----------------------------------
+
+- No modificar el sistema actual de análisis
+- Ejecutar esta función después del análisis principal
+
+Ejemplo:
+
+const prediccion = calcularRiesgoCongelamiento(walletData);
+
+-----------------------------------
+UI (INTERFAZ)
+-----------------------------------
+
+Agregar nueva sección debajo del resultado actual:
+
+Título:
+"⚠️ Riesgo de congelamiento"
+
+Contenido dinámico:
+
+- Nivel: ALTO / MEDIO / BAJO
+- Score numérico
+- Lista de motivos detectados
+
+Ejemplo:
+
+⚠️ Riesgo de congelamiento: ALTO
+
+Motivos:
+- Wallet reciente
+- Alto volumen de USDT
+- Sin interacción con exchanges
+
+-----------------------------------
+COLORES
+-----------------------------------
+
+- ALTO → rojo (#ff4d4f)
+- MEDIO → naranja (#fa8c16)
+- BAJO → verde (#52c41a)
+
+-----------------------------------
+IMPORTANTE
+-----------------------------------
+
+- No romper el sistema actual
+- Código modular
+- Preparado para futuras mejoras
