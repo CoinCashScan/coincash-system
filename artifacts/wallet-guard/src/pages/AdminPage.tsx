@@ -90,7 +90,7 @@ function timeStr(ts: string) {
 
 interface CountryRecord { name: string; code: string; count: number; }
 interface VisitStats   { total: number; countries: CountryRecord[]; }
-interface ScanStats    { total: number; today: number; byCountry: { name: string; code: string; count: number }[]; recent: { id: number; wallet: string; country: string; country_code: string; scanned_at: string }[]; }
+interface ScanStats    { total: number; today: number; byCountry: { name: string; code: string; count: number }[]; recent: { id: number; wallet: string; country: string; country_code: string; device_id: string; cc_id: string; ip_hash: string; plan_type: string; scanned_at: string }[]; }
 
 const SCAN_KEY = "CoinCashAdmin2026";
 

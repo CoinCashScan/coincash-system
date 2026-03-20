@@ -323,19 +323,29 @@ async function fetchFreemiumStatus(ccId: string): Promise<FreemiumStatus> {
   }
 }
 
-async function recordFreemiumScan(ccId: string): Promise<FreemiumStatus> {
+// Unified scan call: validates limit backend-side + records tracking + returns updated status.
+async function recordScanUnified(ccId: string, wallet: string): Promise<FreemiumStatus> {
   try {
     const deviceId = getDeviceId();
-    const res = await fetch(`${API_BASE}/freemium/record`, {
+    const res = await fetch(`${API_BASE}/scan`, {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ ccId, ...(deviceId ? { deviceId } : {}) }),
+      body:    JSON.stringify({ wallet, ccId, ...(deviceId ? { deviceId } : {}) }),
     });
     const data = await res.json();
-    if (res.status === 429) {
-      return { plan: "free", scansToday: data.scansToday ?? 5, limit: data.limit ?? 5, canScan: false, remaining: 0 };
+    if (res.status === 429 || data.error === "limit_reached") {
+      return { plan: "free", scansToday: data.scansToday ?? 5, limit: FREE_SCAN_LIMIT, canScan: false, remaining: 0 };
     }
-    return await fetchFreemiumStatus(ccId);
+    if (data.plan === "pro") {
+      return { plan: "pro", scansToday: 0, limit: FREE_SCAN_LIMIT, canScan: true, remaining: null };
+    }
+    return {
+      plan:       "free",
+      scansToday: data.scansToday ?? 0,
+      limit:      FREE_SCAN_LIMIT,
+      canScan:    data.canScan ?? true,
+      remaining:  data.remaining ?? FREE_SCAN_LIMIT,
+    };
   } catch {
     return DEFAULT_FREEMIUM;
   }
@@ -772,15 +782,8 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
       setReportData(data);
       setShowReport(true);
 
-      // Register scan analytics event (fire-and-forget)
-      fetch("/api/scan", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ wallet: trimmed }),
-      }).catch(() => {});
-
-      // Record freemium usage, update counter
-      recordFreemiumScan(ccId).then(setFreemium);
+      // Unified call: validates limit backend-side + records tracking + returns updated freemium status
+      recordScanUnified(ccId, trimmed).then(setFreemium);
 
       // Smooth-scroll to results so mobile users see them immediately
       setTimeout(() => {

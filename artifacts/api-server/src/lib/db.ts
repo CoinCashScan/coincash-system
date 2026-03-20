@@ -774,7 +774,7 @@ export async function hasPinSet(ccId: string): Promise<boolean> {
 
 // ── Scan analytics ─────────────────────────────────────────────────────────────
 
-/** Create the scan_log table if it doesn't already exist. */
+/** Create the scan_log table and ensure all tracking columns exist. */
 export async function ensureScanTable(): Promise<void> {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS scan_log (
@@ -786,16 +786,40 @@ export async function ensureScanTable(): Promise<void> {
       scanned_at   TIMESTAMP NOT NULL DEFAULT NOW()
     )
   `);
-  await pool.query(`CREATE INDEX IF NOT EXISTS scan_log_scanned_at_idx  ON scan_log (scanned_at)`);
+  // Add tracking columns if they don't exist yet (safe migration)
+  await pool.query(`ALTER TABLE scan_log ADD COLUMN IF NOT EXISTS device_id  TEXT NOT NULL DEFAULT ''`);
+  await pool.query(`ALTER TABLE scan_log ADD COLUMN IF NOT EXISTS cc_id      TEXT NOT NULL DEFAULT ''`);
+  await pool.query(`ALTER TABLE scan_log ADD COLUMN IF NOT EXISTS ip_hash    TEXT NOT NULL DEFAULT ''`);
+  await pool.query(`ALTER TABLE scan_log ADD COLUMN IF NOT EXISTS plan_type  TEXT NOT NULL DEFAULT 'free'`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS scan_log_scanned_at_idx   ON scan_log (scanned_at)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS scan_log_country_code_idx ON scan_log (country_code)`);
-  console.log("[db] scan_log table ready");
+  await pool.query(`CREATE INDEX IF NOT EXISTS scan_log_device_id_idx    ON scan_log (device_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS scan_log_cc_id_idx        ON scan_log (cc_id)`);
+  console.log("[db] scan_log table ready (with tracking columns)");
 }
 
-/** Record a single scan event. IP is NOT stored — used only in-memory for anti-abuse. */
+/** Record a single scan event — legacy, no tracking fields. */
 export async function recordScan(wallet: string, country: string, countryCode: string): Promise<void> {
   await pool.query(
     `INSERT INTO scan_log (wallet, ip, country, country_code) VALUES ($1, '', $2, $3)`,
     [wallet, country, countryCode],
+  );
+}
+
+/** Record a full scan event with device tracking. */
+export async function recordScanFull(opts: {
+  wallet:      string;
+  country:     string;
+  countryCode: string;
+  deviceId:    string;
+  ccId:        string;
+  ipHash:      string;
+  planType:    "free" | "pro";
+}): Promise<void> {
+  await pool.query(
+    `INSERT INTO scan_log (wallet, ip, country, country_code, device_id, cc_id, ip_hash, plan_type)
+     VALUES ($1, '', $2, $3, $4, $5, $6, $7)`,
+    [opts.wallet, opts.country, opts.countryCode, opts.deviceId, opts.ccId, opts.ipHash, opts.planType],
   );
 }
 
@@ -805,12 +829,15 @@ export async function resetScanStats(): Promise<number> {
   return res.rowCount ?? 0;
 }
 
-/** Return scan statistics. */
+/** Return scan statistics including device tracking data. */
 export async function getScanStats(): Promise<{
-  total: number;
-  today: number;
+  total:     number;
+  today:     number;
   byCountry: { name: string; code: string; count: number }[];
-  recent: { id: number; wallet: string; country: string; country_code: string; scanned_at: string }[];
+  recent:    {
+    id: number; wallet: string; country: string; country_code: string;
+    device_id: string; cc_id: string; ip_hash: string; plan_type: string; scanned_at: string;
+  }[];
 }> {
   const [totalRes, todayRes, countryRes, recentRes] = await Promise.all([
     pool.query<{ total: string }>(`SELECT COUNT(*) AS total FROM scan_log`),
@@ -822,11 +849,11 @@ export async function getScanStats(): Promise<{
        ORDER BY count DESC
        LIMIT 20
     `),
-    pool.query<{ id: number; wallet: string; country: string; country_code: string; scanned_at: string }>(`
-      SELECT id, wallet, country, country_code, scanned_at
+    pool.query(`
+      SELECT id, wallet, country, country_code, device_id, cc_id, ip_hash, plan_type, scanned_at
         FROM scan_log
        ORDER BY scanned_at DESC
-       LIMIT 50
+       LIMIT 100
     `),
   ]);
 
