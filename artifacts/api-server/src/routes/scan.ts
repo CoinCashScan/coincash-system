@@ -21,6 +21,11 @@ import {
   incrementDeviceScanCount,
   getProDaysRemaining,
   ensureFreemiumUser,
+  getDistinctDevicesForIP,
+  isIPWhitelisted,
+  addIPWhitelist,
+  removeIPWhitelist,
+  getIPWhitelist,
   FREE_SCAN_LIMIT,
   PRO_DURATION_DAYS,
 } from "../lib/db";
@@ -106,12 +111,29 @@ router.post("/scan", async (req, res) => {
     }
 
     if (plan !== "pro") {
-      // Read all counters in parallel
-      const [ccScans, groupScans, deviceScans] = await Promise.all([
-        ccId     ? getScanCountToday(ccId)    : Promise.resolve(0),
-        groupId  ? getGroupScanCount(groupId) : Promise.resolve(0),
-        deviceId ? getDeviceScanCount(deviceId) : Promise.resolve(0),
+      // Read all counters + evasion signals in parallel
+      const [ccScans, groupScans, deviceScans, distinctDevices, whitelisted] = await Promise.all([
+        ccId     ? getScanCountToday(ccId)          : Promise.resolve(0),
+        groupId  ? getGroupScanCount(groupId)        : Promise.resolve(0),
+        deviceId ? getDeviceScanCount(deviceId)      : Promise.resolve(0),
+        groupId  ? getDistinctDevicesForIP(groupId)  : Promise.resolve(0),
+        groupId  ? isIPWhitelisted(groupId)          : Promise.resolve(false),
       ]);
+
+      // Evasion check: more than 2 distinct devices on same IP today (and not whitelisted)
+      if (distinctDevices > 2 && !whitelisted) {
+        return res.status(429).json({
+          ok:         false,
+          blocked:    "evasion",
+          plan:       "free",
+          canScan:    false,
+          remaining:  0,
+          scansToday: groupScans,
+          limit:      FREE_SCAN_LIMIT,
+          message:    "Detectamos múltiples dispositivos en esta red. Actualiza a PRO para continuar.",
+          ipHash:     groupId,
+        });
+      }
 
       // Effective count: group pool (IP-based) takes priority when available
       const effectiveScans = groupId
@@ -212,6 +234,54 @@ router.delete("/scan/reset", async (req, res) => {
   } catch (err: any) {
     console.error("[scan] reset error:", err?.message);
     return res.status(500).json({ error: "Reset failed" });
+  }
+});
+
+// ── GET /api/scan/whitelist ────────────────────────────────────────────────────
+// Returns all whitelisted IP hashes (admin only).
+router.get("/scan/whitelist", async (req, res) => {
+  const key = req.query.key as string | undefined;
+  if (key !== ADMIN_KEY) return res.status(401).json({ error: "Unauthorized" });
+  try {
+    const list = await getIPWhitelist();
+    res.json({ whitelist: list });
+  } catch (err: any) {
+    console.error("[scan/whitelist] GET error:", err?.message);
+    res.status(500).json({ error: "Error fetching whitelist" });
+  }
+});
+
+// ── POST /api/scan/whitelist ──────────────────────────────────────────────────
+// Add an IP hash to the whitelist (marks as legitimate).
+// Body: { ipHash, note? }
+router.post("/scan/whitelist", async (req, res) => {
+  const key = req.headers["x-admin-key"] as string | undefined ?? req.body?.key;
+  if (key !== ADMIN_KEY) return res.status(401).json({ error: "Unauthorized" });
+  const { ipHash, note = "" } = req.body ?? {};
+  if (!ipHash) return res.status(400).json({ error: "ipHash required" });
+  try {
+    await addIPWhitelist(ipHash, note);
+    console.log(`[scan/whitelist] Added: ${ipHash.slice(0, 12)}…`);
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error("[scan/whitelist] POST error:", err?.message);
+    res.status(500).json({ error: "Error adding to whitelist" });
+  }
+});
+
+// ── DELETE /api/scan/whitelist/:ipHash ───────────────────────────────────────
+// Remove an IP hash from the whitelist.
+router.delete("/scan/whitelist/:ipHash", async (req, res) => {
+  const key = (req.headers["x-admin-key"] ?? req.query.key) as string | undefined;
+  if (key !== ADMIN_KEY) return res.status(401).json({ error: "Unauthorized" });
+  const { ipHash } = req.params;
+  try {
+    await removeIPWhitelist(ipHash);
+    console.log(`[scan/whitelist] Removed: ${ipHash.slice(0, 12)}…`);
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error("[scan/whitelist] DELETE error:", err?.message);
+    res.status(500).json({ error: "Error removing from whitelist" });
   }
 });
 

@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import QRCode from "qrcode";
-import { Camera, Bell, BellOff, Check, Copy, Headphones, ChevronRight, Trash2 } from "lucide-react";
+import { Camera, Bell, BellOff, Check, Copy, Headphones, ChevronRight, Trash2, RotateCcw } from "lucide-react";
 import { API_BASE } from "@/lib/apiConfig";
+import { resetDeviceId } from "@/lib/identity";
 
 const TEAL   = "#00FFC6";
 const BG     = "#0B0F14";
@@ -63,6 +64,7 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
   const [upgradeRequested, setUpgradeRequested] = useState(false);
 
   const [visitStats, setVisitStats] = useState<{ total: number; today: number; online: number; countries: { name: string; code: string; count: number }[] } | null>(null);
+  const [deviceReset, setDeviceReset] = useState(false);
 
   // Crop modal state
   const [cropSrc,        setCropSrc]        = useState<string | null>(null);
@@ -684,6 +686,40 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
           })}
         </div>
       )}
+
+      {/* ── Dispositivo ── */}
+      <div style={{ margin: "20px 16px 0" }}>
+        <p style={{ margin: "0 0 10px", fontSize: 12, color: MUTED, textTransform: "uppercase", letterSpacing: "0.08em" }}>Dispositivo</p>
+        <div style={{ background: CARD, borderRadius: 12, border: `1px solid ${BORDER}`, padding: "14px 16px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+            <div>
+              <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "#fff" }}>Restablecer dispositivo</p>
+              <p style={{ margin: "3px 0 0", fontSize: 11, color: MUTED, lineHeight: 1.5 }}>
+                Genera un nuevo ID de dispositivo. Útil si compartes red con otros.
+                <br/>No reinicia tu límite diario ni tu CC-ID.
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                resetDeviceId();
+                setDeviceReset(true);
+                setTimeout(() => setDeviceReset(false), 2500);
+              }}
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                padding: "9px 14px", borderRadius: 10, border: `1px solid ${BORDER}`,
+                background: deviceReset ? "rgba(0,255,198,0.1)" : "rgba(255,255,255,0.05)",
+                color: deviceReset ? TEAL : MUTED, fontSize: 12, fontWeight: 600,
+                cursor: "pointer", fontFamily: "inherit", flexShrink: 0, whiteSpace: "nowrap",
+                transition: "all 0.2s",
+              }}
+            >
+              {deviceReset ? <Check size={14} /> : <RotateCcw size={14} />}
+              {deviceReset ? "Restablecido" : "Restablecer"}
+            </button>
+          </div>
+        </div>
+      </div>
 
       {/* Soporte */}
       <div style={{ margin: "20px 16px 0" }}>

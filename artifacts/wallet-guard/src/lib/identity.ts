@@ -88,3 +88,18 @@ export async function resolveIdentity(): Promise<string> {
 export function claimSyncCode(code: string): void {
   localStorage.setItem(LS_SYNC_CLAIM, code.trim().toUpperCase());
 }
+
+/**
+ * Reset the secondary device UUID (cc-device-id) and return a new one.
+ * This does NOT change the CC-ID or IP counters.
+ * Used by the "Restablecer dispositivo" button in settings.
+ */
+export function resetDeviceId(): string {
+  try {
+    const id = crypto.randomUUID();
+    localStorage.setItem(LS_DEVICE_UUID, id);
+    return id;
+  } catch {
+    return "";
+  }
+}

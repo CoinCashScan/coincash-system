@@ -309,6 +309,8 @@ interface FreemiumStatus {
   limit:      number;
   canScan:    boolean;
   remaining:  number | null;
+  blocked?:   "evasion" | "limit_reached" | string;
+  ipHash?:    string;
 }
 
 const DEFAULT_FREEMIUM: FreemiumStatus = { plan: "free", scansToday: 0, limit: 5, canScan: true, remaining: 5 };
@@ -335,8 +337,11 @@ async function recordScanUnified(ccId: string, wallet: string): Promise<Freemium
       body:    JSON.stringify({ wallet, ccId, ...(deviceId ? { deviceId } : {}) }),
     });
     const data = await res.json();
+    if (data.blocked === "evasion") {
+      return { plan: "free", scansToday: data.scansToday ?? 0, limit: FREE_SCAN_LIMIT, canScan: false, remaining: 0, blocked: "evasion", ipHash: data.ipHash };
+    }
     if (res.status === 429 || data.error === "limit_reached") {
-      return { plan: "free", scansToday: data.scansToday ?? 5, limit: FREE_SCAN_LIMIT, canScan: false, remaining: 0 };
+      return { plan: "free", scansToday: data.scansToday ?? 5, limit: FREE_SCAN_LIMIT, canScan: false, remaining: 0, blocked: "limit_reached" };
     }
     if (data.plan === "pro") {
       return { plan: "pro", scansToday: 0, limit: FREE_SCAN_LIMIT, canScan: true, remaining: null };
@@ -868,8 +873,61 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
 
         {/* Action buttons — stacked */}
         <div className="flex flex-col gap-2.5">
+          {/* ── Evasion detected: multiple devices on same network ── */}
+          {freemiumLoaded && !freemium.canScan && freemium.blocked === "evasion" && (
+            <div style={{
+              background: "rgba(11,18,32,0.95)",
+              border: "1px solid rgba(245,158,11,0.35)",
+              borderRadius: 16, overflow: "hidden",
+            }}>
+              <div style={{
+                background: "linear-gradient(135deg,rgba(245,158,11,0.1),rgba(255,107,53,0.06))",
+                borderBottom: "1px solid rgba(245,158,11,0.2)",
+                padding: "12px 16px",
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+              }}>
+                <div>
+                  <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#F59E0B" }}>
+                    ⚠️ Red compartida detectada
+                  </p>
+                  <p style={{ margin: "2px 0 0", fontSize: 11, color: "rgba(255,255,255,0.45)" }}>
+                    Detectamos múltiples dispositivos en esta red
+                  </p>
+                </div>
+                <div style={{
+                  background: "rgba(0,255,198,0.12)", border: "1px solid rgba(0,255,198,0.3)",
+                  borderRadius: 8, padding: "4px 10px", fontSize: 13, fontWeight: 800, color: "#00FFC6",
+                }}>
+                  10 USDT
+                </div>
+              </div>
+              <div style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
+                <p style={{ margin: 0, fontSize: 12, color: "rgba(255,255,255,0.6)", lineHeight: 1.6 }}>
+                  Hay más de 2 dispositivos activos en tu red hoy. Para evitar abusos, el límite gratuito se comparte por IP.
+                  <br/>Actualiza a <strong style={{ color: "#00FFC6" }}>CoinCash PRO</strong> para scans ilimitados sin restricciones de red.
+                </p>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    onClick={() => {
+                      // scroll to payment card — reuse normal limit flow
+                      setFreemium(f => ({ ...f, blocked: "limit_reached" }));
+                    }}
+                    style={{
+                      flex: 1, padding: "11px 0", borderRadius: 12, border: "none",
+                      background: "linear-gradient(135deg,#00FFC6,#00B8A9)",
+                      color: "#0B0F14", fontSize: 13, fontWeight: 800, cursor: "pointer",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    🚀 Activar PRO — 10 USDT
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* ── Freemium limit → Payment card (only after plan confirmed from DB) ── */}
-          {freemiumLoaded && !freemium.canScan && (
+          {freemiumLoaded && !freemium.canScan && freemium.blocked !== "evasion" && (
             <div style={{
               background: "rgba(11,18,32,0.95)",
               border: "1px solid rgba(0,255,198,0.2)",

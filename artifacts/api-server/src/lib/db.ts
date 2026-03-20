@@ -1129,7 +1129,59 @@ export async function ensureFreemiumTable(): Promise<void> {
       PRIMARY KEY (group_id, device_id, scan_date)
     )
   `);
-  console.log("[db] freemium (plan + scan_limits + ip_scan_limits + device_scan_limits + group_scan_limits) ready");
+  // IP whitelist: admin-approved IP hashes that bypass evasion detection
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ip_whitelist (
+      ip_hash    TEXT PRIMARY KEY,
+      note       TEXT NOT NULL DEFAULT '',
+      added_at   TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  console.log("[db] freemium (plan + scan_limits + ip_scan_limits + device_scan_limits + group_scan_limits + ip_whitelist) ready");
+}
+
+/** Count distinct device IDs for a group (IP) today — used to detect evasion. */
+export async function getDistinctDevicesForIP(groupId: string): Promise<number> {
+  if (!groupId) return 0;
+  const res = await pool.query<{ cnt: string }>(
+    `SELECT COUNT(DISTINCT device_id)::int AS cnt
+       FROM group_scan_limits
+      WHERE group_id = $1 AND scan_date = CURRENT_DATE`,
+    [groupId],
+  );
+  return parseInt(res.rows[0]?.cnt as any, 10) || 0;
+}
+
+/** Check if an IP hash is in the admin whitelist. */
+export async function isIPWhitelisted(ipHash: string): Promise<boolean> {
+  if (!ipHash) return false;
+  const res = await pool.query<{ ip_hash: string }>(
+    `SELECT ip_hash FROM ip_whitelist WHERE ip_hash = $1 LIMIT 1`,
+    [ipHash],
+  );
+  return res.rows.length > 0;
+}
+
+/** Add an IP hash to the whitelist (admin action). */
+export async function addIPWhitelist(ipHash: string, note = ""): Promise<void> {
+  await pool.query(
+    `INSERT INTO ip_whitelist (ip_hash, note) VALUES ($1, $2)
+     ON CONFLICT (ip_hash) DO UPDATE SET note = $2, added_at = NOW()`,
+    [ipHash, note],
+  );
+}
+
+/** Remove an IP hash from the whitelist (admin action). */
+export async function removeIPWhitelist(ipHash: string): Promise<void> {
+  await pool.query(`DELETE FROM ip_whitelist WHERE ip_hash = $1`, [ipHash]);
+}
+
+/** List all whitelisted IP hashes. */
+export async function getIPWhitelist(): Promise<{ ipHash: string; note: string; addedAt: string }[]> {
+  const res = await pool.query<{ ip_hash: string; note: string; added_at: string }>(
+    `SELECT ip_hash, note, added_at FROM ip_whitelist ORDER BY added_at DESC`,
+  );
+  return res.rows.map(r => ({ ipHash: r.ip_hash, note: r.note, addedAt: r.added_at }));
 }
 
 /**
