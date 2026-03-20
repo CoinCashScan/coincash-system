@@ -26,6 +26,10 @@ import {
   addIPWhitelist,
   removeIPWhitelist,
   getIPWhitelist,
+  isDeviceWhitelisted,
+  addDeviceWhitelist,
+  removeDeviceWhitelist,
+  getDeviceWhitelist,
   FREE_SCAN_LIMIT,
   PRO_DURATION_DAYS,
 } from "../lib/db";
@@ -112,16 +116,18 @@ router.post("/scan", async (req, res) => {
 
     if (plan !== "pro") {
       // Read all counters + evasion signals in parallel
-      const [ccScans, groupScans, deviceScans, distinctDevices, whitelisted] = await Promise.all([
+      const [ccScans, groupScans, deviceScans, distinctDevices, devWhitelisted, ipWhitelisted] = await Promise.all([
         ccId     ? getScanCountToday(ccId)          : Promise.resolve(0),
         groupId  ? getGroupScanCount(groupId)        : Promise.resolve(0),
         deviceId ? getDeviceScanCount(deviceId)      : Promise.resolve(0),
         groupId  ? getDistinctDevicesForIP(groupId)  : Promise.resolve(0),
+        deviceId ? isDeviceWhitelisted(deviceId)     : Promise.resolve(false),
         groupId  ? isIPWhitelisted(groupId)          : Promise.resolve(false),
       ]);
 
-      // Evasion check: more than 2 distinct devices on same IP today (and not whitelisted)
-      if (distinctDevices > 2 && !whitelisted) {
+      // Evasion check: more than 2 distinct devices on same IP today.
+      // Bypass if THIS device is individually whitelisted OR the whole IP is whitelisted.
+      if (distinctDevices > 2 && !devWhitelisted && !ipWhitelisted) {
         return res.status(429).json({
           ok:         false,
           blocked:    "evasion",
@@ -132,6 +138,7 @@ router.post("/scan", async (req, res) => {
           limit:      FREE_SCAN_LIMIT,
           message:    "Detectamos múltiples dispositivos en esta red. Actualiza a PRO para continuar.",
           ipHash:     groupId,
+          deviceId:   deviceId,
         });
       }
 
@@ -282,6 +289,54 @@ router.delete("/scan/whitelist/:ipHash", async (req, res) => {
   } catch (err: any) {
     console.error("[scan/whitelist] DELETE error:", err?.message);
     res.status(500).json({ error: "Error removing from whitelist" });
+  }
+});
+
+// ── GET /api/scan/whitelist-device ────────────────────────────────────────────
+// Returns all whitelisted device IDs (admin only).
+router.get("/scan/whitelist-device", async (req, res) => {
+  const key = req.query.key as string | undefined;
+  if (key !== ADMIN_KEY) return res.status(401).json({ error: "Unauthorized" });
+  try {
+    const list = await getDeviceWhitelist();
+    res.json({ whitelist: list });
+  } catch (err: any) {
+    console.error("[scan/whitelist-device] GET error:", err?.message);
+    res.status(500).json({ error: "Error fetching device whitelist" });
+  }
+});
+
+// ── POST /api/scan/whitelist-device ──────────────────────────────────────────
+// Add a device_id to the whitelist (marks as legitimate).
+// Body: { deviceId, note? }
+router.post("/scan/whitelist-device", async (req, res) => {
+  const key = req.headers["x-admin-key"] as string | undefined ?? req.body?.key;
+  if (key !== ADMIN_KEY) return res.status(401).json({ error: "Unauthorized" });
+  const { deviceId, note = "" } = req.body ?? {};
+  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
+  try {
+    await addDeviceWhitelist(deviceId, note);
+    console.log(`[scan/whitelist-device] Added: ${deviceId.slice(0, 12)}…`);
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error("[scan/whitelist-device] POST error:", err?.message);
+    res.status(500).json({ error: "Error adding device to whitelist" });
+  }
+});
+
+// ── DELETE /api/scan/whitelist-device/:deviceId ───────────────────────────────
+// Remove a device_id from the whitelist.
+router.delete("/scan/whitelist-device/:deviceId", async (req, res) => {
+  const key = (req.headers["x-admin-key"] ?? req.query.key) as string | undefined;
+  if (key !== ADMIN_KEY) return res.status(401).json({ error: "Unauthorized" });
+  const { deviceId } = req.params;
+  try {
+    await removeDeviceWhitelist(deviceId);
+    console.log(`[scan/whitelist-device] Removed: ${deviceId.slice(0, 12)}…`);
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error("[scan/whitelist-device] DELETE error:", err?.message);
+    res.status(500).json({ error: "Error removing device from whitelist" });
   }
 });
 

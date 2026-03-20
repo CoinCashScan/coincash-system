@@ -281,8 +281,8 @@ function AdminPanelInner() {
   interface DeviceStats { devices: DeviceStat[]; abusiveIpHashes: string[]; }
   const [deviceStats, setDeviceStats] = useState<DeviceStats | null>(null);
 
-  // ── Whitelist ────────────────────────────────────────────────────────────────
-  interface WhitelistEntry { ipHash: string; note: string; addedAt: string; }
+  // ── Whitelist (per-device) ────────────────────────────────────────────────────
+  interface WhitelistEntry { deviceId: string; note: string; addedAt: string; }
   const [whitelist,       setWhitelist]       = useState<WhitelistEntry[]>([]);
   const [whitelistBusy,   setWhitelistBusy]   = useState<string | null>(null);
 
@@ -403,29 +403,29 @@ function AdminPanelInner() {
 
   const fetchWhitelist = useCallback(async () => {
     try {
-      const res  = await fetch(`${API}/scan/whitelist?key=${SCAN_KEY}`);
+      const res  = await fetch(`${API}/scan/whitelist-device?key=${SCAN_KEY}`);
       const data = await res.json();
       if (Array.isArray(data.whitelist)) setWhitelist(data.whitelist);
     } catch { /* ignore */ }
   }, []);
 
-  const addToWhitelist = async (ipHash: string) => {
-    setWhitelistBusy(ipHash);
+  const addDeviceToWhitelist = async (deviceId: string) => {
+    setWhitelistBusy(deviceId);
     try {
-      await fetch(`${API}/scan/whitelist`, {
+      await fetch(`${API}/scan/whitelist-device`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-admin-key": SCAN_KEY },
-        body: JSON.stringify({ ipHash, note: "Marcado como legítimo por admin" }),
+        body: JSON.stringify({ deviceId, note: "Marcado como legítimo por admin" }),
       });
       await fetchWhitelist();
       await fetchDeviceStats();
     } catch { /* ignore */ } finally { setWhitelistBusy(null); }
   };
 
-  const removeFromWhitelist = async (ipHash: string) => {
-    setWhitelistBusy(ipHash);
+  const removeDeviceFromWhitelist = async (deviceId: string) => {
+    setWhitelistBusy(deviceId);
     try {
-      await fetch(`${API}/scan/whitelist/${encodeURIComponent(ipHash)}`, {
+      await fetch(`${API}/scan/whitelist-device/${encodeURIComponent(deviceId)}`, {
         method: "DELETE",
         headers: { "x-admin-key": SCAN_KEY },
       });
@@ -908,12 +908,12 @@ function AdminPanelInner() {
                         </div>
                         <div style={{ display: "flex", gap: 5, flexShrink: 0, alignItems: "center" }}>
                           {d.possible_evasion && (() => {
-                            const isWL = whitelist.some(w => w.ipHash === d.ip_hash);
+                            const isWL = whitelist.some(w => w.deviceId === d.device_id);
                             return isWL ? (
                               <span style={{
                                 fontSize: 9, fontWeight: 700, padding: "2px 7px", borderRadius: 10,
                                 background: "rgba(0,255,198,0.12)", border: "1px solid rgba(0,255,198,0.35)", color: "#00FFC6",
-                              }}>✅ LEGÍTIMA</span>
+                              }}>✅ LEGÍTIMO</span>
                             ) : (
                               <span style={{
                                 fontSize: 9, fontWeight: 700, padding: "2px 7px", borderRadius: 10,
@@ -937,14 +937,14 @@ function AdminPanelInner() {
                               IP:{d.ip_hash.slice(0, 12)}…
                             </span>
                           ) : null}
-                          {/* Marcar como legítimo */}
-                          {d.possible_evasion && d.ip_hash && (() => {
-                            const isWL = whitelist.some(w => w.ipHash === d.ip_hash);
-                            const busy = whitelistBusy === d.ip_hash;
+                          {/* Marcar como legítimo — por device_id individual */}
+                          {d.possible_evasion && d.device_id && (() => {
+                            const isWL = whitelist.some(w => w.deviceId === d.device_id);
+                            const busy = whitelistBusy === d.device_id;
                             return isWL ? (
                               <button
                                 disabled={busy}
-                                onClick={() => removeFromWhitelist(d.ip_hash)}
+                                onClick={() => removeDeviceFromWhitelist(d.device_id)}
                                 style={{
                                   fontSize: 9, padding: "2px 8px", borderRadius: 8, border: "1px solid rgba(255,77,79,0.4)",
                                   background: "rgba(255,77,79,0.08)", color: "#FF4D4F", cursor: "pointer",
@@ -954,7 +954,7 @@ function AdminPanelInner() {
                             ) : (
                               <button
                                 disabled={busy}
-                                onClick={() => addToWhitelist(d.ip_hash)}
+                                onClick={() => addDeviceToWhitelist(d.device_id)}
                                 style={{
                                   fontSize: 9, padding: "2px 8px", borderRadius: 8, border: "1px solid rgba(0,255,198,0.3)",
                                   background: "rgba(0,255,198,0.06)", color: "#00FFC6", cursor: "pointer",
@@ -970,27 +970,29 @@ function AdminPanelInner() {
                   ))}
                 </div>
 
-                {/* ── Whitelist ── */}
+                {/* ── Whitelist de dispositivos ── */}
                 {whitelist.length > 0 && (
                   <div style={{ marginTop: 14, background: "rgba(0,255,198,0.03)", border: "1px solid rgba(0,255,198,0.12)", borderRadius: 12, overflow: "hidden" }}>
                     <div style={{ padding: "10px 14px 6px", fontSize: 10, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.08em", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-                      ✅ IPs marcadas como legítimas ({whitelist.length})
+                      ✅ Dispositivos marcados como legítimos ({whitelist.length})
                     </div>
                     {whitelist.map((w, i) => (
                       <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 14px", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
                         <div>
-                          <span style={{ fontSize: 10, fontFamily: "monospace", color: "#00FFC6" }}>{w.ipHash.slice(0, 14)}…</span>
+                          <span style={{ fontSize: 10, fontFamily: "monospace", color: "#00FFC6" }}>
+                            DEV:{w.deviceId.length > 12 ? w.deviceId.slice(0, 12) + "…" : w.deviceId}
+                          </span>
                           <span style={{ fontSize: 9, color: "#4B5563", marginLeft: 8 }}>{timeAgo(w.addedAt)}</span>
                         </div>
                         <button
-                          disabled={whitelistBusy === w.ipHash}
-                          onClick={() => removeFromWhitelist(w.ipHash)}
+                          disabled={whitelistBusy === w.deviceId}
+                          onClick={() => removeDeviceFromWhitelist(w.deviceId)}
                           style={{
                             fontSize: 9, padding: "2px 8px", borderRadius: 8, border: "1px solid rgba(255,77,79,0.3)",
                             background: "rgba(255,77,79,0.06)", color: "#FF4D4F", cursor: "pointer",
                             fontFamily: "inherit", fontWeight: 600,
                           }}
-                        >{whitelistBusy === w.ipHash ? "…" : "Remover"}</button>
+                        >{whitelistBusy === w.deviceId ? "…" : "Remover"}</button>
                       </div>
                     ))}
                   </div>

@@ -1129,7 +1129,7 @@ export async function ensureFreemiumTable(): Promise<void> {
       PRIMARY KEY (group_id, device_id, scan_date)
     )
   `);
-  // IP whitelist: admin-approved IP hashes that bypass evasion detection
+  // IP whitelist: admin-approved IP hashes that bypass evasion detection (legacy, kept for compat)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS ip_whitelist (
       ip_hash    TEXT PRIMARY KEY,
@@ -1137,7 +1137,47 @@ export async function ensureFreemiumTable(): Promise<void> {
       added_at   TIMESTAMP NOT NULL DEFAULT NOW()
     )
   `);
-  console.log("[db] freemium (plan + scan_limits + ip_scan_limits + device_scan_limits + group_scan_limits + ip_whitelist) ready");
+  // Device whitelist: whitelist per individual device_id (granular control)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS device_whitelist (
+      device_id  TEXT PRIMARY KEY,
+      note       TEXT NOT NULL DEFAULT '',
+      added_at   TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  console.log("[db] freemium tables ready (incl. device_whitelist)");
+}
+
+/** Check if a specific device_id is in the device whitelist. */
+export async function isDeviceWhitelisted(deviceId: string): Promise<boolean> {
+  if (!deviceId) return false;
+  const res = await pool.query<{ device_id: string }>(
+    `SELECT device_id FROM device_whitelist WHERE device_id = $1 LIMIT 1`,
+    [deviceId],
+  );
+  return res.rows.length > 0;
+}
+
+/** Add a device to the whitelist (admin action). */
+export async function addDeviceWhitelist(deviceId: string, note = ""): Promise<void> {
+  await pool.query(
+    `INSERT INTO device_whitelist (device_id, note) VALUES ($1, $2)
+     ON CONFLICT (device_id) DO UPDATE SET note = $2, added_at = NOW()`,
+    [deviceId, note],
+  );
+}
+
+/** Remove a device from the whitelist (admin action). */
+export async function removeDeviceWhitelist(deviceId: string): Promise<void> {
+  await pool.query(`DELETE FROM device_whitelist WHERE device_id = $1`, [deviceId]);
+}
+
+/** List all whitelisted device IDs. */
+export async function getDeviceWhitelist(): Promise<{ deviceId: string; note: string; addedAt: string }[]> {
+  const res = await pool.query<{ device_id: string; note: string; added_at: string }>(
+    `SELECT device_id, note, added_at FROM device_whitelist ORDER BY added_at DESC`,
+  );
+  return res.rows.map(r => ({ deviceId: r.device_id, note: r.note, addedAt: r.added_at }));
 }
 
 /** Count distinct device IDs for a group (IP) today — used to detect evasion. */
