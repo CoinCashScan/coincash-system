@@ -1053,15 +1053,40 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
           </button>
         </div>
 
-        {/* Subtle scan counter for free users — only shown once plan is confirmed from DB */}
-        {freemiumLoaded && freemium.plan === "free" && freemium.canScan && (
-          <p style={{ textAlign: "center", fontSize: 10, color: "rgba(255,255,255,0.28)", marginTop: 8 }}>
-            <span style={{ color: freemium.remaining === 1 ? "#F59E0B" : "rgba(0,255,198,0.55)", fontWeight: 600 }}>
-              {freemium.remaining ?? (freemium.limit - freemium.scansToday)}
-            </span>
-            {" "}de {freemium.limit} scans gratuitos restantes hoy
-          </p>
-        )}
+        {/* Scan counter badge — visible for free users once plan is confirmed from DB */}
+        {freemiumLoaded && freemium.plan === "free" && freemium.canScan && (() => {
+          const used      = freemium.scansToday ?? 0;
+          const remaining = freemium.remaining  ?? Math.max(0, freemium.limit - used);
+          const color     = remaining === 0 ? "#FF4D4F"
+                          : remaining === 1 ? "#F59E0B"
+                          : "#00FFC6";
+          return (
+            <div style={{
+              display: "flex", alignItems: "center", justifyContent: "center",
+              gap: 8, marginTop: 10,
+            }}>
+              {/* Mini progress dots */}
+              <div style={{ display: "flex", gap: 4 }}>
+                {Array.from({ length: freemium.limit }).map((_, i) => (
+                  <div key={i} style={{
+                    width: 6, height: 6, borderRadius: "50%",
+                    background: i < used
+                      ? "rgba(255,255,255,0.15)"
+                      : color,
+                    transition: "background 0.3s",
+                  }} />
+                ))}
+              </div>
+              <span style={{
+                fontSize: 11, fontWeight: 600,
+                color,
+                letterSpacing: "0.02em",
+              }}>
+                {remaining}/{freemium.limit} scans gratuitos hoy
+              </span>
+            </div>
+          );
+        })()}
 
         {/* Discrete legal note */}
         <p style={{ textAlign: "center", fontSize: 10, color: "rgba(255,255,255,0.22)", marginTop: 8, lineHeight: 1.5 }}>
