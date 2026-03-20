@@ -1352,16 +1352,23 @@ export async function getAllUsersWithPlans(): Promise<{
     coincash_id: string; email: string; plan: string;
     scans_today: string; upgrade_requested_at: string | null;
   }>(`
-    SELECT u.coincash_id,
-           u.email,
-           u.plan,
-           COALESCE(sl.scan_count, 0) AS scans_today,
+    -- Include all registered users PLUS any cc_ids that have scanned
+    -- but never got an ensureFreemiumUser() call (historical gap)
+    SELECT COALESCE(u.coincash_id, sl_any.cc_id)  AS coincash_id,
+           COALESCE(u.email, '')                    AS email,
+           COALESCE(u.plan, 'free')                 AS plan,
+           COALESCE(sl.scan_count, 0)               AS scans_today,
            u.upgrade_requested_at
-      FROM users u
-      LEFT JOIN scan_limits sl
-             ON sl.cc_id = u.coincash_id AND sl.scan_date = CURRENT_DATE
-     WHERE u.coincash_id != 'CC-SUPPORT'
-     ORDER BY u.upgrade_requested_at DESC NULLS LAST, u.coincash_id
+      FROM (
+        -- All distinct cc_ids that have appeared in scan_limits (covers historical scans)
+        SELECT DISTINCT cc_id FROM scan_limits WHERE cc_id IS NOT NULL AND cc_id != ''
+        UNION
+        SELECT DISTINCT cc_id FROM scan_log   WHERE cc_id IS NOT NULL AND cc_id != ''
+      ) sl_any
+      LEFT JOIN users u        ON u.coincash_id = sl_any.cc_id
+      LEFT JOIN scan_limits sl ON sl.cc_id = sl_any.cc_id AND sl.scan_date = CURRENT_DATE
+     WHERE COALESCE(u.coincash_id, sl_any.cc_id) != 'CC-SUPPORT'
+     ORDER BY u.upgrade_requested_at DESC NULLS LAST, coincash_id
   `);
   return res.rows.map((r) => ({
     ccId:               r.coincash_id,

@@ -20,6 +20,7 @@ import {
   incrementGroupScan,
   incrementDeviceScanCount,
   getProDaysRemaining,
+  ensureFreemiumUser,
   FREE_SCAN_LIMIT,
   PRO_DURATION_DAYS,
 } from "../lib/db";
@@ -75,6 +76,9 @@ router.post("/scan", async (req, res) => {
   const deviceId = (req.body?.deviceId ?? "").trim();
 
   if (!wallet) return res.status(400).json({ error: "wallet required" });
+
+  // Register the user in the users table so they appear in admin (fire-and-forget)
+  if (ccId) ensureFreemiumUser(ccId).catch(() => {});
 
   const ip        = getClientIP(req);
   const userAgent = getUserAgent(req);
