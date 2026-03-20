@@ -5,7 +5,7 @@
 import { Pool } from "pg";
 import { createHash as _createHash } from "crypto";
 
-const pool = new Pool({
+export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.DATABASE_URL?.includes("localhost") ? false : { rejectUnauthorized: false },
   max: 5,
@@ -1145,7 +1145,92 @@ export async function ensureFreemiumTable(): Promise<void> {
       added_at   TIMESTAMP NOT NULL DEFAULT NOW()
     )
   `);
-  console.log("[db] freemium tables ready (incl. device_whitelist)");
+  // Active device tracker: for each (cc_id, group_id) only ONE device_id is "active"
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS active_devices (
+      cc_id        TEXT NOT NULL,
+      group_id     TEXT NOT NULL,
+      device_id    TEXT NOT NULL,
+      last_scan_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (cc_id, group_id)
+    )
+  `);
+  // Index to look up all active entries for a group_id (used by admin panel)
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS active_devices_group_idx ON active_devices (group_id)
+  `);
+  console.log("[db] freemium tables ready (incl. device_whitelist + active_devices)");
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   ACTIVE DEVICE — one active device per (cc_id, group_id)
+══════════════════════════════════════════════════════════════════════════════ */
+
+/** Return the currently active device for a (cc_id, group_id) pair, or null if none. */
+export async function getActiveDevice(
+  ccId: string,
+  groupId: string,
+): Promise<{ deviceId: string; lastScanAt: string } | null> {
+  if (!ccId || !groupId) return null;
+  const res = await pool.query<{ device_id: string; last_scan_at: string }>(
+    `SELECT device_id, last_scan_at FROM active_devices WHERE cc_id = $1 AND group_id = $2 LIMIT 1`,
+    [ccId, groupId],
+  );
+  if (!res.rows.length) return null;
+  return { deviceId: res.rows[0].device_id, lastScanAt: res.rows[0].last_scan_at };
+}
+
+/** Upsert the active device for a (cc_id, group_id) pair. Returns old device_id if displaced. */
+export async function upsertActiveDevice(
+  ccId: string,
+  groupId: string,
+  deviceId: string,
+): Promise<string | null> {
+  // Return the old device_id so callers can detect displacement
+  const res = await pool.query<{ old_device_id: string | null }>(
+    `INSERT INTO active_devices (cc_id, group_id, device_id, last_scan_at)
+     VALUES ($1, $2, $3, NOW())
+     ON CONFLICT (cc_id, group_id)
+     DO UPDATE SET device_id = $3, last_scan_at = NOW()
+     RETURNING (SELECT device_id FROM active_devices WHERE cc_id = $1 AND group_id = $2) AS old_device_id`,
+    [ccId, groupId, deviceId],
+  );
+  const old = res.rows[0]?.old_device_id ?? null;
+  return old === deviceId ? null : old;  // null means no displacement
+}
+
+/** Get all active device entries for an admin group view. */
+export async function getActiveDevicesByGroup(
+  groupId: string,
+): Promise<{ ccId: string; deviceId: string; lastScanAt: string }[]> {
+  if (!groupId) return [];
+  const res = await pool.query<{ cc_id: string; device_id: string; last_scan_at: string }>(
+    `SELECT cc_id, device_id, last_scan_at FROM active_devices WHERE group_id = $1 ORDER BY last_scan_at DESC`,
+    [groupId],
+  );
+  return res.rows.map(r => ({ ccId: r.cc_id, deviceId: r.device_id, lastScanAt: r.last_scan_at }));
+}
+
+/** Admin: force-set the active device for a (cc_id, group_id) pair. */
+export async function adminSetActiveDevice(
+  ccId: string,
+  groupId: string,
+  deviceId: string,
+): Promise<void> {
+  await pool.query(
+    `INSERT INTO active_devices (cc_id, group_id, device_id, last_scan_at)
+     VALUES ($1, $2, $3, NOW())
+     ON CONFLICT (cc_id, group_id) DO UPDATE SET device_id = $3, last_scan_at = NOW()`,
+    [ccId, groupId, deviceId],
+  );
+}
+
+/** Admin: remove the active device entry (unlocks a user from any specific device). */
+export async function adminClearActiveDevice(ccId: string, groupId: string): Promise<void> {
+  await pool.query(
+    `DELETE FROM active_devices WHERE cc_id = $1 AND group_id = $2`,
+    [ccId, groupId],
+  );
 }
 
 /** Check if a specific device_id is in the device whitelist. */

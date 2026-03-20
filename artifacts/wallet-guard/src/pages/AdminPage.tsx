@@ -281,6 +281,11 @@ function AdminPanelInner() {
   interface DeviceStats { devices: DeviceStat[]; abusiveIpHashes: string[]; }
   const [deviceStats, setDeviceStats] = useState<DeviceStats | null>(null);
 
+  // ── Active devices (one per cc_id+IP) ─────────────────────────────────────
+  interface ActiveDeviceEntry { ccId: string; groupId: string; deviceId: string; lastScanAt: string; }
+  const [activeDevices, setActiveDevices] = useState<ActiveDeviceEntry[]>([]);
+  const [activeBusy,    setActiveBusy]    = useState<string | null>(null);
+
   // ── Whitelist (per-device) ────────────────────────────────────────────────────
   interface WhitelistEntry { deviceId: string; note: string; addedAt: string; }
   const [whitelist,       setWhitelist]       = useState<WhitelistEntry[]>([]);
@@ -401,6 +406,40 @@ function AdminPanelInner() {
     } catch { /* ignore */ }
   }, []);
 
+  const fetchActiveDevices = useCallback(async () => {
+    try {
+      const res  = await fetch(`${API}/scan/active-devices?key=${SCAN_KEY}`);
+      const data = await res.json();
+      if (Array.isArray(data.activeDevices)) setActiveDevices(data.activeDevices);
+    } catch { /* ignore */ }
+  }, []);
+
+  const clearActiveDevice = async (ccId: string, groupId: string) => {
+    const key = `${ccId}__${groupId}`;
+    setActiveBusy(key);
+    try {
+      await fetch(`${API}/scan/active-device/clear`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-key": SCAN_KEY },
+        body: JSON.stringify({ ccId, groupId }),
+      });
+      await fetchActiveDevices();
+    } catch { /* ignore */ } finally { setActiveBusy(null); }
+  };
+
+  const setAsActiveDevice = async (ccId: string, groupId: string, deviceId: string) => {
+    const key = `set__${deviceId}`;
+    setActiveBusy(key);
+    try {
+      await fetch(`${API}/scan/active-device/set`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-key": SCAN_KEY },
+        body: JSON.stringify({ ccId, groupId, deviceId }),
+      });
+      await fetchActiveDevices();
+    } catch { /* ignore */ } finally { setActiveBusy(null); }
+  };
+
   const fetchWhitelist = useCallback(async () => {
     try {
       const res  = await fetch(`${API}/scan/whitelist-device?key=${SCAN_KEY}`);
@@ -438,12 +477,14 @@ function AdminPanelInner() {
     fetchScanStats();
     fetchDeviceStats();
     fetchWhitelist();
+    fetchActiveDevices();
     const t = setInterval(() => {
       fetchScanStats();
       fetchDeviceStats();
+      fetchActiveDevices();
     }, 15000);
     return () => clearInterval(t);
-  }, [fetchScanStats, fetchDeviceStats, fetchWhitelist]);
+  }, [fetchScanStats, fetchDeviceStats, fetchWhitelist, fetchActiveDevices]);
 
   const { connected, messages, sendMessage, loadHistory } = useChatSocket(ADMIN_CC_ID);
 
@@ -889,85 +930,130 @@ function AdminPanelInner() {
                   </div>
                   {!deviceStats || deviceStats.devices.length === 0 ? (
                     <div style={{ padding: "24px 14px", fontSize: 13, color: "#4B5563", textAlign: "center" }}>Sin datos de dispositivos aún</div>
-                  ) : deviceStats.devices.map((d, i) => (
-                    <div key={i} style={{
-                      padding: "10px 14px", borderBottom: "1px solid rgba(255,255,255,0.04)",
-                      background: d.possible_evasion ? "rgba(255,77,79,0.04)" : "transparent",
-                    }}>
-                      {/* Row 1: IDs + evasion flag */}
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 5 }}>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                          {d.cc_id && (
-                            <span style={{ fontSize: 11, fontFamily: "monospace", fontWeight: 700, color: "#00FFC6" }}>{d.cc_id}</span>
-                          )}
-                          {d.device_id && (
-                            <span style={{ fontSize: 10, fontFamily: "monospace", color: "#9CA3AF" }}>
-                              DEV:{d.device_id.startsWith("CC-") ? d.device_id : d.device_id.slice(0, 8) + "…"}
-                            </span>
-                          )}
-                        </div>
-                        <div style={{ display: "flex", gap: 5, flexShrink: 0, alignItems: "center" }}>
-                          {d.possible_evasion && (() => {
-                            const isWL = whitelist.some(w => w.deviceId === d.device_id);
-                            return isWL ? (
+                  ) : deviceStats.devices.map((d, i) => {
+                      const activeEntry    = (d.cc_id && d.ip_hash)
+                        ? activeDevices.find(a => a.ccId === d.cc_id && a.groupId === d.ip_hash)
+                        : undefined;
+                      const isActiveDevice  = activeEntry?.deviceId === d.device_id;
+                      const isBlockedDevice = !!activeEntry && activeEntry.deviceId !== d.device_id;
+                      const isWL     = whitelist.some(w => w.deviceId === d.device_id);
+                      const lockKey  = `${d.cc_id}__${d.ip_hash}`;
+                      const setKey   = `set__${d.device_id}`;
+                      const wlBusy   = whitelistBusy === d.device_id;
+                      const lockBusy = activeBusy === lockKey;
+                      const setBusy  = activeBusy === setKey;
+
+                      return (
+                        <div key={i} style={{
+                          padding: "10px 14px", borderBottom: "1px solid rgba(255,255,255,0.04)",
+                          background: isBlockedDevice
+                            ? "rgba(245,158,11,0.04)"
+                            : d.possible_evasion ? "rgba(255,77,79,0.04)" : "transparent",
+                        }}>
+                          {/* Row 1: IDs + status badges */}
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 5 }}>
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                              {d.cc_id && (
+                                <span style={{ fontSize: 11, fontFamily: "monospace", fontWeight: 700, color: "#00FFC6" }}>{d.cc_id}</span>
+                              )}
+                              {d.device_id && (
+                                <span style={{ fontSize: 10, fontFamily: "monospace", color: "#9CA3AF" }}>
+                                  DEV:{d.device_id.startsWith("CC-") ? d.device_id : d.device_id.slice(0, 8) + "…"}
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ display: "flex", gap: 5, flexShrink: 0, alignItems: "center" }}>
+                              {isActiveDevice && (
+                                <span style={{
+                                  fontSize: 9, fontWeight: 700, padding: "2px 7px", borderRadius: 10,
+                                  background: "rgba(0,220,160,0.15)", border: "1px solid rgba(0,220,160,0.4)", color: "#00DCA0",
+                                }}>⚡ ACTIVO</span>
+                              )}
+                              {isBlockedDevice && (
+                                <span style={{
+                                  fontSize: 9, fontWeight: 700, padding: "2px 7px", borderRadius: 10,
+                                  background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.35)", color: "#F59E0B",
+                                }}>🔒 BLOQUEADO</span>
+                              )}
+                              {d.possible_evasion && (isWL ? (
+                                <span style={{
+                                  fontSize: 9, fontWeight: 700, padding: "2px 7px", borderRadius: 10,
+                                  background: "rgba(0,255,198,0.12)", border: "1px solid rgba(0,255,198,0.35)", color: "#00FFC6",
+                                }}>✅ LEGÍTIMO</span>
+                              ) : (
+                                <span style={{
+                                  fontSize: 9, fontWeight: 700, padding: "2px 7px", borderRadius: 10,
+                                  background: "rgba(255,77,79,0.15)", border: "1px solid rgba(255,77,79,0.4)", color: "#FF4D4F",
+                                }}>⚠️ EVASIÓN</span>
+                              ))}
                               <span style={{
                                 fontSize: 9, fontWeight: 700, padding: "2px 7px", borderRadius: 10,
-                                background: "rgba(0,255,198,0.12)", border: "1px solid rgba(0,255,198,0.35)", color: "#00FFC6",
-                              }}>✅ LEGÍTIMO</span>
-                            ) : (
-                              <span style={{
-                                fontSize: 9, fontWeight: 700, padding: "2px 7px", borderRadius: 10,
-                                background: "rgba(255,77,79,0.15)", border: "1px solid rgba(255,77,79,0.4)", color: "#FF4D4F",
-                              }}>⚠️ EVASIÓN</span>
-                            );
-                          })()}
-                          <span style={{
-                            fontSize: 9, fontWeight: 700, padding: "2px 7px", borderRadius: 10,
-                            background: "rgba(0,255,198,0.08)", border: "1px solid rgba(0,255,198,0.2)", color: "#00FFC6",
-                          }}>
-                            {d.scans_today} hoy · {d.total_scans} total
-                          </span>
+                                background: "rgba(0,255,198,0.08)", border: "1px solid rgba(0,255,198,0.2)", color: "#00FFC6",
+                              }}>{d.scans_today} hoy · {d.total_scans} total</span>
+                            </div>
+                          </div>
+                          {/* Row 2: IP + action buttons + time */}
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                              {d.ip_hash && (
+                                <span style={{ fontSize: 9, fontFamily: "monospace", color: "#4B5563" }}>
+                                  IP:{d.ip_hash.slice(0, 12)}…
+                                </span>
+                              )}
+                              {/* Active device controls */}
+                              {isActiveDevice && d.cc_id && d.ip_hash && (
+                                <button
+                                  disabled={lockBusy}
+                                  onClick={() => clearActiveDevice(d.cc_id, d.ip_hash)}
+                                  style={{
+                                    fontSize: 9, padding: "2px 8px", borderRadius: 8,
+                                    border: "1px solid rgba(107,114,128,0.4)",
+                                    background: "rgba(107,114,128,0.08)", color: "#9CA3AF",
+                                    cursor: "pointer", fontFamily: "inherit", fontWeight: 600,
+                                  }}
+                                >{lockBusy ? "…" : "🔓 Liberar bloqueo"}</button>
+                              )}
+                              {isBlockedDevice && d.cc_id && d.ip_hash && (
+                                <button
+                                  disabled={setBusy}
+                                  onClick={() => setAsActiveDevice(d.cc_id, d.ip_hash, d.device_id)}
+                                  style={{
+                                    fontSize: 9, padding: "2px 8px", borderRadius: 8,
+                                    border: "1px solid rgba(0,220,160,0.35)",
+                                    background: "rgba(0,220,160,0.06)", color: "#00DCA0",
+                                    cursor: "pointer", fontFamily: "inherit", fontWeight: 600,
+                                  }}
+                                >{setBusy ? "…" : "⚡ Activar este"}</button>
+                              )}
+                              {/* Evasion whitelist controls */}
+                              {d.possible_evasion && d.device_id && (isWL ? (
+                                <button
+                                  disabled={wlBusy}
+                                  onClick={() => removeDeviceFromWhitelist(d.device_id)}
+                                  style={{
+                                    fontSize: 9, padding: "2px 8px", borderRadius: 8, border: "1px solid rgba(255,77,79,0.4)",
+                                    background: "rgba(255,77,79,0.08)", color: "#FF4D4F", cursor: "pointer",
+                                    fontFamily: "inherit", fontWeight: 600,
+                                  }}
+                                >{wlBusy ? "…" : "✕ Quitar de lista blanca"}</button>
+                              ) : (
+                                <button
+                                  disabled={wlBusy}
+                                  onClick={() => addDeviceToWhitelist(d.device_id)}
+                                  style={{
+                                    fontSize: 9, padding: "2px 8px", borderRadius: 8, border: "1px solid rgba(0,255,198,0.3)",
+                                    background: "rgba(0,255,198,0.06)", color: "#00FFC6", cursor: "pointer",
+                                    fontFamily: "inherit", fontWeight: 600,
+                                  }}
+                                >{wlBusy ? "…" : "✅ Marcar como legítimo"}</button>
+                              ))}
+                            </div>
+                            <span style={{ fontSize: 10, color: "#6B7280" }}>{timeAgo(d.last_seen)}</span>
+                          </div>
                         </div>
-                      </div>
-                      {/* Row 2: IP hash + last seen + action */}
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          {d.ip_hash ? (
-                            <span style={{ fontSize: 9, fontFamily: "monospace", color: "#4B5563" }}>
-                              IP:{d.ip_hash.slice(0, 12)}…
-                            </span>
-                          ) : null}
-                          {/* Marcar como legítimo — por device_id individual */}
-                          {d.possible_evasion && d.device_id && (() => {
-                            const isWL = whitelist.some(w => w.deviceId === d.device_id);
-                            const busy = whitelistBusy === d.device_id;
-                            return isWL ? (
-                              <button
-                                disabled={busy}
-                                onClick={() => removeDeviceFromWhitelist(d.device_id)}
-                                style={{
-                                  fontSize: 9, padding: "2px 8px", borderRadius: 8, border: "1px solid rgba(255,77,79,0.4)",
-                                  background: "rgba(255,77,79,0.08)", color: "#FF4D4F", cursor: "pointer",
-                                  fontFamily: "inherit", fontWeight: 600,
-                                }}
-                              >{busy ? "…" : "✕ Quitar de lista blanca"}</button>
-                            ) : (
-                              <button
-                                disabled={busy}
-                                onClick={() => addDeviceToWhitelist(d.device_id)}
-                                style={{
-                                  fontSize: 9, padding: "2px 8px", borderRadius: 8, border: "1px solid rgba(0,255,198,0.3)",
-                                  background: "rgba(0,255,198,0.06)", color: "#00FFC6", cursor: "pointer",
-                                  fontFamily: "inherit", fontWeight: 600,
-                                }}
-                              >{busy ? "…" : "✅ Marcar como legítimo"}</button>
-                            );
-                          })()}
-                        </div>
-                        <span style={{ fontSize: 10, color: "#6B7280" }}>{timeAgo(d.last_seen)}</span>
-                      </div>
-                    </div>
-                  ))}
+                      );
+                    })}
+                  
                 </div>
 
                 {/* ── Whitelist de dispositivos ── */}

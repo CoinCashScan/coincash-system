@@ -7,6 +7,7 @@
 
 import { Router }      from "express";
 import { createHash }  from "crypto";
+import { pool }        from "../lib/db";
 import {
   recordScanFull,
   getScanStats,
@@ -30,6 +31,10 @@ import {
   addDeviceWhitelist,
   removeDeviceWhitelist,
   getDeviceWhitelist,
+  getActiveDevice,
+  upsertActiveDevice,
+  adminSetActiveDevice,
+  adminClearActiveDevice,
   FREE_SCAN_LIMIT,
   PRO_DURATION_DAYS,
 } from "../lib/db";
@@ -142,6 +147,30 @@ router.post("/scan", async (req, res) => {
         });
       }
 
+      // ── Device conflict check (1 active device per cc_id+IP) ────────────────
+      // Only applies when we have both cc_id and groupId (authenticated + IP known)
+      if (ccId && groupId && deviceId) {
+        const activeDevice = await getActiveDevice(ccId, groupId);
+        if (activeDevice && activeDevice.deviceId !== deviceId) {
+          // A different device is currently active for this user+IP combination.
+          // Auto-displace: make the current device active going forward.
+          await upsertActiveDevice(ccId, groupId, deviceId);
+          return res.status(429).json({
+            ok:        false,
+            blocked:   "device_conflict",
+            plan:      "free",
+            canScan:   false,
+            remaining: 0,
+            message:   "Otro dispositivo está activo en esta red. Reintenta en unos segundos.",
+            deviceId:  deviceId,
+          });
+        }
+        // No conflict: upsert to refresh timestamp and mark this device as active
+        if (!activeDevice) {
+          await upsertActiveDevice(ccId, groupId, deviceId);
+        }
+      }
+
       // Effective count: group pool (IP-based) takes priority when available
       const effectiveScans = groupId
         ? Math.max(ccScans, groupScans)
@@ -177,6 +206,11 @@ router.post("/scan", async (req, res) => {
         deviceId: deviceId || "", ccId: ccId || "",
         ipHash: groupId, planType: "free",
       }).catch(() => {});
+
+      // Refresh active_device timestamp after successful scan (fire-and-forget)
+      if (ccId && groupId && deviceId) {
+        upsertActiveDevice(ccId, groupId, deviceId).catch(() => {});
+      }
 
       return res.json({ ok: true, plan: "free", scansToday, remaining, canScan: remaining > 0 });
 
@@ -289,6 +323,62 @@ router.delete("/scan/whitelist/:ipHash", async (req, res) => {
   } catch (err: any) {
     console.error("[scan/whitelist] DELETE error:", err?.message);
     res.status(500).json({ error: "Error removing from whitelist" });
+  }
+});
+
+// ── GET /api/scan/active-devices ─────────────────────────────────────────────
+// Returns all active_devices rows (admin only).
+router.get("/scan/active-devices", async (req, res) => {
+  const key = req.query.key as string | undefined;
+  if (key !== ADMIN_KEY) return res.status(401).json({ error: "Unauthorized" });
+  try {
+    const rows = await pool.query<{
+      cc_id: string; group_id: string; device_id: string; last_scan_at: string;
+    }>(`SELECT cc_id, group_id, device_id, last_scan_at FROM active_devices ORDER BY last_scan_at DESC`);
+    res.json({
+      activeDevices: rows.rows.map(r => ({
+        ccId: r.cc_id, groupId: r.group_id, deviceId: r.device_id, lastScanAt: r.last_scan_at,
+      })),
+    });
+  } catch (err: any) {
+    console.error("[scan/active-devices] GET error:", err?.message);
+    res.status(500).json({ error: "Error fetching active devices" });
+  }
+});
+
+// ── POST /api/scan/active-device/clear ──────────────────────────────────────
+// Admin: clear/reset the active device lock for a (ccId, groupId) pair.
+// Body: { ccId, groupId }
+router.post("/scan/active-device/clear", async (req, res) => {
+  const key = req.headers["x-admin-key"] as string | undefined ?? req.body?.key;
+  if (key !== ADMIN_KEY) return res.status(401).json({ error: "Unauthorized" });
+  const { ccId, groupId } = req.body ?? {};
+  if (!ccId || !groupId) return res.status(400).json({ error: "ccId and groupId required" });
+  try {
+    await adminClearActiveDevice(ccId, groupId);
+    console.log(`[scan/active-device] Cleared lock for cc:${ccId} grp:${groupId?.slice(0, 8)}…`);
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error("[scan/active-device/clear] error:", err?.message);
+    res.status(500).json({ error: "Error clearing active device" });
+  }
+});
+
+// ── POST /api/scan/active-device/set ─────────────────────────────────────────
+// Admin: force-set a specific device as active for a (ccId, groupId) pair.
+// Body: { ccId, groupId, deviceId }
+router.post("/scan/active-device/set", async (req, res) => {
+  const key = req.headers["x-admin-key"] as string | undefined ?? req.body?.key;
+  if (key !== ADMIN_KEY) return res.status(401).json({ error: "Unauthorized" });
+  const { ccId, groupId, deviceId } = req.body ?? {};
+  if (!ccId || !groupId || !deviceId) return res.status(400).json({ error: "ccId, groupId and deviceId required" });
+  try {
+    await adminSetActiveDevice(ccId, groupId, deviceId);
+    console.log(`[scan/active-device] Force-set dev:${deviceId?.slice(0, 8)}… for cc:${ccId}`);
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error("[scan/active-device/set] error:", err?.message);
+    res.status(500).json({ error: "Error setting active device" });
   }
 });
 
