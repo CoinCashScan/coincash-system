@@ -874,47 +874,67 @@ export async function getDeviceStats(): Promise<{
     device_id: string; cc_id: string; ip_hash: string;
     total_scans: number; scans_today: number; last_seen: string;
     possible_evasion: boolean;
+    is_active: boolean;
+    is_blocked: boolean;
   }[];
   abusiveIpHashes: string[];
 }> {
-  const deviceRes = await pool.query(`
-    SELECT
-      device_id,
-      cc_id,
-      ip_hash,
-      COUNT(*)                                                          AS total_scans,
-      COUNT(*) FILTER (WHERE scanned_at >= DATE_TRUNC('day', NOW()))   AS scans_today,
-      MAX(scanned_at)                                                   AS last_seen
-    FROM scan_log
-    WHERE device_id != ''
-    GROUP BY device_id, cc_id, ip_hash
-    ORDER BY scans_today DESC, last_seen DESC
-    LIMIT 300
-  `);
-
-  // Find IP hashes shared by more than one distinct deviceId (potential evasion)
-  const ipShareRes = await pool.query<{ ip_hash: string; device_count: string }>(`
-    SELECT ip_hash, COUNT(DISTINCT device_id) AS device_count
-    FROM scan_log
-    WHERE device_id != '' AND ip_hash != ''
-      AND scanned_at >= DATE_TRUNC('day', NOW())
-    GROUP BY ip_hash
-    HAVING COUNT(DISTINCT device_id) > 1
-  `);
+  const [deviceRes, ipShareRes, activeRes] = await Promise.all([
+    pool.query(`
+      SELECT
+        device_id,
+        cc_id,
+        ip_hash,
+        COUNT(*)                                                          AS total_scans,
+        COUNT(*) FILTER (WHERE scanned_at >= DATE_TRUNC('day', NOW()))   AS scans_today,
+        MAX(scanned_at)                                                   AS last_seen
+      FROM scan_log
+      WHERE device_id != ''
+      GROUP BY device_id, cc_id, ip_hash
+      ORDER BY scans_today DESC, last_seen DESC
+      LIMIT 300
+    `),
+    pool.query<{ ip_hash: string; device_count: string }>(`
+      SELECT ip_hash, COUNT(DISTINCT device_id) AS device_count
+      FROM scan_log
+      WHERE device_id != '' AND ip_hash != ''
+        AND scanned_at >= DATE_TRUNC('day', NOW())
+      GROUP BY ip_hash
+      HAVING COUNT(DISTINCT device_id) > 1
+    `),
+    // Pull all active_devices so we can mark each row ACTIVO / BLOQUEADO
+    pool.query<{ cc_id: string; group_id: string; device_id: string }>(`
+      SELECT cc_id, group_id, device_id FROM active_devices
+    `),
+  ]);
 
   const abusiveIpHashes = ipShareRes.rows.map(r => r.ip_hash);
   const abusiveSet = new Set(abusiveIpHashes);
 
+  // Build a lookup: (cc_id + group_id) → active device_id
+  const activeMap = new Map<string, string>();
+  for (const row of activeRes.rows) {
+    activeMap.set(`${row.cc_id}::${row.group_id}`, row.device_id);
+  }
+
   return {
-    devices: deviceRes.rows.map(r => ({
-      device_id:        r.device_id,
-      cc_id:            r.cc_id,
-      ip_hash:          r.ip_hash,
-      total_scans:      parseInt(r.total_scans, 10),
-      scans_today:      parseInt(r.scans_today, 10),
-      last_seen:        r.last_seen,
-      possible_evasion: abusiveSet.has(r.ip_hash),
-    })),
+    devices: deviceRes.rows.map(r => {
+      const lookupKey    = `${r.cc_id}::${r.ip_hash}`;
+      const activeDevice = activeMap.get(lookupKey);
+      const is_active    = !!activeDevice && activeDevice === r.device_id;
+      const is_blocked   = !!activeDevice && activeDevice !== r.device_id;
+      return {
+        device_id:        r.device_id,
+        cc_id:            r.cc_id,
+        ip_hash:          r.ip_hash,
+        total_scans:      parseInt(r.total_scans, 10),
+        scans_today:      parseInt(r.scans_today, 10),
+        last_seen:        r.last_seen,
+        possible_evasion: abusiveSet.has(r.ip_hash),
+        is_active,
+        is_blocked,
+      };
+    }),
     abusiveIpHashes,
   };
 }

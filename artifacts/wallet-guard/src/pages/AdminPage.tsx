@@ -277,6 +277,8 @@ function AdminPanelInner() {
     device_id: string; cc_id: string; ip_hash: string;
     total_scans: number; scans_today: number; last_seen: string;
     possible_evasion: boolean;
+    is_active: boolean;
+    is_blocked: boolean;
   }
   interface DeviceStats { devices: DeviceStat[]; abusiveIpHashes: string[]; }
   const [deviceStats, setDeviceStats] = useState<DeviceStats | null>(null);
@@ -931,11 +933,8 @@ function AdminPanelInner() {
                   {!deviceStats || deviceStats.devices.length === 0 ? (
                     <div style={{ padding: "24px 14px", fontSize: 13, color: "#4B5563", textAlign: "center" }}>Sin datos de dispositivos aún</div>
                   ) : deviceStats.devices.map((d, i) => {
-                      const activeEntry    = (d.cc_id && d.ip_hash)
-                        ? activeDevices.find(a => a.ccId === d.cc_id && a.groupId === d.ip_hash)
-                        : undefined;
-                      const isActiveDevice  = activeEntry?.deviceId === d.device_id;
-                      const isBlockedDevice = !!activeEntry && activeEntry.deviceId !== d.device_id;
+                      const isActiveDevice  = !!d.is_active;
+                      const isBlockedDevice = !!d.is_blocked;
                       const isWL     = whitelist.some(w => w.deviceId === d.device_id);
                       const lockKey  = `${d.cc_id}__${d.ip_hash}`;
                       const setKey   = `set__${d.device_id}`;
