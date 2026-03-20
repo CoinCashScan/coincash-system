@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import QRCode from "qrcode";
 import { API_BASE } from "@/lib/apiConfig";
-import { resolveIdentity } from "@/lib/identity";
+import { resolveIdentity, getDeviceId } from "@/lib/identity";
 import { ScanSearch, Loader2, QrCode, X, CheckCircle2, AlertTriangle, ShieldAlert,
          Copy, Check, CheckCheck, Activity, Zap, Hash, Shield } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -297,7 +297,9 @@ const DEFAULT_FREEMIUM: FreemiumStatus = { plan: "free", scansToday: 0, limit: 5
 
 async function fetchFreemiumStatus(ccId: string): Promise<FreemiumStatus> {
   try {
-    const res = await fetch(`${API_BASE}/freemium/status?ccId=${encodeURIComponent(ccId)}`);
+    const deviceId = getDeviceId();
+    const params = new URLSearchParams({ ccId, ...(deviceId ? { deviceId } : {}) });
+    const res = await fetch(`${API_BASE}/freemium/status?${params}`);
     if (!res.ok) return DEFAULT_FREEMIUM;
     return await res.json();
   } catch {
@@ -307,10 +309,11 @@ async function fetchFreemiumStatus(ccId: string): Promise<FreemiumStatus> {
 
 async function recordFreemiumScan(ccId: string): Promise<FreemiumStatus> {
   try {
+    const deviceId = getDeviceId();
     const res = await fetch(`${API_BASE}/freemium/record`, {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ ccId }),
+      body:    JSON.stringify({ ccId, ...(deviceId ? { deviceId } : {}) }),
     });
     const data = await res.json();
     if (res.status === 429) {

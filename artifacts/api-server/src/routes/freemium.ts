@@ -21,6 +21,8 @@ import {
   incrementScanCount,
   getIpScanCount,
   incrementIpScanCount,
+  getDeviceScanCount,
+  incrementDeviceScanCount,
   setUserPlan,
   resetScanCount,
   requestUpgrade,
@@ -115,20 +117,21 @@ router.get("/freemium/status", async (req, res) => {
   const ccId  = ((req.query.ccId as string) ?? "").trim();
   if (!ccId) return res.status(400).json({ error: "ccId required" });
 
-  const ipHash = getIpHash(req);
+  // device_id = UUID from localStorage sent by frontend (primary anti-abuse key)
+  const deviceId = ((req.query.deviceId ?? "") as string).trim();
 
   try {
     // Register user row on first visit (fire-and-forget, non-blocking)
     ensureFreemiumUser(ccId).catch(() => {});
 
-    const [plan, ccScans, ipScans] = await Promise.all([
+    const [plan, ccScans, deviceScans] = await Promise.all([
       getUserPlan(ccId),
       getScanCountToday(ccId),
-      ipHash ? getIpScanCount(ipHash) : Promise.resolve(0),
+      getDeviceScanCount(deviceId),
     ]);
 
-    // Enforce the stricter of the two counts (CC-ID or IP)
-    const scansToday    = Math.max(ccScans, ipScans);
+    // device_id is the primary limiter; CC-ID is the secondary (whichever is higher)
+    const scansToday    = Math.max(ccScans, deviceScans);
     const isPro         = plan === "pro";
     const canScan       = isPro || scansToday < FREE_SCAN_LIMIT;
     const remaining     = isPro ? null : Math.max(0, FREE_SCAN_LIMIT - scansToday);
@@ -149,10 +152,13 @@ router.get("/freemium/status", async (req, res) => {
 
 // ── POST /api/freemium/record ─────────────────────────────────────────────────
 router.post("/freemium/record", async (req, res) => {
-  const ccId   = ((req.body?.ccId) ?? "").trim();
+  const ccId     = ((req.body?.ccId)     ?? "").trim();
+  const deviceId = ((req.body?.deviceId) ?? "").trim();
   if (!ccId) return res.status(400).json({ error: "ccId required" });
 
+  // IP recorded as reference only — NOT used for blocking
   const ipHash = getIpHash(req);
+  if (ipHash) incrementIpScanCount(ipHash).catch(() => {});
 
   try {
     const plan = await getUserPlan(ccId);
@@ -161,21 +167,26 @@ router.post("/freemium/record", async (req, res) => {
       return res.json({ ok: true, plan: "pro", scansToday: null, remaining: null });
     }
 
-    // Check both CC-ID and IP counters — whichever is higher determines the limit
-    const [ccScans, ipScans] = await Promise.all([
+    // device_id is the primary limiter; CC-ID is secondary (whichever is higher)
+    const [ccScans, deviceScans] = await Promise.all([
       getScanCountToday(ccId),
-      ipHash ? getIpScanCount(ipHash) : Promise.resolve(0),
+      getDeviceScanCount(deviceId),
     ]);
-    const effectiveScans = Math.max(ccScans, ipScans);
+    const effectiveScans = Math.max(ccScans, deviceScans);
 
     if (effectiveScans >= FREE_SCAN_LIMIT) {
-      return res.status(429).json({ error: "limit_reached", limit: FREE_SCAN_LIMIT, scansToday: effectiveScans });
+      return res.status(429).json({
+        error: "limit_reached",
+        limit: FREE_SCAN_LIMIT,
+        scansToday: effectiveScans,
+        message: "Límite diario alcanzado",
+      });
     }
 
-    // Increment both counters atomically
+    // Increment both CC-ID and device_id counters atomically
     const [newCcCount] = await Promise.all([
       incrementScanCount(ccId),
-      ipHash ? incrementIpScanCount(ipHash) : Promise.resolve(0),
+      incrementDeviceScanCount(deviceId),
     ]);
 
     const remaining = Math.max(0, FREE_SCAN_LIMIT - newCcCount);

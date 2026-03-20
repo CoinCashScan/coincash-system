@@ -1032,7 +1032,7 @@ export async function ensureFreemiumTable(): Promise<void> {
       PRIMARY KEY (cc_id, scan_date)
     )
   `);
-  // Daily scan counter per IP (hashed) — cross-browser enforcement
+  // Daily scan counter per IP (hashed) — kept as reference only, not used for blocking
   await pool.query(`
     CREATE TABLE IF NOT EXISTS ip_scan_limits (
       ip_hash    TEXT NOT NULL,
@@ -1041,7 +1041,40 @@ export async function ensureFreemiumTable(): Promise<void> {
       PRIMARY KEY (ip_hash, scan_date)
     )
   `);
-  console.log("[db] freemium (plan + scan_limits + ip_scan_limits) ready");
+  // Daily scan counter per device_id (UUID from localStorage) — PRIMARY anti-abuse control
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS device_scan_limits (
+      device_id  TEXT NOT NULL,
+      scan_date  DATE NOT NULL DEFAULT CURRENT_DATE,
+      scan_count INT  NOT NULL DEFAULT 0,
+      PRIMARY KEY (device_id, scan_date)
+    )
+  `);
+  console.log("[db] freemium (plan + scan_limits + ip_scan_limits + device_scan_limits) ready");
+}
+
+/** Get today's scan count for a device_id (UUID). */
+export async function getDeviceScanCount(deviceId: string): Promise<number> {
+  if (!deviceId) return 0;
+  const res = await pool.query<{ scan_count: number }>(
+    `SELECT scan_count FROM device_scan_limits WHERE device_id = $1 AND scan_date = CURRENT_DATE`,
+    [deviceId],
+  );
+  return res.rows[0]?.scan_count ?? 0;
+}
+
+/** Increment today's scan count for a device_id. Returns the new total. */
+export async function incrementDeviceScanCount(deviceId: string): Promise<number> {
+  if (!deviceId) return 0;
+  const res = await pool.query<{ scan_count: number }>(
+    `INSERT INTO device_scan_limits (device_id, scan_date, scan_count)
+     VALUES ($1, CURRENT_DATE, 1)
+     ON CONFLICT (device_id, scan_date) DO UPDATE
+       SET scan_count = device_scan_limits.scan_count + 1
+     RETURNING scan_count`,
+    [deviceId],
+  );
+  return res.rows[0]?.scan_count ?? 1;
 }
 
 /** Return today's scan count for a given IP hash. */

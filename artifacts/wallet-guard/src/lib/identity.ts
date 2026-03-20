@@ -2,6 +2,24 @@ import { API_BASE } from "@/lib/apiConfig";
 
 const LS_KEY        = "coincash-cc-id";
 const LS_SYNC_CLAIM = "cc-sync-claim";
+const LS_DEVICE_ID  = "cc-device-id";
+
+/**
+ * Returns a stable UUID for this browser/device.
+ * Generated once with crypto.randomUUID() and persisted in localStorage.
+ * Used as the primary anti-abuse scan limiter (not for identity resolution).
+ */
+export function getDeviceId(): string {
+  try {
+    const stored = localStorage.getItem(LS_DEVICE_ID);
+    if (stored) return stored;
+    const id = crypto.randomUUID();
+    localStorage.setItem(LS_DEVICE_ID, id);
+    return id;
+  } catch {
+    return "";
+  }
+}
 
 async function sha256hex(text: string): Promise<string> {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
