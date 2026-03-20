@@ -1041,7 +1041,7 @@ export async function ensureFreemiumTable(): Promise<void> {
       PRIMARY KEY (ip_hash, scan_date)
     )
   `);
-  // Daily scan counter per device_id (UUID from localStorage) — PRIMARY anti-abuse control
+  // Daily scan counter per device_id (UUID from localStorage) — kept for reference
   await pool.query(`
     CREATE TABLE IF NOT EXISTS device_scan_limits (
       device_id  TEXT NOT NULL,
@@ -1050,7 +1050,58 @@ export async function ensureFreemiumTable(): Promise<void> {
       PRIMARY KEY (device_id, scan_date)
     )
   `);
-  console.log("[db] freemium (plan + scan_limits + ip_scan_limits + device_scan_limits) ready");
+  // Hybrid anti-abuse: group_id (hashed IP) + device_id — shared group limit PRIMARY control
+  // Each row = one device's contribution to the group's total scan count for the day.
+  // group_id = SHA256(IP) → all devices on same network share the 5-scan/day pool.
+  // last_reset is implicit: rows only match CURRENT_DATE, so next day = automatic reset.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS group_scan_limits (
+      group_id   TEXT NOT NULL,
+      device_id  TEXT NOT NULL,
+      scan_date  DATE NOT NULL DEFAULT CURRENT_DATE,
+      scan_count INT  NOT NULL DEFAULT 0,
+      PRIMARY KEY (group_id, device_id, scan_date)
+    )
+  `);
+  console.log("[db] freemium (plan + scan_limits + ip_scan_limits + device_scan_limits + group_scan_limits) ready");
+}
+
+/**
+ * Returns today's TOTAL scan count for a group (all devices on same IP/network).
+ * group_id = SHA256(IP) — computed in the route layer.
+ */
+export async function getGroupScanCount(groupId: string): Promise<number> {
+  if (!groupId) return 0;
+  const res = await pool.query<{ total: number }>(
+    `SELECT COALESCE(SUM(scan_count), 0)::int AS total
+       FROM group_scan_limits
+      WHERE group_id = $1 AND scan_date = CURRENT_DATE`,
+    [groupId],
+  );
+  return res.rows[0]?.total ?? 0;
+}
+
+/**
+ * Records one scan for (groupId, deviceId) today.
+ * Upserts the per-device row, then returns the new GROUP total.
+ */
+export async function incrementGroupScan(groupId: string, deviceId: string): Promise<number> {
+  if (!groupId) return 0;
+  const safeDevice = deviceId || "unknown";
+  await pool.query(
+    `INSERT INTO group_scan_limits (group_id, device_id, scan_date, scan_count)
+     VALUES ($1, $2, CURRENT_DATE, 1)
+     ON CONFLICT (group_id, device_id, scan_date) DO UPDATE
+       SET scan_count = group_scan_limits.scan_count + 1`,
+    [groupId, safeDevice],
+  );
+  const res = await pool.query<{ total: number }>(
+    `SELECT COALESCE(SUM(scan_count), 0)::int AS total
+       FROM group_scan_limits
+      WHERE group_id = $1 AND scan_date = CURRENT_DATE`,
+    [groupId],
+  );
+  return res.rows[0]?.total ?? 1;
 }
 
 /** Get today's scan count for a device_id (UUID). */

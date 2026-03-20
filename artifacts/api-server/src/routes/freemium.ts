@@ -23,6 +23,8 @@ import {
   incrementIpScanCount,
   getDeviceScanCount,
   incrementDeviceScanCount,
+  getGroupScanCount,
+  incrementGroupScan,
   setUserPlan,
   resetScanCount,
   requestUpgrade,
@@ -117,21 +119,28 @@ router.get("/freemium/status", async (req, res) => {
   const ccId  = ((req.query.ccId as string) ?? "").trim();
   if (!ccId) return res.status(400).json({ error: "ccId required" });
 
-  // device_id = UUID from localStorage sent by frontend (primary anti-abuse key)
+  // group_id = SHA256(IP) — all devices sharing an IP share this group pool
+  // device_id = UUID from localStorage — fallback when IP is unavailable
+  const groupId  = getIpHash(req);
   const deviceId = ((req.query.deviceId ?? "") as string).trim();
 
   try {
     // Register user row on first visit (fire-and-forget, non-blocking)
     ensureFreemiumUser(ccId).catch(() => {});
 
-    const [plan, ccScans, deviceScans] = await Promise.all([
+    const [plan, ccScans, groupScans, deviceScans] = await Promise.all([
       getUserPlan(ccId),
       getScanCountToday(ccId),
-      getDeviceScanCount(deviceId),
+      getGroupScanCount(groupId),                     // primary: shared IP pool
+      deviceId ? getDeviceScanCount(deviceId) : Promise.resolve(0), // fallback: solo device
     ]);
 
-    // device_id is the primary limiter; CC-ID is the secondary (whichever is higher)
-    const scansToday    = Math.max(ccScans, deviceScans);
+    // If we have a group (IP resolved) → group total is the limit.
+    // If no IP → fall back to individual device count.
+    // CC-ID count is always checked as the floor.
+    const scansToday    = groupId
+      ? Math.max(ccScans, groupScans)
+      : Math.max(ccScans, deviceScans);
     const isPro         = plan === "pro";
     const canScan       = isPro || scansToday < FREE_SCAN_LIMIT;
     const remaining     = isPro ? null : Math.max(0, FREE_SCAN_LIMIT - scansToday);
@@ -156,9 +165,8 @@ router.post("/freemium/record", async (req, res) => {
   const deviceId = ((req.body?.deviceId) ?? "").trim();
   if (!ccId) return res.status(400).json({ error: "ccId required" });
 
-  // IP recorded as reference only — NOT used for blocking
-  const ipHash = getIpHash(req);
-  if (ipHash) incrementIpScanCount(ipHash).catch(() => {});
+  // group_id = SHA256(IP) — computed in backend, never trusted from client
+  const groupId = getIpHash(req);
 
   try {
     const plan = await getUserPlan(ccId);
@@ -167,29 +175,40 @@ router.post("/freemium/record", async (req, res) => {
       return res.json({ ok: true, plan: "pro", scansToday: null, remaining: null });
     }
 
-    // device_id is the primary limiter; CC-ID is secondary (whichever is higher)
-    const [ccScans, deviceScans] = await Promise.all([
+    // Read current group total AND CC-ID count in parallel
+    const [ccScans, groupScans, deviceScans] = await Promise.all([
       getScanCountToday(ccId),
-      getDeviceScanCount(deviceId),
+      getGroupScanCount(groupId),                                      // primary: group (IP-based)
+      deviceId ? getDeviceScanCount(deviceId) : Promise.resolve(0),   // fallback: solo device
     ]);
-    const effectiveScans = Math.max(ccScans, deviceScans);
+
+    // Primary check: group total (blocks ALL devices on same network after 5 scans)
+    // Fallback when no IP: individual device count
+    const effectiveScans = groupId
+      ? Math.max(ccScans, groupScans)
+      : Math.max(ccScans, deviceScans);
 
     if (effectiveScans >= FREE_SCAN_LIMIT) {
       return res.status(429).json({
-        error: "limit_reached",
-        limit: FREE_SCAN_LIMIT,
+        error:      "limit_reached",
+        limit:      FREE_SCAN_LIMIT,
         scansToday: effectiveScans,
-        message: "Límite diario alcanzado",
+        message:    "Límite diario alcanzado",
       });
     }
 
-    // Increment both CC-ID and device_id counters atomically
-    const [newCcCount] = await Promise.all([
+    // Increment: group counter (primary) + CC-ID (reference) + device fallback
+    const increments: Promise<any>[] = [
       incrementScanCount(ccId),
-      incrementDeviceScanCount(deviceId),
-    ]);
+    ];
+    if (groupId) {
+      increments.push(incrementGroupScan(groupId, deviceId));
+    } else if (deviceId) {
+      increments.push(incrementDeviceScanCount(deviceId));
+    }
+    const [newCcCount] = await Promise.all(increments);
 
-    const remaining = Math.max(0, FREE_SCAN_LIMIT - newCcCount);
+    const remaining = Math.max(0, FREE_SCAN_LIMIT - (newCcCount as number));
     return res.json({ ok: true, plan: "free", scansToday: newCcCount, remaining });
   } catch (err: any) {
     console.error("[freemium] record error:", err?.message);
