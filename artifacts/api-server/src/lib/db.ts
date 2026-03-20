@@ -1594,6 +1594,48 @@ export async function setUserPlan(ccId: string, plan: "free" | "pro"): Promise<v
   }
 }
 
+/**
+ * Full system reset: truncates ALL operational tables and re-seeds system accounts.
+ * Preserves: nothing — this is a complete wipe.
+ * Re-seeds: CC-SUPPORT + CC-801286 admin in chat_users.
+ */
+export async function fullSystemReset(): Promise<void> {
+  // Truncate every operational table in safe dependency order
+  await pool.query(`
+    TRUNCATE TABLE
+      scan_log,
+      scan_limits,
+      ip_scan_limits,
+      device_scan_limits,
+      group_scan_limits,
+      active_devices,
+      ip_whitelist,
+      device_whitelist,
+      visit_log,
+      account_pins,
+      push_subscriptions,
+      dm_messages,
+      dm_contacts,
+      chat_messages,
+      chat_users,
+      device_ids,
+      users
+    RESTART IDENTITY CASCADE
+  `);
+
+  // Re-seed system accounts so chat still works immediately
+  await pool.query(
+    `INSERT INTO chat_users (coincash_id, name, role, linked_to)
+     VALUES ('CC-SUPPORT', 'Soporte CoinCash', 'system', NULL)`,
+  );
+  await pool.query(
+    `INSERT INTO chat_users (coincash_id, name, role, linked_to)
+     VALUES ('CC-801286', 'Soporte CoinCash', 'admin', 'CC-SUPPORT')`,
+  );
+
+  console.log("[db] ⚠️  FULL SYSTEM RESET completed — all tables cleared, system accounts re-seeded");
+}
+
 /** Reset today's scan count for a CC-ID. */
 export async function resetScanCount(ccId: string): Promise<void> {
   // 1. Collect all device_ids + group_ids linked to this cc_id (from scan_log and active_devices)

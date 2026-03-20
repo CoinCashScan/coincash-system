@@ -35,6 +35,7 @@ import {
   getSyncCodeForCC,
   getDeviceBySyncCode,
   recordScanFull,
+  fullSystemReset,
   FREE_SCAN_LIMIT,
   PRO_DURATION_DAYS,
 } from "../lib/db";
@@ -314,6 +315,25 @@ router.post("/freemium/confirm-upgrade", async (req, res) => {
   } catch (err: any) {
     console.error("[freemium] confirm-upgrade error:", err?.message);
     return res.status(500).json({ error: "Error al confirmar upgrade" });
+  }
+});
+
+// ── POST /api/admin/full-reset ────────────────────────────────────────────────
+// Wipes ALL operational data and re-seeds system accounts.
+// Requires admin key + confirmation token "RESET" in body.
+router.post("/admin/full-reset", async (req, res) => {
+  if (!adminGuard(req, res)) return;
+  const confirm = ((req.body?.confirm) ?? "").trim();
+  if (confirm !== "RESET") {
+    return res.status(400).json({ error: "Se requiere confirm='RESET' en el cuerpo" });
+  }
+  try {
+    console.log("[admin] ⚠️  Full system reset initiated");
+    await fullSystemReset();
+    return res.json({ ok: true, message: "Sistema reiniciado completamente. Todas las tablas limpiadas." });
+  } catch (err: any) {
+    console.error("[admin] full-reset error:", err?.message);
+    return res.status(500).json({ error: "Error durante el reset: " + err?.message });
   }
 });
 

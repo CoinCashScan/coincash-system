@@ -305,9 +305,10 @@ function AdminPanelInner() {
   const [showOnlyActive,  setShowOnlyActive]  = useState(true);
 
   // ── Reset stats state ─────────────────────────────────────────────────────
-  const [resetModal, setResetModal] = useState<null | "visitas" | "scans">(null);
-  const [resetBusy,  setResetBusy]  = useState(false);
-  const [resetToast, setResetToast] = useState<string | null>(null);
+  const [resetModal,      setResetModal]      = useState<null | "visitas" | "scans" | "fullReset">(null);
+  const [resetBusy,       setResetBusy]       = useState(false);
+  const [resetToast,      setResetToast]      = useState<string | null>(null);
+  const [fullResetInput,  setFullResetInput]  = useState("");
 
   const showToast = (msg: string) => {
     setResetToast(msg);
@@ -318,19 +319,34 @@ function AdminPanelInner() {
     if (!resetModal) return;
     setResetBusy(true);
     try {
-      const endpoint = resetModal === "visitas" ? "visit" : "scan";
-      const res = await fetch(`${API}/${endpoint}/reset?key=${SCAN_KEY}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Error del servidor");
-      // Refresh the relevant stats immediately
-      if (resetModal === "visitas") {
-        await fetchVisitStats();
+      if (resetModal === "fullReset") {
+        if (fullResetInput.trim() !== "RESET") return;
+        const res = await fetch(`${API}/admin/full-reset`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key: SCAN_KEY, confirm: "RESET" }),
+        });
+        if (!res.ok) throw new Error("Error del servidor");
+        setResetModal(null);
+        setFullResetInput("");
+        // Refresh all panels
+        await Promise.all([fetchVisitStats(), fetchScanStats(), fetchPlanesData(), fetchDeviceStats()]);
+        showToast("✓ Sistema reiniciado completamente");
       } else {
-        await fetchScanStats();
+        const endpoint = resetModal === "visitas" ? "visit" : "scan";
+        const res = await fetch(`${API}/${endpoint}/reset?key=${SCAN_KEY}`, { method: "DELETE" });
+        if (!res.ok) throw new Error("Error del servidor");
+        if (resetModal === "visitas") {
+          await fetchVisitStats();
+        } else {
+          await fetchScanStats();
+        }
+        setResetModal(null);
+        showToast("Estadísticas reiniciadas correctamente");
       }
-      setResetModal(null);
-      showToast("Estadísticas reiniciadas correctamente");
     } catch {
       setResetModal(null);
+      setFullResetInput("");
       showToast("Error al reiniciar. Intenta de nuevo.");
     } finally {
       setResetBusy(false);
@@ -807,13 +823,26 @@ function AdminPanelInner() {
                 <button
                   onClick={() => setResetModal("scans")}
                   style={{
-                    marginBottom: 14, width: "100%", padding: "8px 0",
+                    marginBottom: 8, width: "100%", padding: "8px 0",
                     background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.1)",
                     borderRadius: 10, color: "#6B7280", fontSize: 11, fontWeight: 600,
                     cursor: "pointer", fontFamily: "inherit", letterSpacing: "0.03em",
                   }}
                 >
                   🗑 Reiniciar estadísticas de scans
+                </button>
+
+                {/* Reset Total del Sistema */}
+                <button
+                  onClick={() => { setFullResetInput(""); setResetModal("fullReset"); }}
+                  style={{
+                    marginBottom: 14, width: "100%", padding: "9px 0",
+                    background: "rgba(239,68,68,0.07)", border: "1px solid rgba(239,68,68,0.3)",
+                    borderRadius: 10, color: "#EF4444", fontSize: 11, fontWeight: 700,
+                    cursor: "pointer", fontFamily: "inherit", letterSpacing: "0.03em",
+                  }}
+                >
+                  🔴 Reset Total del Sistema
                 </button>
 
                 {/* Total / Hoy */}
@@ -1407,49 +1436,103 @@ function AdminPanelInner() {
         {resetModal && (
           <div style={{
             position: "fixed", inset: 0, zIndex: 9999,
-            background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)",
+            background: "rgba(0,0,0,0.75)", backdropFilter: "blur(6px)",
             display: "flex", alignItems: "center", justifyContent: "center",
             padding: "24px",
           }}>
             <div style={{
-              background: "#111827", border: "1px solid rgba(255,255,255,0.1)",
-              borderRadius: 18, padding: "24px 20px", maxWidth: 320, width: "100%",
-              boxShadow: "0 24px 80px rgba(0,0,0,0.6)",
+              background: "#111827",
+              border: `1px solid ${resetModal === "fullReset" ? "rgba(239,68,68,0.4)" : "rgba(255,255,255,0.1)"}`,
+              borderRadius: 18, padding: "24px 20px", maxWidth: 340, width: "100%",
+              boxShadow: "0 24px 80px rgba(0,0,0,0.7)",
             }}>
-              <div style={{ fontSize: 28, textAlign: "center", marginBottom: 12 }}>⚠️</div>
-              <p style={{ margin: "0 0 8px", fontSize: 14, fontWeight: 700, color: "#F9FAFB", textAlign: "center" }}>
-                ¿Reiniciar estadísticas?
-              </p>
-              <p style={{ margin: "0 0 20px", fontSize: 12, color: "#9CA3AF", textAlign: "center", lineHeight: 1.5 }}>
-                ¿Seguro que deseas reiniciar todas las estadísticas de{" "}
-                <strong style={{ color: "#E5E7EB" }}>{resetModal}</strong>?
-                Esta acción no se puede deshacer.
-              </p>
-              <div style={{ display: "flex", gap: 10 }}>
-                <button
-                  onClick={() => setResetModal(null)}
-                  disabled={resetBusy}
-                  style={{
-                    flex: 1, padding: "10px 0", border: "1px solid rgba(255,255,255,0.12)",
-                    borderRadius: 10, background: "rgba(255,255,255,0.05)",
-                    color: "#9CA3AF", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
-                  }}
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={handleReset}
-                  disabled={resetBusy}
-                  style={{
-                    flex: 1, padding: "10px 0", border: "none",
-                    borderRadius: 10, background: resetBusy ? "rgba(239,68,68,0.3)" : "#EF4444",
-                    color: "#fff", fontSize: 13, fontWeight: 700, cursor: resetBusy ? "not-allowed" : "pointer",
-                    fontFamily: "inherit",
-                  }}
-                >
-                  {resetBusy ? "Reiniciando…" : "Confirmar"}
-                </button>
-              </div>
+              {resetModal === "fullReset" ? (
+                <>
+                  <div style={{ fontSize: 32, textAlign: "center", marginBottom: 10 }}>🔴</div>
+                  <p style={{ margin: "0 0 6px", fontSize: 15, fontWeight: 800, color: "#EF4444", textAlign: "center" }}>
+                    RESET TOTAL DEL SISTEMA
+                  </p>
+                  <p style={{ margin: "0 0 16px", fontSize: 12, color: "#9CA3AF", textAlign: "center", lineHeight: 1.6 }}>
+                    Esto borrará <strong style={{ color: "#F9FAFB" }}>absolutamente todo</strong>:<br/>
+                    scans, visitas, usuarios, planes PRO, chat, dispositivos.<br/>
+                    <span style={{ color: "#EF4444", fontWeight: 700 }}>Esta acción es irreversible.</span>
+                  </p>
+                  <p style={{ margin: "0 0 8px", fontSize: 11, color: "#6B7280", textAlign: "center" }}>
+                    Escribe <strong style={{ color: "#E5E7EB", letterSpacing: "0.1em" }}>RESET</strong> para confirmar
+                  </p>
+                  <input
+                    value={fullResetInput}
+                    onChange={e => setFullResetInput(e.target.value)}
+                    placeholder="Escribe RESET aquí"
+                    autoFocus
+                    style={{
+                      width: "100%", boxSizing: "border-box",
+                      padding: "10px 14px", marginBottom: 14,
+                      background: "rgba(239,68,68,0.08)",
+                      border: `1px solid ${fullResetInput === "RESET" ? "#EF4444" : "rgba(239,68,68,0.25)"}`,
+                      borderRadius: 10, color: "#F9FAFB", fontSize: 14,
+                      fontFamily: "monospace", fontWeight: 700, textAlign: "center",
+                      outline: "none",
+                    }}
+                  />
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <button
+                      onClick={() => { setResetModal(null); setFullResetInput(""); }}
+                      disabled={resetBusy}
+                      style={{
+                        flex: 1, padding: "10px 0", border: "1px solid rgba(255,255,255,0.12)",
+                        borderRadius: 10, background: "rgba(255,255,255,0.05)",
+                        color: "#9CA3AF", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+                      }}
+                    >Cancelar</button>
+                    <button
+                      onClick={handleReset}
+                      disabled={resetBusy || fullResetInput !== "RESET"}
+                      style={{
+                        flex: 1, padding: "10px 0", border: "none", borderRadius: 10,
+                        background: fullResetInput !== "RESET" ? "rgba(239,68,68,0.2)" : resetBusy ? "rgba(239,68,68,0.4)" : "#EF4444",
+                        color: fullResetInput !== "RESET" ? "rgba(255,255,255,0.3)" : "#fff",
+                        fontSize: 13, fontWeight: 800,
+                        cursor: fullResetInput !== "RESET" || resetBusy ? "not-allowed" : "pointer",
+                        fontFamily: "inherit", letterSpacing: "0.03em",
+                      }}
+                    >{resetBusy ? "Reiniciando…" : "CONFIRMAR RESET"}</button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: 28, textAlign: "center", marginBottom: 12 }}>⚠️</div>
+                  <p style={{ margin: "0 0 8px", fontSize: 14, fontWeight: 700, color: "#F9FAFB", textAlign: "center" }}>
+                    ¿Reiniciar estadísticas?
+                  </p>
+                  <p style={{ margin: "0 0 20px", fontSize: 12, color: "#9CA3AF", textAlign: "center", lineHeight: 1.5 }}>
+                    ¿Seguro que deseas reiniciar todas las estadísticas de{" "}
+                    <strong style={{ color: "#E5E7EB" }}>{resetModal}</strong>?
+                    Esta acción no se puede deshacer.
+                  </p>
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <button
+                      onClick={() => setResetModal(null)}
+                      disabled={resetBusy}
+                      style={{
+                        flex: 1, padding: "10px 0", border: "1px solid rgba(255,255,255,0.12)",
+                        borderRadius: 10, background: "rgba(255,255,255,0.05)",
+                        color: "#9CA3AF", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+                      }}
+                    >Cancelar</button>
+                    <button
+                      onClick={handleReset}
+                      disabled={resetBusy}
+                      style={{
+                        flex: 1, padding: "10px 0", border: "none",
+                        borderRadius: 10, background: resetBusy ? "rgba(239,68,68,0.3)" : "#EF4444",
+                        color: "#fff", fontSize: 13, fontWeight: 700,
+                        cursor: resetBusy ? "not-allowed" : "pointer", fontFamily: "inherit",
+                      }}
+                    >{resetBusy ? "Reiniciando…" : "Confirmar"}</button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )}
