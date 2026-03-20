@@ -40,18 +40,20 @@ function computeRiskScore(d: ReportData): number {
   return score;
 }
 
-function getRiskStatusConfig(score: number): { msg: string; color: string; Icon: React.ElementType } {
-  if (score >= 80) return { msg: "Riesgo severo detectado",      color: DANGER,  Icon: ShieldAlert    };
-  if (score >= 60) return { msg: "Riesgos detectados",           color: ORANGE,  Icon: ShieldAlert    };
-  if (score >= 30) return { msg: "Actividad moderada detectada", color: AMBER,   Icon: AlertTriangle  };
-  return            { msg: "No se detectaron riesgos",           color: GREEN,   Icon: CheckCircle2   };
-}
-
-function getScoreCardConfig(score: number): { label: string; color: string; bg: string } {
+function getScoreCardConfig(score: number, isLatente = false): { label: string; color: string; bg: string } {
   if (score >= 80) return { label: "Riesgo severo",    color: DANGER,  bg: "linear-gradient(135deg,#200808 0%,#120404 100%)" };
   if (score >= 60) return { label: "Riesgo detectado", color: ORANGE,  bg: "linear-gradient(135deg,#1E0E04 0%,#120804 100%)" };
+  if (isLatente)   return { label: "Riesgo latente",   color: AMBER,   bg: "linear-gradient(135deg,#1A1000 0%,#0F0A00 100%)" };
   if (score >= 30) return { label: "Riesgo moderado",  color: AMBER,   bg: "linear-gradient(135deg,#1A1000 0%,#0F0A00 100%)" };
   return             { label: "Bajo riesgo",           color: GREEN,   bg: "linear-gradient(135deg,#001A0E 0%,#000F08 100%)" };
+}
+
+function getRiskStatusConfig(score: number, isLatente = false): { msg: string; color: string; Icon: React.ElementType } {
+  if (score >= 80) return { msg: "Riesgo severo detectado",           color: DANGER,  Icon: ShieldAlert  };
+  if (score >= 60) return { msg: "Riesgos detectados",                color: ORANGE,  Icon: ShieldAlert  };
+  if (isLatente)   return { msg: "Riesgo latente detectado",          color: AMBER,   Icon: AlertTriangle };
+  if (score >= 30) return { msg: "Actividad moderada detectada",      color: AMBER,   Icon: AlertTriangle };
+  return             { msg: "Patrones de riesgo potencial detectados", color: GREEN,   Icon: CheckCircle2 };
 }
 
 // ── Predicción de riesgo de congelamiento ────────────────────────────────────
@@ -64,24 +66,28 @@ interface CongelamientoInput {
 }
 interface CongelamientoResult {
   score: number;
-  nivel: "ALTO" | "MEDIO" | "BAJO";
+  nivel: "ALTO" | "MEDIO" | "LATENTE" | "BAJO";
   motivos: string[];
 }
 function calcularRiesgoCongelamiento(data: Partial<CongelamientoInput>): CongelamientoResult {
-  const walletAgeDays      = data.walletAgeDays      ?? 0;
-  const totalVolume        = data.totalVolume        ?? 0;
-  const txCount            = data.txCount            ?? 0;
-  const exchangeInteraction = data.exchangeInteraction ?? 0;
+  const walletAgeDays        = data.walletAgeDays        ?? 0;
+  const totalVolume          = data.totalVolume          ?? 0;
+  const txCount              = data.txCount              ?? 0;
+  const exchangeInteraction  = data.exchangeInteraction  ?? 0;
   const isLinkedToRiskWallet = data.isLinkedToRiskWallet ?? false;
 
   let score = 0;
   const motivos: string[] = [];
 
-  if (walletAgeDays > 0 && walletAgeDays < 30) {
+  const esReciente      = walletAgeDays > 0 && walletAgeDays < 30;
+  const esAltoVolumen   = totalVolume > 50_000;
+  const sinExchanges    = exchangeInteraction === 0;
+
+  if (esReciente) {
     score += 25;
     motivos.push("Wallet reciente (menos de 30 días)");
   }
-  if (totalVolume > 50_000) {
+  if (esAltoVolumen) {
     score += 25;
     motivos.push("Alto volumen de USDT");
   }
@@ -89,7 +95,7 @@ function calcularRiesgoCongelamiento(data: Partial<CongelamientoInput>): Congela
     score += 15;
     motivos.push("Alta actividad transaccional");
   }
-  if (exchangeInteraction === 0) {
+  if (sinExchanges) {
     score += 15;
     motivos.push("Sin interacción con exchanges");
   }
@@ -98,14 +104,18 @@ function calcularRiesgoCongelamiento(data: Partial<CongelamientoInput>): Congela
     motivos.push("Conexión con wallets riesgosas");
   }
 
+  // ── Categoría "Riesgo latente": combinación de perfil sospechoso sin señales directas
+  const esLatente = esReciente && esAltoVolumen && sinExchanges && !isLinkedToRiskWallet;
+
   let nivel: CongelamientoResult["nivel"] = "BAJO";
-  if (score >= 80) nivel = "ALTO";
-  else if (score >= 50) nivel = "MEDIO";
+  if (score >= 80)      nivel = "ALTO";
+  else if (score >= 50) nivel = esLatente ? "LATENTE" : "MEDIO";
+  else if (esLatente)   nivel = "LATENTE";
 
   return { score, nivel, motivos };
 }
 
-function getRiskMessage(score: number): { nivel: string; mensaje: string; color: string; icono: string } {
+function getRiskMessage(score: number, isLatente = false): { nivel: string; mensaje: string; color: string; icono: string } {
   if (score >= 81) return {
     nivel:   "Severo",
     mensaje: "Patrones asociados a riesgo detectados. Se recomienda evitar interactuar con esta dirección.",
@@ -118,6 +128,12 @@ function getRiskMessage(score: number): { nivel: string; mensaje: string; color:
     color:   ORANGE,
     icono:   "🚨",
   };
+  if (isLatente) return {
+    nivel:   "Latente",
+    mensaje: "Perfil de riesgo latente detectado. Combinación de wallet reciente, alto volumen y ausencia de exchanges aumenta el riesgo de congelamiento futuro.",
+    color:   AMBER,
+    icono:   "🔆",
+  };
   if (score >= 31) return {
     nivel:   "Moderado",
     mensaje: "Actividad inusual detectada. Se recomienda precaución antes de interactuar con esta dirección.",
@@ -126,7 +142,7 @@ function getRiskMessage(score: number): { nivel: string; mensaje: string; color:
   };
   return {
     nivel:   "Bajo",
-    mensaje: "Sin señales relevantes de riesgo. No se detecta actividad inusual en los datos analizados.",
+    mensaje: "Patrones de riesgo potencial detectados. Posible congelamiento futuro si el perfil evoluciona.",
     color:   GREEN,
     icono:   "✅",
   };
@@ -1109,8 +1125,37 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
             >
               {/* ── Premium Risk Score Card ── */}
               {(() => {
-                const score = computeRiskScore(reportData);
-                const { label, color, bg } = getScoreCardConfig(score);
+                // ── Priority: BLACKLIST/FROZEN > FREEZE PREDICTION >= 60 > RAW
+                const isConfirmedFrozen = !!(reportData.isFrozen || reportData.isInBlacklistDB);
+                const rawScore = computeRiskScore(reportData);
+
+                // Compute freeze prediction only when not confirmed frozen
+                let freeze: CongelamientoResult | null = null;
+                if (!isConfirmedFrozen) {
+                  const dateCreated = reportData.dateCreated ?? Date.now();
+                  const walletAgeDays = (Date.now() - dateCreated) / 86_400_000;
+                  freeze = calcularRiesgoCongelamiento({
+                    walletAgeDays,
+                    totalVolume:         (reportData.totalInUSDT  + reportData.totalOutUSDT) || 0,
+                    txCount:              reportData.totalTx              || 0,
+                    exchangeInteraction:  reportData.exchangeInteractions || 0,
+                    isLinkedToRiskWallet: (reportData.suspiciousInteractions || 0) > 0,
+                  });
+                }
+
+                const isLatente = !isConfirmedFrozen && freeze?.nivel === "LATENTE";
+
+                // Unified final score
+                let score: number;
+                if (isConfirmedFrozen) {
+                  score = 100;
+                } else if (freeze && freeze.score >= 60) {
+                  score = Math.max(rawScore, freeze.score);
+                } else {
+                  score = rawScore;
+                }
+
+                const { label, color, bg } = getScoreCardConfig(score, isLatente);
                 return (
                   <div className="rounded-3xl p-6 mb-4"
                     style={{
@@ -1161,7 +1206,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
 
                     {/* ── Risk recommendation inline ── */}
                     {(() => {
-                      const rm = getRiskMessage(score);
+                      const rm = getRiskMessage(score, isLatente);
                       return (
                         <div
                           className="rounded-xl px-4 py-3 mb-5"
