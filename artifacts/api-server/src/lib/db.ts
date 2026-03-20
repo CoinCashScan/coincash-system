@@ -933,19 +933,22 @@ function quickHash(text: string): string {
 }
 
 /**
- * Look up an existing CC-ID for the given fingerprint / UA+IP combination.
+ * Look up an existing CC-ID for the given browser fingerprint.
  * If none found, generate a fresh CC-ID and persist it.
  *
  * Resolution order:
- *  1. Fingerprint hash (primary) — unique per browser/device profile.
- *  2. hint = CC-ID already stored in the client's localStorage — lets a
- *     returning user keep their account even after clearing fingerprint data.
- *  3. Brand-new device — generate a fresh CC-ID.
+ *  1. Fingerprint hash — each browser/device has a unique canvas fingerprint.
+ *     This correctly distinguishes two phones even on the same WiFi.
+ *  2. Brand-new device — generate a fresh CC-ID (always FREE).
  *
- * NOTE: IP is intentionally NOT used for identity resolution.
- * Using IP as primary key caused all devices on the same WiFi/network to
- * share a single CC-ID, spreading PRO status across unrelated devices.
- * IP is only used as metadata for auditing purposes.
+ * SECURITY NOTES:
+ * - IP is NOT used for identity (caused all devices on same WiFi to share a CC-ID).
+ * - The localStorage hint is NOT used to claim existing CC-IDs.
+ *   Allowing hint recovery let any device that had a CC-ID in localStorage
+ *   inherit the plan (including PRO) of another device, which is the root
+ *   cause of the "PRO leaking to a second phone" bug.
+ * - PRO users who need to recover their account on a new browser use the
+ *   sync code system (GET /freemium/synccode + POST /freemium/sync).
  */
 export async function identifyDevice(
   fpHash: string,
@@ -956,8 +959,7 @@ export async function identifyDevice(
   const uaHash = quickHash(ua);
   const safeIp = (ip ?? "").split(",")[0].trim().slice(0, 64);
 
-  // 1. Primary lookup: fingerprint — each browser/device has a unique canvas fingerprint.
-  //    This correctly distinguishes two phones even on the same WiFi.
+  // 1. Fingerprint lookup — sole identity signal.
   if (fpHash) {
     const row = await pool.query<{ cc_id: string }>(
       `SELECT cc_id FROM device_ids WHERE fp_hash = $1 LIMIT 1`,
@@ -965,7 +967,6 @@ export async function identifyDevice(
     );
     if (row.rows.length > 0) {
       const ccId = row.rows[0].cc_id;
-      // Update metadata (UA + IP) for audit trail — does NOT affect identity
       pool.query(
         `UPDATE device_ids SET ua_hash = $2, last_ip = $3 WHERE fp_hash = $1`,
         [fpHash, uaHash, safeIp],
@@ -974,29 +975,7 @@ export async function identifyDevice(
     }
   }
 
-  // 2. hint = CC-ID from localStorage — use it if valid and user row exists.
-  //    This lets a returning PRO user keep their account after clearing cookies/storage.
-  if (hint && /^CC-\d{6}$/.test(hint)) {
-    const row = await pool.query<{ coincash_id: string }>(
-      `SELECT coincash_id FROM users WHERE coincash_id = $1 LIMIT 1`,
-      [hint],
-    );
-    if (row.rows.length > 0) {
-      // Register this fingerprint → hint CC-ID mapping for future lookups
-      if (fpHash) {
-        pool.query(
-          `INSERT INTO device_ids (fp_hash, cc_id, ua_hash, last_ip)
-           VALUES ($1, $2, $3, $4)
-           ON CONFLICT (fp_hash) DO UPDATE
-             SET cc_id = EXCLUDED.cc_id, ua_hash = EXCLUDED.ua_hash, last_ip = EXCLUDED.last_ip`,
-          [fpHash, hint, uaHash, safeIp],
-        ).catch(() => {});
-      }
-      return hint;
-    }
-  }
-
-  // 3. Brand-new device — generate a fresh CC-ID.
+  // 2. Brand-new device — always starts FREE.
   let ccId = generateCoinCashId();
 
   // Ensure user row exists in users table
