@@ -462,17 +462,18 @@ function Scene7() {
           <img 
             src={logoIcon}
             alt="CoinCash Logo" 
-            className="w-full h-full object-contain drop-shadow-[0_0_30px_rgba(0,102,255,0.8)]"
+            className="w-full h-full object-contain drop-shadow-[0_0_30px_rgba(0,220,160,0.7)]"
           />
         </motion.div>
         
         <motion.h1 
-          className="font-display text-5xl md:text-6xl font-extrabold tracking-tight text-white mb-10"
+          className="font-display text-5xl md:text-6xl font-extrabold tracking-tight mb-10"
+          style={{ letterSpacing: "-0.02em" }}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.5 }}
         >
-          CoinCash
+          <span style={{ color: "#FFFFFF" }}>Coin</span><span style={{ color: "#00DCA0" }}>Cash</span>
         </motion.h1>
 
         <motion.h2 
