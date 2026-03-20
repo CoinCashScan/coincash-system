@@ -34,6 +34,7 @@ import {
   identifyDevice,
   getSyncCodeForCC,
   getDeviceBySyncCode,
+  recordScanFull,
   FREE_SCAN_LIMIT,
   PRO_DURATION_DAYS,
 } from "../lib/db";
@@ -207,6 +208,18 @@ router.post("/freemium/record", async (req, res) => {
       increments.push(incrementDeviceScanCount(deviceId));
     }
     const [newCcCount] = await Promise.all(increments);
+
+    // Also write to scan_log so the admin device panel can see this device.
+    // Fire-and-forget — don't block the response on this.
+    recordScanFull({
+      wallet:      "",
+      country:     "Desconocido",
+      countryCode: "xx",
+      deviceId:    deviceId || "",
+      ccId:        ccId,
+      ipHash:      groupId,
+      planType:    "free",
+    }).catch(() => {});
 
     const remaining = Math.max(0, FREE_SCAN_LIMIT - (newCcCount as number));
     return res.json({ ok: true, plan: "free", scansToday: newCcCount, remaining });

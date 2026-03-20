@@ -880,25 +880,65 @@ export async function getDeviceStats(): Promise<{
   abusiveIpHashes: string[];
 }> {
   const [deviceRes, ipShareRes, activeRes] = await Promise.all([
+    // Unified source: scan_log rows (rich) UNION group_scan_limits rows not yet in scan_log today.
+    // This ensures devices that scanned via the old /freemium/record endpoint are also visible.
     pool.query(`
       SELECT
         device_id,
         cc_id,
         ip_hash,
-        COUNT(*)                                                          AS total_scans,
-        COUNT(*) FILTER (WHERE scanned_at >= DATE_TRUNC('day', NOW()))   AS scans_today,
-        MAX(scanned_at)                                                   AS last_seen
-      FROM scan_log
-      WHERE device_id != ''
-      GROUP BY device_id, cc_id, ip_hash
+        total_scans,
+        scans_today,
+        last_seen
+      FROM (
+        -- Source 1: scan_log (always preferred — has wallet + country data)
+        SELECT
+          sl.device_id,
+          sl.cc_id,
+          sl.ip_hash,
+          COUNT(*)                                                            AS total_scans,
+          COUNT(*) FILTER (WHERE sl.scanned_at >= DATE_TRUNC('day', NOW()))  AS scans_today,
+          MAX(sl.scanned_at)                                                  AS last_seen
+        FROM scan_log sl
+        WHERE sl.device_id != ''
+        GROUP BY sl.device_id, sl.cc_id, sl.ip_hash
+
+        UNION ALL
+
+        -- Source 2: group_scan_limits for today — catches devices that used the legacy
+        -- /freemium/record endpoint which doesn't write to scan_log.
+        -- Exclude devices already covered by Source 1.
+        SELECT
+          g.device_id,
+          COALESCE(ad.cc_id, '') AS cc_id,
+          g.group_id             AS ip_hash,
+          g.scan_count::bigint   AS total_scans,
+          g.scan_count::bigint   AS scans_today,
+          NOW()                  AS last_seen
+        FROM group_scan_limits g
+        LEFT JOIN active_devices ad
+          ON ad.device_id = g.device_id
+        WHERE g.scan_date = CURRENT_DATE
+          AND g.device_id != ''
+          AND g.device_id NOT IN (
+            SELECT DISTINCT device_id FROM scan_log
+            WHERE device_id != ''
+          )
+      ) combined
       ORDER BY scans_today DESC, last_seen DESC
       LIMIT 300
     `),
     pool.query<{ ip_hash: string; device_count: string }>(`
       SELECT ip_hash, COUNT(DISTINCT device_id) AS device_count
-      FROM scan_log
-      WHERE device_id != '' AND ip_hash != ''
-        AND scanned_at >= DATE_TRUNC('day', NOW())
+      FROM (
+        SELECT device_id, ip_hash FROM scan_log
+        WHERE device_id != '' AND ip_hash != ''
+          AND scanned_at >= DATE_TRUNC('day', NOW())
+        UNION ALL
+        SELECT device_id, group_id AS ip_hash FROM group_scan_limits
+        WHERE device_id != '' AND group_id != ''
+          AND scan_date = CURRENT_DATE
+      ) combined
       GROUP BY ip_hash
       HAVING COUNT(DISTINCT device_id) > 1
     `),
