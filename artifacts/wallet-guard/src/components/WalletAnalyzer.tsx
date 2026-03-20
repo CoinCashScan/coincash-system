@@ -908,10 +908,29 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                 </p>
                 <div style={{ display: "flex", gap: 8 }}>
                   <button
-                    onClick={() => {
-                      // scroll to payment card — reuse normal limit flow
-                      setFreemium(f => ({ ...f, blocked: "limit_reached" }));
+                    onClick={async () => {
+                      if (!ccId) return;
+                      const status = await fetchFreemiumStatus(ccId);
+                      // If backend no longer blocks (admin whitelisted IP), clear evasion state
+                      if (status.canScan) {
+                        setFreemium(status);
+                      } else {
+                        // Still blocked — try a scan call to get the real reason
+                        setFreemium(f => ({ ...f, blocked: "limit_reached" }));
+                      }
                     }}
+                    style={{
+                      padding: "11px 14px", borderRadius: 12,
+                      border: "1px solid rgba(255,255,255,0.12)",
+                      background: "rgba(255,255,255,0.05)",
+                      color: "rgba(255,255,255,0.6)", fontSize: 13, fontWeight: 600,
+                      cursor: "pointer", fontFamily: "inherit",
+                    }}
+                  >
+                    🔄 Reintentar
+                  </button>
+                  <button
+                    onClick={() => setFreemium(f => ({ ...f, blocked: "limit_reached" }))}
                     style={{
                       flex: 1, padding: "11px 0", borderRadius: 12, border: "none",
                       background: "linear-gradient(135deg,#00FFC6,#00B8A9)",

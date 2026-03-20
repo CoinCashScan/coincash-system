@@ -907,12 +907,20 @@ function AdminPanelInner() {
                           )}
                         </div>
                         <div style={{ display: "flex", gap: 5, flexShrink: 0, alignItems: "center" }}>
-                          {d.possible_evasion && (
-                            <span style={{
-                              fontSize: 9, fontWeight: 700, padding: "2px 7px", borderRadius: 10,
-                              background: "rgba(255,77,79,0.15)", border: "1px solid rgba(255,77,79,0.4)", color: "#FF4D4F",
-                            }}>⚠️ EVASIÓN</span>
-                          )}
+                          {d.possible_evasion && (() => {
+                            const isWL = whitelist.some(w => w.ipHash === d.ip_hash);
+                            return isWL ? (
+                              <span style={{
+                                fontSize: 9, fontWeight: 700, padding: "2px 7px", borderRadius: 10,
+                                background: "rgba(0,255,198,0.12)", border: "1px solid rgba(0,255,198,0.35)", color: "#00FFC6",
+                              }}>✅ LEGÍTIMA</span>
+                            ) : (
+                              <span style={{
+                                fontSize: 9, fontWeight: 700, padding: "2px 7px", borderRadius: 10,
+                                background: "rgba(255,77,79,0.15)", border: "1px solid rgba(255,77,79,0.4)", color: "#FF4D4F",
+                              }}>⚠️ EVASIÓN</span>
+                            );
+                          })()}
                           <span style={{
                             fontSize: 9, fontWeight: 700, padding: "2px 7px", borderRadius: 10,
                             background: "rgba(0,255,198,0.08)", border: "1px solid rgba(0,255,198,0.2)", color: "#00FFC6",
