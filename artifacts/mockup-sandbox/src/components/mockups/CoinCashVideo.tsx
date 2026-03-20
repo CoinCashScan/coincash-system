@@ -267,7 +267,7 @@ function Scene3() {
         className="mb-10 text-center"
       >
         <h2 className="font-display text-4xl md:text-5xl font-bold leading-tight">
-          <span className="text-[#0066FF] text-glow-blue">CoinCash</span> analiza<br/>
+          <span style={{ color: "#FFFFFF" }}>Coin</span><span style={{ color: "#00DCA0" }}>Cash</span> analiza<br/>
           wallets en segundos
         </h2>
       </motion.div>
