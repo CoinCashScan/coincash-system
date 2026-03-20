@@ -1596,10 +1596,61 @@ export async function setUserPlan(ccId: string, plan: "free" | "pro"): Promise<v
 
 /** Reset today's scan count for a CC-ID. */
 export async function resetScanCount(ccId: string): Promise<void> {
-  await pool.query(
-    `DELETE FROM scan_limits WHERE cc_id = $1 AND scan_date = CURRENT_DATE`,
-    [ccId],
-  );
+  // 1. Collect all device_ids + group_ids linked to this cc_id (from scan_log and active_devices)
+  const [logDevices, activeDevices] = await Promise.all([
+    pool.query<{ device_id: string; ip_hash: string }>(
+      `SELECT DISTINCT device_id, ip_hash
+       FROM scan_log
+       WHERE cc_id = $1 AND scanned_at >= DATE_TRUNC('day', NOW())
+         AND device_id != ''`,
+      [ccId],
+    ),
+    pool.query<{ device_id: string; group_id: string }>(
+      `SELECT device_id, group_id FROM active_devices WHERE cc_id = $1`,
+      [ccId],
+    ),
+  ]);
+
+  // Build unique sets
+  const deviceIds = new Set<string>();
+  const groupDevicePairs: { groupId: string; deviceId: string }[] = [];
+
+  for (const r of logDevices.rows) {
+    deviceIds.add(r.device_id);
+    if (r.ip_hash) groupDevicePairs.push({ groupId: r.ip_hash, deviceId: r.device_id });
+  }
+  for (const r of activeDevices.rows) {
+    deviceIds.add(r.device_id);
+    if (r.group_id) groupDevicePairs.push({ groupId: r.group_id, deviceId: r.device_id });
+  }
+
+  const resets: Promise<any>[] = [
+    // 2. Reset cc_id counter (scan_limits)
+    pool.query(
+      `DELETE FROM scan_limits WHERE cc_id = $1 AND scan_date = CURRENT_DATE`,
+      [ccId],
+    ),
+  ];
+
+  // 3. Reset group scan counters for each (group_id, device_id) pair
+  for (const { groupId, deviceId } of groupDevicePairs) {
+    resets.push(pool.query(
+      `DELETE FROM group_scan_limits
+       WHERE group_id = $1 AND device_id = $2 AND scan_date = CURRENT_DATE`,
+      [groupId, deviceId],
+    ));
+  }
+
+  // 4. Reset individual device counters
+  for (const deviceId of deviceIds) {
+    resets.push(pool.query(
+      `DELETE FROM device_scan_limits WHERE device_id = $1 AND scan_date = CURRENT_DATE`,
+      [deviceId],
+    ));
+  }
+
+  await Promise.all(resets);
+  console.log(`[resetScanCount] Reset scans for ${ccId}: ${deviceIds.size} devices, ${groupDevicePairs.length} group entries`);
 }
 
 /** Ensure a user row exists, then record an upgrade request. */
