@@ -1352,23 +1352,23 @@ export async function getAllUsersWithPlans(): Promise<{
     coincash_id: string; email: string; plan: string;
     scans_today: string; upgrade_requested_at: string | null;
   }>(`
-    -- Include all registered users PLUS any cc_ids that have scanned
-    -- but never got an ensureFreemiumUser() call (historical gap)
-    SELECT COALESCE(u.coincash_id, sl_any.cc_id)  AS coincash_id,
-           COALESCE(u.email, '')                    AS email,
-           COALESCE(u.plan, 'free')                 AS plan,
-           COALESCE(sl.scan_count, 0)               AS scans_today,
+    -- Union: all registered users + any cc_ids from scan history not yet registered
+    WITH all_ids AS (
+      SELECT coincash_id AS cc_id FROM users WHERE coincash_id != 'CC-SUPPORT'
+      UNION
+      SELECT cc_id FROM scan_limits  WHERE cc_id IS NOT NULL AND cc_id != '' AND cc_id != 'CC-SUPPORT'
+      UNION
+      SELECT cc_id FROM scan_log     WHERE cc_id IS NOT NULL AND cc_id != '' AND cc_id != 'CC-SUPPORT'
+    )
+    SELECT a.cc_id                               AS coincash_id,
+           COALESCE(u.email, '')                  AS email,
+           COALESCE(u.plan, 'free')               AS plan,
+           COALESCE(sl.scan_count, 0)             AS scans_today,
            u.upgrade_requested_at
-      FROM (
-        -- All distinct cc_ids that have appeared in scan_limits (covers historical scans)
-        SELECT DISTINCT cc_id FROM scan_limits WHERE cc_id IS NOT NULL AND cc_id != ''
-        UNION
-        SELECT DISTINCT cc_id FROM scan_log   WHERE cc_id IS NOT NULL AND cc_id != ''
-      ) sl_any
-      LEFT JOIN users u        ON u.coincash_id = sl_any.cc_id
-      LEFT JOIN scan_limits sl ON sl.cc_id = sl_any.cc_id AND sl.scan_date = CURRENT_DATE
-     WHERE COALESCE(u.coincash_id, sl_any.cc_id) != 'CC-SUPPORT'
-     ORDER BY u.upgrade_requested_at DESC NULLS LAST, coincash_id
+      FROM all_ids a
+      LEFT JOIN users u        ON u.coincash_id = a.cc_id
+      LEFT JOIN scan_limits sl ON sl.cc_id = a.cc_id AND sl.scan_date = CURRENT_DATE
+     ORDER BY u.upgrade_requested_at DESC NULLS LAST, a.cc_id
   `);
   return res.rows.map((r) => ({
     ccId:               r.coincash_id,
