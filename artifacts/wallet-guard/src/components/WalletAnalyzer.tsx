@@ -332,20 +332,17 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
   const [rateLimitMessage, setRateLimitMessage] = useState<string | null>(null);
   const [copiedAddress, setCopiedAddress] = useState(false);
   const [freemium, setFreemium] = useState<FreemiumStatus>(DEFAULT_FREEMIUM);
+  const [freemiumLoaded, setFreemiumLoaded] = useState(false);
   const [upgradeEmail,     setUpgradeEmail]     = useState("");
   const [upgradeRequested, setUpgradeRequested] = useState(false);
   const [upgradeSending,   setUpgradeSending]   = useState(false);
   const [qrDataUrl,        setQrDataUrl]        = useState<string>("");
   const [copiedAddr,       setCopiedAddr]       = useState(false);
-  const [ccId, setCcId] = useState<string>(() => localStorage.getItem("coincash-cc-id") ?? "");
-  const resultRef = useRef<HTMLDivElement>(null);
-
-  // Resolve persistent identity (fingerprint-backed) on mount
-  useEffect(() => {
-    resolveIdentity().then((id) => {
-      if (id !== ccId) setCcId(id);
-    });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // ccId starts empty — always resolved from the API/fingerprint, never trusted blindly from localStorage
+  const [ccId, setCcId] = useState<string>("");
+  const resolvedRef = useRef(false);
+  const pollRef     = useRef<ReturnType<typeof setInterval> | null>(null);
+  const resultRef   = useRef<HTMLDivElement>(null);
 
   const PRO_ADDRESS = "TM2cRRegda1gQAQY9hGbg6DMscN7okNVA1";
 
@@ -357,22 +354,50 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
     }).then(setQrDataUrl).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Load freemium status whenever ccId is known, then poll every 30s
+  // ── Identity + plan resolution (single authoritative flow) ──────────────────
+  // Step 1: resolve the persistent CC-ID (fingerprint-backed, DB-verified)
+  // Step 2: immediately fetch THIS user's plan from the DB using that CC-ID
+  // Step 3: start a 30-second poll to catch admin activations
+  // The plan is NEVER read from localStorage — it always comes from the API.
   useEffect(() => {
-    if (!ccId) return;
-    fetchFreemiumStatus(ccId).then(setFreemium);
-    const t = setInterval(() => {
-      fetchFreemiumStatus(ccId).then((s) => {
+    let cancelled = false;
+
+    async function boot() {
+      const id = await resolveIdentity();
+      if (cancelled) return;
+
+      setCcId(id);
+      resolvedRef.current = true;
+
+      // First load — fetch plan tied to THIS user_id from the DB
+      const status = await fetchFreemiumStatus(id);
+      if (cancelled) return;
+
+      setFreemium(status);
+      setFreemiumLoaded(true);
+
+      // Poll every 30 s to pick up admin-activated PRO upgrades
+      pollRef.current = setInterval(async () => {
+        const s = await fetchFreemiumStatus(id);
         setFreemium((prev) => {
           if (prev.plan !== "pro" && s.plan === "pro") {
             setUpgradeRequested(false);
           }
           return s;
         });
-      });
-    }, 30_000);
-    return () => clearInterval(t);
-  }, [ccId]); // eslint-disable-line react-hooks/exhaustive-deps
+      }, 30_000);
+    }
+
+    boot().catch(() => {
+      // Network failure on boot — mark as loaded with defaults so UI isn't stuck
+      setFreemiumLoaded(true);
+    });
+
+    return () => {
+      cancelled = true;
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sync daily stats from localStorage on mount
   useEffect(() => {
@@ -714,6 +739,8 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
     }
 
     // ── Freemium gate: check limit before running the scan ──────────────────
+    // Must have the plan confirmed from DB before allowing any scan
+    if (!freemiumLoaded || !ccId) return;
     const latestStatus = await fetchFreemiumStatus(ccId);
     setFreemium(latestStatus);
     if (!latestStatus.canScan) return; // UI already shows the limit message
@@ -817,8 +844,8 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
 
         {/* Action buttons — stacked */}
         <div className="flex flex-col gap-2.5">
-          {/* ── Freemium limit → Payment card ──────────────────────────────── */}
-          {!freemium.canScan && (
+          {/* ── Freemium limit → Payment card (only after plan confirmed from DB) ── */}
+          {freemiumLoaded && !freemium.canScan && (
             <div style={{
               background: "rgba(11,18,32,0.95)",
               border: "1px solid rgba(0,255,198,0.2)",
@@ -972,18 +999,25 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
             id="wg-analyze-btn"
             type="button"
             onClick={() => handleAnalyze()}
-            disabled={isAnalyzing || !freemium.canScan}
+            disabled={isAnalyzing || !freemiumLoaded || !freemium.canScan}
             className="flex w-full items-center justify-center gap-2 rounded-xl py-3.5 px-4 text-sm font-bold text-white transition-opacity active:opacity-80"
             style={{
-              background: !freemium.canScan
-                ? "rgba(255,75,79,0.2)"
-                : isAnalyzing
-                  ? "rgba(59,130,246,0.4)"
-                  : "linear-gradient(135deg,#2563EB 0%,#1D4ED8 100%)",
-              boxShadow: isAnalyzing || !freemium.canScan ? "none" : "0 0 20px rgba(59,130,246,0.35)",
-              cursor: !freemium.canScan ? "not-allowed" : "pointer",
+              background: !freemiumLoaded
+                ? "rgba(255,255,255,0.07)"
+                : !freemium.canScan
+                  ? "rgba(255,75,79,0.2)"
+                  : isAnalyzing
+                    ? "rgba(59,130,246,0.4)"
+                    : "linear-gradient(135deg,#2563EB 0%,#1D4ED8 100%)",
+              boxShadow: isAnalyzing || !freemium.canScan || !freemiumLoaded ? "none" : "0 0 20px rgba(59,130,246,0.35)",
+              cursor: !freemiumLoaded || !freemium.canScan ? "not-allowed" : "pointer",
             }}>
-            {isAnalyzing ? (
+            {!freemiumLoaded ? (
+              <>
+                <Loader2 style={{ width: 16, height: 16 }} className="animate-spin" />
+                <span>Verificando plan...</span>
+              </>
+            ) : isAnalyzing ? (
               <>
                 <Loader2 style={{ width: 16, height: 16 }} className="animate-spin" />
                 <span>Analizando...</span>
@@ -1016,8 +1050,8 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
           </button>
         </div>
 
-        {/* Subtle scan counter for free users */}
-        {freemium.plan === "free" && freemium.canScan && (
+        {/* Subtle scan counter for free users — only shown once plan is confirmed from DB */}
+        {freemiumLoaded && freemium.plan === "free" && freemium.canScan && (
           <p style={{ textAlign: "center", fontSize: 10, color: "rgba(255,255,255,0.28)", marginTop: 8 }}>
             <span style={{ color: freemium.remaining === 1 ? "#F59E0B" : "rgba(0,255,198,0.55)", fontWeight: 600 }}>
               {freemium.remaining ?? (freemium.limit - freemium.scansToday)}
