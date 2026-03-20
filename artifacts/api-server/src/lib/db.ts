@@ -891,7 +891,7 @@ export async function getDeviceStats(): Promise<{
         scans_today,
         last_seen
       FROM (
-        -- Source 1: scan_log (always preferred — has wallet + country data)
+        -- Source 1: scan_log with device_id — richest data
         SELECT
           sl.device_id,
           sl.cc_id,
@@ -905,9 +905,22 @@ export async function getDeviceStats(): Promise<{
 
         UNION ALL
 
-        -- Source 2: group_scan_limits for today — catches devices that used the legacy
-        -- /freemium/record endpoint which doesn't write to scan_log.
-        -- Exclude devices already covered by Source 1.
+        -- Source 2: scan_log rows with empty device_id — grouped by cc_id
+        -- Covers users whose client didn't send a deviceId
+        SELECT
+          ''        AS device_id,
+          sl.cc_id,
+          sl.ip_hash,
+          COUNT(*)                                                            AS total_scans,
+          COUNT(*) FILTER (WHERE sl.scanned_at >= DATE_TRUNC('day', NOW()))  AS scans_today,
+          MAX(sl.scanned_at)                                                  AS last_seen
+        FROM scan_log sl
+        WHERE sl.device_id = '' AND sl.cc_id != ''
+        GROUP BY sl.cc_id, sl.ip_hash
+
+        UNION ALL
+
+        -- Source 3: group_scan_limits today — catches old /freemium/record clients
         SELECT
           g.device_id,
           COALESCE(ad.cc_id, '') AS cc_id,
@@ -916,13 +929,32 @@ export async function getDeviceStats(): Promise<{
           g.scan_count::bigint   AS scans_today,
           NOW()                  AS last_seen
         FROM group_scan_limits g
-        LEFT JOIN active_devices ad
-          ON ad.device_id = g.device_id
+        LEFT JOIN active_devices ad ON ad.device_id = g.device_id
         WHERE g.scan_date = CURRENT_DATE
           AND g.device_id != ''
-          AND g.device_id NOT IN (
-            SELECT DISTINCT device_id FROM scan_log
-            WHERE device_id != ''
+          AND g.device_id NOT IN (SELECT DISTINCT device_id FROM scan_log WHERE device_id != '')
+
+        UNION ALL
+
+        -- Source 4: scan_limits by cc_id — last resort fallback for users with no device/IP tracking
+        -- Catches cc_ids that scanned but appear in none of the above
+        SELECT
+          ''             AS device_id,
+          sl.cc_id,
+          ''             AS ip_hash,
+          sl.scan_count::bigint AS total_scans,
+          sl.scan_count::bigint AS scans_today,
+          NOW()          AS last_seen
+        FROM scan_limits sl
+        WHERE sl.scan_date = CURRENT_DATE
+          AND sl.cc_id != ''
+          AND sl.cc_id NOT IN (
+            SELECT DISTINCT cc_id FROM scan_log WHERE cc_id != ''
+          )
+          AND sl.cc_id NOT IN (
+            SELECT DISTINCT COALESCE(ad.cc_id, '') FROM group_scan_limits g
+            LEFT JOIN active_devices ad ON ad.device_id = g.device_id
+            WHERE g.scan_date = CURRENT_DATE AND g.device_id != ''
           )
       ) combined
       ORDER BY scans_today DESC, last_seen DESC
