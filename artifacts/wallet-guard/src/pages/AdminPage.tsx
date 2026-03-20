@@ -268,8 +268,18 @@ function AdminPanelInner() {
   const [loadingConv, setLoadingConv]     = useState(false);
   const [unreadUsers, setUnreadUsers]     = useState<Set<string>>(new Set());
   const [adminTab, setAdminTab]           = useState<"mensajes" | "visitantes" | "scans" | "planes">("mensajes");
+  const [scansSubTab, setScansSubTab]     = useState<"actividad" | "dispositivos">("actividad");
   const [visitStats, setVisitStats]       = useState<VisitStats>({ total: 0, countries: [] });
   const [scanStats,  setScanStats]        = useState<ScanStats | null>(null);
+
+  // ── Device stats ────────────────────────────────────────────────────────────
+  interface DeviceStat {
+    device_id: string; cc_id: string; ip_hash: string;
+    total_scans: number; scans_today: number; last_seen: string;
+    possible_evasion: boolean;
+  }
+  interface DeviceStats { devices: DeviceStat[]; abusiveIpHashes: string[]; }
+  const [deviceStats, setDeviceStats] = useState<DeviceStats | null>(null);
 
   // ── Planes state ─────────────────────────────────────────────────────────
   interface PlanUser { ccId: string; email: string; plan: string; scansToday: number; upgradeRequestedAt: string | null; }
@@ -378,11 +388,23 @@ function AdminPanelInner() {
     } catch { /* ignore */ }
   }, []);
 
+  const fetchDeviceStats = useCallback(async () => {
+    try {
+      const res  = await fetch(`${API}/scan/devices?key=${SCAN_KEY}`);
+      const data = await res.json();
+      if (Array.isArray(data.devices)) setDeviceStats(data);
+    } catch { /* ignore */ }
+  }, []);
+
   useEffect(() => {
     fetchScanStats();
-    const t = setInterval(fetchScanStats, 10000);
+    fetchDeviceStats();
+    const t = setInterval(() => {
+      fetchScanStats();
+      fetchDeviceStats();
+    }, 15000);
     return () => clearInterval(t);
-  }, [fetchScanStats]);
+  }, [fetchScanStats, fetchDeviceStats]);
 
   const { connected, messages, sendMessage, loadHistory } = useChatSocket(ADMIN_CC_ID);
 
@@ -679,9 +701,25 @@ function AdminPanelInner() {
         {/* ── Scan analytics panel ── */}
         {adminTab === "scans" && (
           <div style={{ flex: 1, overflowY: "auto", padding: "16px" }}>
+            {/* Subtabs */}
+            <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+              {(["actividad", "dispositivos"] as const).map(tab => (
+                <button key={tab} onClick={() => setScansSubTab(tab)} style={{
+                  flex: 1, padding: "7px 0", borderRadius: 10, border: "1px solid",
+                  cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 700,
+                  letterSpacing: "0.03em",
+                  background: scansSubTab === tab ? "rgba(0,255,198,0.12)" : "rgba(255,255,255,0.03)",
+                  borderColor: scansSubTab === tab ? "rgba(0,255,198,0.4)" : "rgba(255,255,255,0.08)",
+                  color: scansSubTab === tab ? "#00FFC6" : "#6B7280",
+                }}>
+                  {tab === "actividad" ? "📋 Actividad" : "📱 Dispositivos"}
+                </button>
+              ))}
+            </div>
+
             {!scanStats ? (
               <div style={{ textAlign: "center", padding: "40px", color: "#4B5563" }}>Cargando…</div>
-            ) : (
+            ) : scansSubTab === "actividad" ? (
               <>
                 {/* Reset button — Scans */}
                 <button
@@ -767,6 +805,91 @@ function AdminPanelInner() {
                             IP: {r.ip_hash.slice(0, 10)}…
                           </span>
                         )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              /* ── Dispositivos por deviceId ── */
+              <>
+                {/* Alerta de evasión */}
+                {deviceStats && deviceStats.abusiveIpHashes.length > 0 && (
+                  <div style={{
+                    marginBottom: 12, padding: "10px 14px", borderRadius: 10,
+                    background: "rgba(255,77,79,0.08)", border: "1px solid rgba(255,77,79,0.3)",
+                    fontSize: 12, color: "#FF4D4F", fontWeight: 600,
+                  }}>
+                    ⚠️ {deviceStats.abusiveIpHashes.length} IP{deviceStats.abusiveIpHashes.length > 1 ? "s" : ""} compartida{deviceStats.abusiveIpHashes.length > 1 ? "s" : ""} por múltiples dispositivos hoy — posible evasión de límite
+                  </div>
+                )}
+
+                {/* Resumen */}
+                {deviceStats && (
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+                    {[
+                      { label: "Dispositivos únicos", value: deviceStats.devices.length },
+                      { label: "Con posible evasión", value: deviceStats.devices.filter(d => d.possible_evasion).length },
+                    ].map((item, i) => (
+                      <div key={i} style={{
+                        background: i === 1 && item.value > 0 ? "rgba(255,77,79,0.08)" : "rgba(0,255,198,0.06)",
+                        border: `1px solid ${i === 1 && item.value > 0 ? "rgba(255,77,79,0.25)" : "rgba(0,255,198,0.15)"}`,
+                        borderRadius: 12, padding: "12px 14px",
+                      }}>
+                        <div style={{ fontSize: 10, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>{item.label}</div>
+                        <div style={{ fontSize: 28, fontWeight: 800, fontFamily: "monospace", lineHeight: 1, color: i === 1 && item.value > 0 ? "#FF4D4F" : "#00FFC6" }}>{item.value}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Lista de dispositivos */}
+                <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 12, overflow: "hidden" }}>
+                  <div style={{ padding: "10px 14px 6px", fontSize: 10, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.08em", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                    Dispositivos ({deviceStats?.devices.length ?? 0}) — ordenados por scans hoy
+                  </div>
+                  {!deviceStats || deviceStats.devices.length === 0 ? (
+                    <div style={{ padding: "24px 14px", fontSize: 13, color: "#4B5563", textAlign: "center" }}>Sin datos de dispositivos aún</div>
+                  ) : deviceStats.devices.map((d, i) => (
+                    <div key={i} style={{
+                      padding: "10px 14px", borderBottom: "1px solid rgba(255,255,255,0.04)",
+                      background: d.possible_evasion ? "rgba(255,77,79,0.04)" : "transparent",
+                    }}>
+                      {/* Row 1: IDs + evasion flag */}
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 5 }}>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                          {d.cc_id && (
+                            <span style={{ fontSize: 11, fontFamily: "monospace", fontWeight: 700, color: "#00FFC6" }}>{d.cc_id}</span>
+                          )}
+                          {d.device_id && (
+                            <span style={{ fontSize: 10, fontFamily: "monospace", color: "#9CA3AF" }}>
+                              DEV:{d.device_id.startsWith("CC-") ? d.device_id : d.device_id.slice(0, 8) + "…"}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ display: "flex", gap: 5, flexShrink: 0, alignItems: "center" }}>
+                          {d.possible_evasion && (
+                            <span style={{
+                              fontSize: 9, fontWeight: 700, padding: "2px 7px", borderRadius: 10,
+                              background: "rgba(255,77,79,0.15)", border: "1px solid rgba(255,77,79,0.4)", color: "#FF4D4F",
+                            }}>⚠️ EVASIÓN</span>
+                          )}
+                          <span style={{
+                            fontSize: 9, fontWeight: 700, padding: "2px 7px", borderRadius: 10,
+                            background: "rgba(0,255,198,0.08)", border: "1px solid rgba(0,255,198,0.2)", color: "#00FFC6",
+                          }}>
+                            {d.scans_today} hoy · {d.total_scans} total
+                          </span>
+                        </div>
+                      </div>
+                      {/* Row 2: IP hash + last seen */}
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        {d.ip_hash ? (
+                          <span style={{ fontSize: 9, fontFamily: "monospace", color: "#4B5563" }}>
+                            IP:{d.ip_hash.slice(0, 12)}…
+                          </span>
+                        ) : <span />}
+                        <span style={{ fontSize: 10, color: "#6B7280" }}>{timeAgo(d.last_seen)}</span>
                       </div>
                     </div>
                   ))}

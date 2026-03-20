@@ -10,6 +10,7 @@ import { createHash }  from "crypto";
 import {
   recordScanFull,
   getScanStats,
+  getDeviceStats,
   resetScanStats,
   getUserPlan,
   getScanCountToday,
@@ -171,6 +172,22 @@ router.get("/scan/stats", async (req, res) => {
   if (key !== ADMIN_KEY) return res.status(401).json({ error: "Unauthorized" });
   const stats = await getScanStats();
   res.json(stats);
+});
+
+// ── GET /api/scan/devices ─────────────────────────────────────────────────────
+// Returns per-device scan statistics grouped by deviceId.
+// Includes IP-sharing abuse detection: devices sharing the same IP hash today
+// are flagged as possible_evasion = true.
+router.get("/scan/devices", async (req, res) => {
+  const key = req.query.key as string | undefined;
+  if (key !== ADMIN_KEY) return res.status(401).json({ error: "Unauthorized" });
+  try {
+    const data = await getDeviceStats();
+    res.json(data);
+  } catch (err: any) {
+    console.error("[scan/devices]", err?.message);
+    res.status(500).json({ error: "Error fetching device stats" });
+  }
 });
 
 // ── GET /api/scan/block-log ────────────────────────────────────────────────────

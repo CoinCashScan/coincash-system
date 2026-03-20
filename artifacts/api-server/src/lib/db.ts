@@ -865,6 +865,60 @@ export async function getScanStats(): Promise<{
   };
 }
 
+/**
+ * Return per-device scan statistics, with IP-sharing abuse detection.
+ * Devices that share an IP hash with other devices are flagged as possible evasion.
+ */
+export async function getDeviceStats(): Promise<{
+  devices: {
+    device_id: string; cc_id: string; ip_hash: string;
+    total_scans: number; scans_today: number; last_seen: string;
+    possible_evasion: boolean;
+  }[];
+  abusiveIpHashes: string[];
+}> {
+  const deviceRes = await pool.query(`
+    SELECT
+      device_id,
+      cc_id,
+      ip_hash,
+      COUNT(*)                                                          AS total_scans,
+      COUNT(*) FILTER (WHERE scanned_at >= DATE_TRUNC('day', NOW()))   AS scans_today,
+      MAX(scanned_at)                                                   AS last_seen
+    FROM scan_log
+    WHERE device_id != ''
+    GROUP BY device_id, cc_id, ip_hash
+    ORDER BY scans_today DESC, last_seen DESC
+    LIMIT 300
+  `);
+
+  // Find IP hashes shared by more than one distinct deviceId (potential evasion)
+  const ipShareRes = await pool.query<{ ip_hash: string; device_count: string }>(`
+    SELECT ip_hash, COUNT(DISTINCT device_id) AS device_count
+    FROM scan_log
+    WHERE device_id != '' AND ip_hash != ''
+      AND scanned_at >= DATE_TRUNC('day', NOW())
+    GROUP BY ip_hash
+    HAVING COUNT(DISTINCT device_id) > 1
+  `);
+
+  const abusiveIpHashes = ipShareRes.rows.map(r => r.ip_hash);
+  const abusiveSet = new Set(abusiveIpHashes);
+
+  return {
+    devices: deviceRes.rows.map(r => ({
+      device_id:        r.device_id,
+      cc_id:            r.cc_id,
+      ip_hash:          r.ip_hash,
+      total_scans:      parseInt(r.total_scans, 10),
+      scans_today:      parseInt(r.scans_today, 10),
+      last_seen:        r.last_seen,
+      possible_evasion: abusiveSet.has(r.ip_hash),
+    })),
+    abusiveIpHashes,
+  };
+}
+
 // ── Freemium ──────────────────────────────────────────────────────────────────
 
 export const FREE_SCAN_LIMIT = 5;
