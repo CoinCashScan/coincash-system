@@ -1287,12 +1287,77 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
               {/* ── Full analysis report ── */}
               <TronAnalysisReport reportData={reportData} />
 
-              {/* ── Predicción de riesgo de congelamiento ── */}
+              {/* ── Predicción / Estado de congelamiento ── */}
               {(() => {
-                const dateCreated        = reportData?.dateCreated        ?? Date.now();
-                const totalInUSDT        = reportData?.totalInUSDT        ?? 0;
-                const totalOutUSDT       = reportData?.totalOutUSDT       ?? 0;
-                const totalTx            = reportData?.totalTx            ?? 0;
+                // ── PRIORIDAD MÁXIMA: Wallet ya congelada o en blacklist ─────────
+                const isConfirmedFrozen = !!(reportData?.isFrozen || reportData?.isInBlacklistDB);
+
+                if (isConfirmedFrozen) {
+                  // Mostrar estado confirmado — NO mostrar predicción
+                  return (
+                    <div style={{
+                      margin: "16px 0 0",
+                      borderRadius: 16,
+                      border: "1px solid rgba(255,77,79,0.4)",
+                      background: "rgba(255,77,79,0.07)",
+                      overflow: "hidden",
+                    }}>
+                      {/* Header */}
+                      <div style={{
+                        padding: "14px 18px",
+                        borderBottom: "1px solid rgba(255,77,79,0.25)",
+                        display: "flex", alignItems: "center", justifyContent: "space-between",
+                      }}>
+                        <span style={{ fontSize: 14, fontWeight: 700, color: "rgba(255,255,255,0.92)" }}>
+                          🔴 Estado de congelamiento
+                        </span>
+                        <span style={{
+                          padding: "3px 12px", borderRadius: 20,
+                          background: "#ff4d4f", color: "#fff",
+                          fontSize: 12, fontWeight: 800, letterSpacing: "0.06em",
+                        }}>
+                          SEVERO
+                        </span>
+                      </div>
+
+                      {/* Cuerpo confirmado */}
+                      <div style={{ padding: "16px 18px", display: "flex", flexDirection: "column", gap: 10 }}>
+                        <div style={{
+                          display: "flex", alignItems: "center", justifyContent: "space-between",
+                          background: "rgba(255,77,79,0.12)", borderRadius: 10, padding: "10px 14px",
+                        }}>
+                          <span style={{ fontSize: 13, color: "rgba(255,255,255,0.75)" }}>Estado</span>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: "#ff4d4f" }}>
+                            🔒 Wallet bloqueada
+                          </span>
+                        </div>
+                        <div style={{
+                          display: "flex", alignItems: "center", justifyContent: "space-between",
+                          background: "rgba(255,77,79,0.12)", borderRadius: 10, padding: "10px 14px",
+                        }}>
+                          <span style={{ fontSize: 13, color: "rgba(255,255,255,0.75)" }}>Riesgo de congelamiento</span>
+                          <span style={{
+                            fontFamily: "monospace", fontSize: 13, fontWeight: 800, color: "#ff4d4f",
+                          }}>
+                            100/100 — Confirmado
+                          </span>
+                        </div>
+                        <p style={{
+                          margin: 0, fontSize: 12, color: "rgba(255,255,255,0.5)",
+                          lineHeight: 1.55,
+                        }}>
+                          Esta wallet {reportData?.isFrozen ? "está congelada en la red TRON" : "figura en la lista negra de TRON"}. Los fondos pueden estar bloqueados permanentemente. No interactúes con ella.
+                        </p>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // ── Solo calcular predicción si NO está congelada ni en blacklist ─
+                const dateCreated          = reportData?.dateCreated          ?? Date.now();
+                const totalInUSDT          = reportData?.totalInUSDT          ?? 0;
+                const totalOutUSDT         = reportData?.totalOutUSDT         ?? 0;
+                const totalTx              = reportData?.totalTx              ?? 0;
                 const exchangeInteractions = reportData?.exchangeInteractions ?? 0;
                 const suspiciousInteractions = reportData?.suspiciousInteractions ?? 0;
 
@@ -1333,14 +1398,14 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                       display: "flex", alignItems: "center", justifyContent: "space-between",
                     }}>
                       <span style={{ fontSize: 14, fontWeight: 700, color: "rgba(255,255,255,0.92)" }}>
-                        ⚠️ Riesgo de congelamiento
+                        ⚠️ Predicción de congelamiento
                       </span>
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                         <span style={{
                           fontFamily: "monospace", fontSize: 13, fontWeight: 700,
                           color: "rgba(255,255,255,0.45)",
                         }}>
-                          Score: {prediccion.score}/100
+                          {prediccion.score}/100
                         </span>
                         <span style={{
                           padding: "3px 12px", borderRadius: 20,
