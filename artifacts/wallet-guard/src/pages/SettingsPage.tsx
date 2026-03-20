@@ -356,11 +356,33 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
           </div>
 
           <div style={{ flex: 1 }}>
-            <p style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>
-              {photoStored ? "Foto de perfil" : "Cambiar foto"}
-            </p>
-            <p style={{ margin: "4px 0 0", fontSize: 12, color: MUTED }}>
-              Toca el círculo para elegir una imagen
+            {/* CC-ID prominently shown in the user section */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+              <span style={{ fontFamily: "monospace", fontSize: 18, fontWeight: 800, color: TEAL, letterSpacing: "0.04em" }}>
+                {ccId}
+              </span>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(ccId).then(() => {
+                    setCopiedId(true);
+                    setTimeout(() => setCopiedId(false), 2000);
+                  });
+                }}
+                style={{
+                  background: copiedId ? "rgba(0,255,198,0.15)" : "rgba(255,255,255,0.06)",
+                  border: `1px solid ${copiedId ? "rgba(0,255,198,0.4)" : BORDER}`,
+                  borderRadius: 6, padding: "4px 9px", cursor: "pointer",
+                  display: "flex", alignItems: "center", gap: 4,
+                  color: copiedId ? TEAL : MUTED, fontSize: 11, fontWeight: 600,
+                  transition: "all 0.2s", flexShrink: 0,
+                }}
+              >
+                {copiedId ? <Check size={11} /> : <Copy size={11} />}
+                {copiedId ? "Copiado" : "Copiar"}
+              </button>
+            </div>
+            <p style={{ margin: 0, fontSize: 12, color: MUTED }}>
+              Toca el círculo para cambiar tu foto
             </p>
             {uploading && <p style={{ margin: "4px 0 0", fontSize: 12, color: TEAL }}>Subiendo...</p>}
 
@@ -369,7 +391,7 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
               <button
                 onClick={removePhoto}
                 style={{
-                  marginTop: 10, display: "flex", alignItems: "center", gap: 6,
+                  marginTop: 8, display: "flex", alignItems: "center", gap: 6,
                   background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)",
                   borderRadius: 8, padding: "6px 12px", cursor: "pointer",
                   color: "rgb(248,113,113)", fontSize: 12, fontWeight: 600,
@@ -382,41 +404,6 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
           </div>
         </div>
         <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handlePhotoChange} />
-      </div>
-
-      {/* CC ID card */}
-      <div style={{ margin: "16px 16px 0", padding: "14px 16px", background: CARD, borderRadius: 12, border: `1px solid ${BORDER}` }}>
-        <p style={{ margin: "0 0 8px", fontSize: 11, color: MUTED, textTransform: "uppercase", letterSpacing: "0.08em" }}>Tu ID de usuario</p>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{
-            flex: 1, fontFamily: "monospace", fontSize: 20, fontWeight: 700,
-            color: TEAL, letterSpacing: "0.05em",
-          }}>
-            {ccId}
-          </span>
-          <button
-            onClick={() => {
-              navigator.clipboard.writeText(ccId).then(() => {
-                setCopiedId(true);
-                setTimeout(() => setCopiedId(false), 2000);
-              });
-            }}
-            style={{
-              background: copiedId ? "rgba(0,255,198,0.15)" : "rgba(255,255,255,0.06)",
-              border: `1px solid ${copiedId ? "rgba(0,255,198,0.4)" : BORDER}`,
-              borderRadius: 8, padding: "6px 12px", cursor: "pointer",
-              display: "flex", alignItems: "center", gap: 5,
-              color: copiedId ? TEAL : MUTED, fontSize: 12, fontWeight: 600,
-              transition: "all 0.2s",
-            }}
-          >
-            {copiedId ? <Check size={13} /> : <Copy size={13} />}
-            {copiedId ? "Copiado" : "Copiar"}
-          </button>
-        </div>
-        <p style={{ margin: "6px 0 0", fontSize: 11, color: "rgba(255,255,255,0.22)", lineHeight: 1.4 }}>
-          Usa este ID para identificar tu cuenta o contactar soporte.
-        </p>
       </div>
 
       {/* ── CoinCash PRO upgrade card ── */}
