@@ -216,7 +216,7 @@ interface ReportData {
   totalTx: number;
   txIn: number;
   txOut: number;
-  dateCreated: number;
+  dateCreated: number | null;
   lastTxDate: number;
   totalInUSDT: number;
   totalOutUSDT: number;
@@ -596,13 +596,13 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
     let accountType  = "Normal";
     let balanceTRX   = 0;
     let balanceUSDT  = 0;
-    let dateCreated: number = Date.now();
+    let dateCreated: number | null = null;
     let detectedViaTRC20 = false;
 
     if (account) {
       // Standard path — account found via TronGrid /v1/accounts
       accountType = accountTypeMap[account.account_type as number] ?? "Normal";
-      dateCreated = account.create_time || Date.now();
+      dateCreated = account.create_time > 0 ? account.create_time : null;
 
       // TRX balance: account.balance is in SUN (1 TRX = 1,000,000 SUN)
       balanceTRX = typeof account.balance === "number" ? account.balance / 1_000_000 : 0;
@@ -646,6 +646,21 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
       txOut   = txOutData.meta?.total  || 0;   // sender   = wallet → outgoing (red)
     } catch {
       // Non-fatal; continue with zeros
+    }
+
+    // 2b. Fetch oldest confirmed transaction for real wallet creation date
+    try {
+      const firstTxData = await tronGridFetch(
+        `${TRON_PROXY}/v1/accounts/${encodeURIComponent(addr)}/transactions?limit=1&order_by=block_timestamp,asc&only_confirmed=true`
+      );
+      const firstTx = firstTxData?.data?.[0];
+      if (firstTx?.block_timestamp > 0) {
+        const firstTs: number = firstTx.block_timestamp;
+        // Take the earliest of account.create_time and first tx timestamp
+        dateCreated = dateCreated ? Math.min(dateCreated, firstTs) : firstTs;
+      }
+    } catch {
+      // Non-fatal; keep account.create_time as dateCreated
     }
 
     // 3. Latest TRC20 transfer timestamp for lastTxDate
@@ -1488,7 +1503,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                 const isFrozenWallet = !!(reportData.isFrozen);
 
                 // ── Predicción de congelamiento ───────────────────────────────
-                const walletAgeDays = (Date.now() - (reportData.dateCreated ?? Date.now())) / 86_400_000;
+                const walletAgeDays = reportData.dateCreated ? (Date.now() - reportData.dateCreated) / 86_400_000 : 0;
                 const adicional = calcularAnalisisAdicional({
                   walletAgeDays,
                   totalVolume:         (reportData.totalInUSDT + reportData.totalOutUSDT) || 0,
@@ -1804,8 +1819,8 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                 }
 
                 // ── Predicción de congelamiento ───────────────────────────────
-                const dateCreated = reportData?.dateCreated ?? Date.now();
-                const walletAgeDays = (Date.now() - dateCreated) / 86_400_000;
+                const dateCreated = reportData?.dateCreated ?? null;
+                const walletAgeDays = dateCreated ? (Date.now() - dateCreated) / 86_400_000 : 0;
                 const riskyCountLocal = reportData?.suspiciousInteractions ?? 0;
                 const adicional = calcularAnalisisAdicional({
                   walletAgeDays:        walletAgeDays || 0,
@@ -1915,7 +1930,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
         // Derived display values
         const freezeNivel = risk.level;
         const adicionalShare = calcularAnalisisAdicional({
-          walletAgeDays: (Date.now() - (reportData.dateCreated ?? Date.now())) / 86_400_000,
+          walletAgeDays: reportData.dateCreated ? (Date.now() - reportData.dateCreated) / 86_400_000 : 0,
           totalVolume:         (reportData.totalInUSDT  + reportData.totalOutUSDT) || 0,
           txCount:              reportData.totalTx              || 0,
           exchangeInteraction:  reportData.exchangeInteractions || 0,
@@ -2030,7 +2045,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
             </div>
 
             {/* ── STATS ROW ── */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 7, marginBottom: 14 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 7, marginBottom: 7 }}>
               {[
                 { label: "TX TOTAL",  value: String(reportData.totalTx) },
                 { label: "USDT IN",   value: `$${(reportData.totalInUSDT  || 0).toFixed(0)}` },
@@ -2047,6 +2062,41 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                 </div>
               ))}
             </div>
+
+            {/* ── WALLET CREATION DATE ROW ── */}
+            {(() => {
+              const dc = reportData.dateCreated;
+              const createdDate = dc ? new Date(dc) : null;
+              const diffDays = dc ? Math.floor((Date.now() - dc) / 86_400_000) : null;
+              const fechaStr = createdDate
+                ? createdDate.toLocaleDateString("es-ES", { day: "2-digit", month: "2-digit", year: "numeric" })
+                : null;
+              return (
+                <div style={{
+                  background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)",
+                  borderRadius: 9, padding: "8px 13px", marginBottom: 14,
+                  display: "flex", justifyContent: "space-between", alignItems: "center",
+                }}>
+                  <div style={{ fontSize: 8, color: "rgba(255,255,255,0.28)", fontWeight: 700, letterSpacing: "0.13em" }}>
+                    WALLET CREADA
+                  </div>
+                  {fechaStr && diffDays !== null ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 11, color: "#F3F4F6", fontWeight: 600 }}>
+                        hace {diffDays} {diffDays === 1 ? "día" : "días"}
+                      </span>
+                      <span style={{ fontSize: 9, color: "rgba(255,255,255,0.28)", fontFamily: "monospace" }}>
+                        {fechaStr}
+                      </span>
+                    </div>
+                  ) : (
+                    <span style={{ fontSize: 11, color: "rgba(255,255,255,0.3)", fontStyle: "italic" }}>
+                      Sin actividad registrada
+                    </span>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* ── DIVIDER ── */}
             <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", margin: "0 0 14px" }} />
