@@ -1726,10 +1726,13 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                 if (riskScore > 100)       riskScore = 100;
                 if (riskScore === 0)       riskScore = 5;
 
-                const riskScoreLabel = riskScore >= 90 ? "Riesgo crítico"
-                                     : riskScore >= 60 ? "Riesgo alto"
-                                     : riskScore >= 30 ? "Riesgo moderado"
-                                     :                   "Riesgo bajo";
+                const riskScoreLabel = (isBlacklisted || isFrozenWallet)            ? "Riesgo máximo"
+                                     : (hasRiskyInteractions && riskScore >= 65) ? "Riesgo crítico extremo"
+                                     : hasRiskyInteractions                      ? "Riesgo crítico"
+                                     : riskScore >= 65                           ? "Riesgo crítico"
+                                     : riskScore >= 40                           ? "Riesgo alto"
+                                     : riskScore >= 20                           ? "Riesgo moderado"
+                                     :                                             "Riesgo bajo";
 
                 // ── Color, fondo y mensaje según estado ───────────────────────
                 const color = showRedAlert        ? DANGER
