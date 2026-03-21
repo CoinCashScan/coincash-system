@@ -1010,13 +1010,36 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
   const isPro  = freemiumLoaded && (freemium.plan === "pro" || freemium.plan === "basico");
   const planLabel = freemium.plan === "basico" ? "BÁSICO" : freemium.plan === "pro" ? "PRO" : "";
 
+  // ── Colores dinámicos según plan ──────────────────────────────────────
+  const planAccent     = freemium.plan === "basico" ? "#00E676"
+                       : freemium.plan === "pro"    ? "#FFD700"
+                       :                             "#2563EB";
+  const planAccentDark = freemium.plan === "basico" ? "#00B359"
+                       : freemium.plan === "pro"    ? "#FFA500"
+                       :                             "#1D4ED8";
+  const planGlow       = freemium.plan === "basico" ? "rgba(0,230,118,0.45)"
+                       : freemium.plan === "pro"    ? "rgba(255,215,0,0.50)"
+                       :                             "rgba(59,130,246,0.35)";
+  const planGlowCard   = freemium.plan === "basico" ? "rgba(0,230,118,0.18)"
+                       : freemium.plan === "pro"    ? "rgba(255,215,0,0.18)"
+                       :                             "rgba(59,130,246,0.10)";
+  const planBorderCard = freemium.plan === "basico" ? "rgba(0,230,118,0.40)"
+                       : freemium.plan === "pro"    ? "rgba(255,215,0,0.45)"
+                       :                             BORDER;
+  const planAnalyzing  = freemium.plan === "basico" ? "rgba(0,230,118,0.35)"
+                       : freemium.plan === "pro"    ? "rgba(255,165,0,0.40)"
+                       :                             "rgba(59,130,246,0.40)";
+
   return (
     <div className="flex flex-col w-full px-4 mx-auto" style={{ maxWidth: "640px" }}>
 
       {/* ── Plan badge row ── */}
       {isPro && (
         <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
-          <span className="pro-badge">⭐ {planLabel}</span>
+          <span className="pro-badge" style={{
+            background: `linear-gradient(90deg,${planAccentDark},${planAccent})`,
+            color: "#0B0F14",
+          }}>⭐ {planLabel}</span>
         </div>
       )}
 
@@ -1024,9 +1047,9 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
       <div className={`rounded-2xl p-4 mb-4${isPro ? " scanner-card-pro" : ""}`}
         style={{
           background: "linear-gradient(160deg,#141A24 0%,#0D1117 100%)",
-          border: `1px solid ${isPro ? "rgba(255,215,0,0.45)" : BORDER}`,
+          border: `1px solid ${isPro ? planBorderCard : BORDER}`,
           boxShadow: isPro
-            ? "0 8px 32px rgba(0,0,0,0.5), 0 0 28px rgba(255,215,0,0.18)"
+            ? `0 8px 32px rgba(0,0,0,0.5), 0 0 28px ${planGlowCard}`
             : "0 8px 32px rgba(0,0,0,0.5)",
         }}>
 
@@ -1436,44 +1459,45 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
             type="button"
             onClick={() => handleAnalyze()}
             disabled={isAnalyzing || !freemiumLoaded || !freemium.canScan}
-            className={`flex w-full items-center justify-center gap-2 rounded-xl py-3.5 px-4 text-sm font-bold transition-opacity active:opacity-80${isPro && freemium.canScan && !isAnalyzing && freemiumLoaded ? " btn-pro-golden" : " text-white"}`}
+            className="flex w-full items-center justify-center gap-2 rounded-xl py-3.5 px-4 text-sm font-bold transition-opacity active:opacity-80"
             style={{
               background: !freemiumLoaded
                 ? "rgba(255,255,255,0.07)"
                 : !freemium.canScan
                   ? "rgba(255,75,79,0.2)"
                   : isAnalyzing
-                    ? (isPro ? "rgba(255,165,0,0.4)" : "rgba(59,130,246,0.4)")
-                    : isPro
-                      ? "linear-gradient(135deg,#FFD700 0%,#FFA500 100%)"
-                      : "linear-gradient(135deg,#2563EB 0%,#1D4ED8 100%)",
+                    ? planAnalyzing
+                    : `linear-gradient(135deg,${planAccentDark} 0%,${planAccent} 100%)`,
               boxShadow: isAnalyzing || !freemium.canScan || !freemiumLoaded
                 ? "none"
-                : isPro
-                  ? "0 0 22px rgba(255,215,0,0.5)"
-                  : "0 0 20px rgba(59,130,246,0.35)",
+                : `0 0 22px ${planGlow}`,
               cursor: !freemiumLoaded || !freemium.canScan ? "not-allowed" : "pointer",
-              color: isPro && freemium.canScan && !isAnalyzing && freemiumLoaded ? "#000" : undefined,
+              color: freemium.canScan && !isAnalyzing && freemiumLoaded ? "#000" : "#fff",
             }}>
             {!freemiumLoaded ? (
               <>
                 <Loader2 style={{ width: 16, height: 16 }} className="animate-spin" />
-                <span>Verificando plan...</span>
+                <span style={{ color: "#fff" }}>Verificando plan...</span>
               </>
             ) : isAnalyzing ? (
               <>
                 <Loader2 style={{ width: 16, height: 16 }} className="animate-spin" />
-                <span>Analizando...</span>
+                <span style={{ color: "#fff" }}>Analizando...</span>
               </>
             ) : !freemium.canScan ? (
               <>
                 <Shield style={{ width: 16, height: 16 }} />
-                <span>Límite diario alcanzado</span>
+                <span style={{ color: "#fff" }}>Límite diario alcanzado</span>
               </>
-            ) : isPro ? (
+            ) : freemium.plan === "pro" ? (
               <>
                 <ScanSearch style={{ width: 16, height: 16 }} />
                 <span>⭐ Analizar Wallet PRO</span>
+              </>
+            ) : freemium.plan === "basico" ? (
+              <>
+                <ScanSearch style={{ width: 16, height: 16 }} />
+                <span>✓ Analizar Wallet BÁSICO</span>
               </>
             ) : (
               <>
@@ -1504,7 +1528,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
             display: "flex", alignItems: "center", justifyContent: "center",
             gap: 8, marginTop: 10,
           }}>
-            <span style={{ fontSize: 11, fontWeight: 600, color: "#F59E0B", letterSpacing: "0.02em" }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: planAccent, letterSpacing: "0.02em" }}>
               ⭐ {freemium.paidScansRemaining} scans restantes en tu plan {planLabel}
             </span>
           </div>
