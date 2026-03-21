@@ -2,7 +2,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { motion, AnimatePresence } from "framer-motion";
-import { History, AlertTriangle, ArrowRightLeft, Ban, ShieldAlert, ShieldCheck, ShieldX, TriangleAlert } from "lucide-react";
+import { History, AlertTriangle, ArrowRightLeft, Ban, ShieldAlert, ShieldCheck, ShieldX } from "lucide-react";
 import type { RiskyCounterparty } from "@/components/WalletAnalyzer";
 
 interface ReportData {
@@ -55,88 +55,36 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
   const diffTime = Math.abs(today.getTime() - creationDate.getTime());
   const daysSinceCreation = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-  let riskScore = 0;
-
-  if (daysSinceCreation < 30) riskScore += 20;
-  else if (daysSinceCreation <= 180) riskScore += 10;
-
   const totalVolumeUSDT = totalInUSDT + totalOutUSDT;
-  if (totalVolumeUSDT > 1000000) riskScore += 25;
-  else if (totalVolumeUSDT > 100000) riskScore += 15;
 
-  if (uniqueWalletsCount > 200) riskScore += 20;
-  else if (uniqueWalletsCount > 50) riskScore += 10;
-
-  if (totalTx > 500) riskScore += 20;
-  else if (totalTx > 100) riskScore += 10;
-
-  if (transfersAnalyzed > 0 && exchangeInteractions > transfersAnalyzed * 0.5) {
-    riskScore -= 10;
-  }
-
-  // Counterparty risk: interactions with suspicious wallets
-  if (suspiciousInteractions >= 5) riskScore += 40;
-  else if (suspiciousInteractions >= 2) riskScore += 25;
-  else if (suspiciousInteractions >= 1) riskScore += 15;
-
-  riskScore = Math.max(0, Math.min(100, riskScore));
-
-  let riskLevel = "";
-  let riskColor = "";
-
-  if (isFrozen) {
-    riskScore = 100;
-    riskLevel = "Severo";
-    riskColor = "text-red-500";
-  } else if (riskScore <= 25) {
-    riskLevel = "Riesgo Bajo";
-    riskColor = "text-green-500";
-  } else if (riskScore <= 50) {
-    riskLevel = "Riesgo Moderado";
-    riskColor = "text-yellow-500";
-  } else if (riskScore <= 75) {
-    riskLevel = "Riesgo Alto";
-    riskColor = "text-orange-500";
-  } else {
-    riskLevel = "Riesgo Severo";
-    riskColor = "text-red-500";
-  }
-
-  const formattedCreationDate = creationDate.toLocaleDateString("es-ES", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
-  const formattedLastTxDate = new Date(lastTxDate).toLocaleDateString("es-ES", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
-  const fmtUSDT = new Intl.NumberFormat("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
+  const fmtUSDT = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const formattedCreationDate = creationDate.toLocaleDateString("es-ES", { day: "2-digit", month: "2-digit", year: "numeric" });
+  const formattedLastTxDate  = new Date(lastTxDate).toLocaleDateString("es-ES", { day: "2-digit", month: "2-digit", year: "numeric" });
   const formattedBalance = fmtUSDT.format(balanceUSDT);
   const formattedIn      = fmtUSDT.format(totalInUSDT);
   const formattedOut     = fmtUSDT.format(totalOutUSDT);
-  const formattedVolume  = fmtUSDT.format(totalInUSDT + totalOutUSDT);
+  const formattedVolume  = fmtUSDT.format(totalVolumeUSDT);
 
-  // Which risk segments are active (full opacity vs 20%)
-  const seg1Active = riskScore > 0;   // Bajo    0-25
-  const seg2Active = riskScore > 25;  // Moderado 25-50
-  const seg3Active = riskScore > 50;  // Alto     50-75
-  const seg4Active = riskScore > 75;  // Severo   75-100
+  // ── TRES ESTADOS BASADOS EXCLUSIVAMENTE EN BLOCKCHAIN ───────────────────────
+  // Riesgo REAL: solo blacklist, congelamiento o contrapartes peligrosas
+  const hasRealBlockchainRisk = isInBlacklistDB || isFrozen || suspiciousInteractions > 0;
 
-  // Warning banner conditions
-  const hasBlacklistHit = isFrozen || isInBlacklistDB;
-  const hasRiskyInteraction = riskyCounterparties.length > 0;
-  const hasHighRiskScore = riskScore > 60;
-  const showWarningBanner = hasBlacklistHit || hasRiskyInteraction || hasHighRiskScore;
+  // Señales informativas (comportamiento, NO riesgo confirmado)
+  const behavioralSignals: string[] = [];
+  if (totalVolumeUSDT > 1_000_000)
+    behavioralSignals.push(`Volumen elevado: ${fmtUSDT.format(totalVolumeUSDT)} USDT`);
+  else if (totalVolumeUSDT > 100_000)
+    behavioralSignals.push(`Volumen alto: ${fmtUSDT.format(totalVolumeUSDT)} USDT`);
+  if (transfersAnalyzed > 0 && exchangeInteractions === 0)
+    behavioralSignals.push("Sin interacción con exchanges registrados — flujo directo entre wallets");
+  if (uniqueWalletsCount > 200)
+    behavioralSignals.push(`Número elevado de contrapartes únicas: ${uniqueWalletsCount}`);
+  else if (uniqueWalletsCount > 50)
+    behavioralSignals.push(`Contrapartes únicas: ${uniqueWalletsCount}`);
+  if (daysSinceCreation < 30)
+    behavioralSignals.push(`Wallet reciente: ${daysSinceCreation} días de antigüedad`);
 
-  const warningReasons: string[] = [];
-  if (hasBlacklistHit) warningReasons.push("Esta dirección aparece en la lista de billeteras congeladas.");
-  if (hasRiskyInteraction) warningReasons.push(`Interactuó con ${riskyCounterparties.length} contraparte${riskyCounterparties.length > 1 ? "s" : ""} de alto riesgo o congelada${riskyCounterparties.length > 1 ? "s" : ""}.`);
-  if (hasHighRiskScore) warningReasons.push(`Puntuación de riesgo elevada: ${riskScore}/100.`);
+  const showBehavioralSection = !hasRealBlockchainRisk && behavioralSignals.length > 0;
 
   return (
     <motion.div
@@ -145,9 +93,9 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
       transition={{ duration: 0.5 }}
       className="w-full max-w-4xl mx-auto space-y-6 mt-8"
     >
-      {/* High-Risk Warning Banner */}
+      {/* ── Banner de riesgo REAL (solo blockchain) ───────────────────── */}
       <AnimatePresence>
-        {showWarningBanner && (
+        {hasRealBlockchainRisk && (
           <motion.div
             key="warning-banner"
             initial={{ opacity: 0, y: -8, scale: 0.98 }}
@@ -158,32 +106,42 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
           >
             <div className="flex items-start gap-3">
               <div className="mt-0.5 p-1.5 rounded-full bg-red-500/20 shrink-0">
-                <TriangleAlert className="h-5 w-5 text-red-400" />
+                <ShieldX className="h-5 w-5 text-red-400" />
               </div>
               <div className="flex-1 space-y-1.5">
                 <p className="font-bold text-red-400 uppercase tracking-wider text-sm">
-                  ⚠️ Advertencia: Actividad de Alto Riesgo Detectada
+                  🚨 Riesgo Crítico Confirmado en Blockchain
                 </p>
                 <p className="text-sm text-red-300 font-medium">
-                  Esta billetera muestra actividad de alto riesgo. No envíe ni reciba USDT desde esta dirección. Los fondos pueden ser congelados.
+                  Esta wallet tiene restricciones activas o interactuó con direcciones de alto riesgo verificadas.
                 </p>
-                {warningReasons.length > 0 && (
-                  <ul className="mt-2 space-y-0.5">
-                    {warningReasons.map((reason, i) => (
-                      <li key={i} className="text-xs text-red-400/80 flex items-start gap-1.5">
-                        <span className="mt-0.5 shrink-0">•</span>
-                        <span>{reason}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                <ul className="mt-2 space-y-0.5">
+                  {isInBlacklistDB && (
+                    <li className="text-xs text-red-400/80 flex items-start gap-1.5">
+                      <span className="mt-0.5 shrink-0">•</span>
+                      <span>Dirección en lista negra USDT (Tether).</span>
+                    </li>
+                  )}
+                  {isFrozen && (
+                    <li className="text-xs text-red-400/80 flex items-start gap-1.5">
+                      <span className="mt-0.5 shrink-0">•</span>
+                      <span>Wallet congelada en el contrato USDT TRC20.</span>
+                    </li>
+                  )}
+                  {suspiciousInteractions > 0 && (
+                    <li className="text-xs text-red-400/80 flex items-start gap-1.5">
+                      <span className="mt-0.5 shrink-0">•</span>
+                      <span>Interactuó con {suspiciousInteractions} contraparte{suspiciousInteractions > 1 ? "s" : ""} de alto riesgo confirmadas.</span>
+                    </li>
+                  )}
+                </ul>
               </div>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* USDT Freeze Status */}
+      {/* ── Estado de blockchain ───────────────────────────────────────── */}
       {isFrozen ? (
         <motion.div
           initial={{ opacity: 0, scale: 0.97 }}
@@ -194,18 +152,12 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
           <div className="flex items-start gap-4">
             <Ban className="h-8 w-8 shrink-0 text-red-400 mt-0.5" />
             <div className="flex-1 space-y-1">
-              <p className="font-bold text-red-400 text-base tracking-wide">
-                🚨 WALLET BLOQUEADA
-              </p>
-              <p className="text-sm text-red-300">
-                Esta dirección está congelada por el contrato USDT.
-              </p>
-              <p className="text-sm text-red-300 font-medium">
-                No se pueden enviar ni recibir USDT.
-              </p>
+              <p className="font-bold text-red-400 text-base tracking-wide">🚨 WALLET BLOQUEADA</p>
+              <p className="text-sm text-red-300">Esta dirección está congelada por el contrato USDT.</p>
+              <p className="text-sm text-red-300 font-medium">No se pueden enviar ni recibir USDT.</p>
             </div>
             <Badge variant="destructive" className="shrink-0 px-3 py-1 text-xs uppercase tracking-widest self-start">
-              Severo
+              Congelada
             </Badge>
           </div>
         </motion.div>
@@ -232,9 +184,41 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
         </motion.div>
       )}
 
-      {/* Network Info & Risk Score */}
+      {/* ── Señales informativas de comportamiento (NO es riesgo) ─────── */}
+      <AnimatePresence>
+        {showBehavioralSection && (
+          <motion.div
+            key="behavioral"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3 }}
+            className="rounded-xl border border-amber-500/30 bg-amber-500/5 overflow-hidden"
+          >
+            <div className="flex items-center justify-between px-5 py-3 border-b border-amber-500/15">
+              <p className="text-sm font-semibold text-white/80">📊 Señales de comportamiento</p>
+              <span className="text-[10px] font-bold tracking-widest uppercase px-2.5 py-1 rounded-full bg-amber-500/12 border border-amber-500/30 text-amber-400">
+                INFORMATIVO
+              </span>
+            </div>
+            <div className="px-5 py-4 space-y-2">
+              {behavioralSignals.map((s, i) => (
+                <div key={i} className="flex items-start gap-2 text-xs text-white/70">
+                  <span className="text-amber-400 mt-0.5 shrink-0">•</span>
+                  <span>{s}</span>
+                </div>
+              ))}
+              <p className="text-[10px] text-white/35 pt-1 italic">
+                Estas señales son estadísticas y no representan un riesgo confirmado en blockchain.
+              </p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Red + Estado de blockchain (2 columnas) ───────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Network Info */}
+        {/* Red */}
         <Card className="rounded-xl border bg-card shadow">
           <CardHeader className="pb-2">
             <CardTitle className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">
@@ -243,11 +227,7 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
           </CardHeader>
           <CardContent>
             <div className="flex items-center gap-4">
-              <img
-                src="/tron-logo.png"
-                alt="TRON"
-                className="w-[60px] h-[60px] rounded-full object-cover shrink-0"
-              />
+              <img src="/tron-logo.png" alt="TRON" className="w-[60px] h-[60px] rounded-full object-cover shrink-0" />
               <div>
                 <div className="text-2xl font-bold">Red: TRON</div>
                 <div className="text-sm text-muted-foreground">USDT (TRC20)</div>
@@ -256,42 +236,29 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
           </CardContent>
         </Card>
 
-        {/* Risk Score — linear 4-segment bar */}
+        {/* Estado blockchain (reemplaza el score mixto) */}
         <Card className="rounded-xl border bg-card shadow">
           <CardHeader className="pb-2">
             <CardTitle className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">
-              Puntuación de Riesgo
+              Estado en Blockchain
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              <div className="flex justify-between items-end">
-                <span className={`text-3xl font-bold ${riskColor}`}>{riskScore}/100</span>
-                <span className={`text-sm font-medium ${riskColor}`}>{riskLevel}</span>
+          <CardContent className="space-y-2">
+            {[
+              { ok: !isInBlacklistDB, label: isInBlacklistDB ? "En lista negra USDT" : "Sin lista negra" },
+              { ok: !isFrozen,       label: isFrozen       ? "Wallet congelada"   : "Sin congelamiento" },
+              { ok: suspiciousInteractions === 0, label: suspiciousInteractions > 0 ? `${suspiciousInteractions} interacción${suspiciousInteractions > 1 ? "es" : ""} riesgosa${suspiciousInteractions > 1 ? "s" : ""}` : "Sin contrapartes riesgosas" },
+            ].map(({ ok, label }) => (
+              <div key={label} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold ${ok ? "bg-green-500/10 text-green-400" : "bg-red-500/10 text-red-400"}`}>
+                <span>{ok ? "✅" : "❌"}</span>
+                <span>{label}</span>
               </div>
-              {/* 4-segment bar with position indicator */}
-              <div className="w-full h-3 bg-secondary rounded-full overflow-hidden flex relative">
-                <div className={`h-full bg-green-500 w-1/4 ${seg1Active ? "" : "opacity-20"}`} />
-                <div className={`h-full bg-yellow-500 w-1/4 ${seg2Active ? "" : "opacity-20"}`} />
-                <div className={`h-full bg-orange-500 w-1/4 ${seg3Active ? "" : "opacity-20"}`} />
-                <div className={`h-full bg-red-500 w-1/4 ${seg4Active ? "" : "opacity-20"}`} />
-                <div
-                  className="absolute top-0 bottom-0 w-1 bg-background"
-                  style={{ left: `calc(${riskScore}% - 2px)` }}
-                />
-              </div>
-              <div className="flex justify-between text-xs text-muted-foreground mt-1">
-                <span>Bajo</span>
-                <span>Moderado</span>
-                <span>Alto</span>
-                <span>Severo</span>
-              </div>
-            </div>
+            ))}
           </CardContent>
         </Card>
       </div>
 
-      {/* Activity Summary */}
+      {/* ── Resumen de Actividad ───────────────────────────────────────── */}
       <Card className="rounded-xl border bg-card shadow">
         <CardHeader className="pb-2">
           <CardTitle className="font-semibold tracking-tight flex items-center gap-2 text-lg">
@@ -300,7 +267,6 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {/* Top stats grid */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="space-y-1 bg-background/50 p-3 rounded-lg border border-border/50">
               <span className="text-xs text-muted-foreground">Estado</span>
@@ -317,9 +283,7 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
             <div className="space-y-1 bg-background/50 p-3 rounded-lg border border-border/50">
               <span className="text-xs text-muted-foreground">Balance Total</span>
               <div className="font-semibold text-lg">{balanceTRX.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TRX</div>
-              {balanceUSDT > 0 && (
-                <div className="text-xs text-muted-foreground">{formattedBalance} USDT</div>
-              )}
+              {balanceUSDT > 0 && <div className="text-xs text-muted-foreground">{formattedBalance} USDT</div>}
             </div>
             <div className="space-y-1 bg-background/50 p-3 rounded-lg border border-border/50">
               <span className="text-xs text-muted-foreground">Wallet creada</span>
@@ -331,7 +295,6 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
             </div>
           </div>
 
-          {/* Entradas / Salidas */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
             <div className="bg-background/50 p-4 rounded-lg border border-border/50 flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -365,12 +328,13 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
         </CardContent>
       </Card>
 
-      {/* Risk Factors */}
+      {/* ── Factores de actividad (informativos) ─────────────────────── */}
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-2 text-lg">
-            <AlertTriangle className="w-5 h-5 text-yellow-500" />
-            Factores de Riesgo Detectados
+            <AlertTriangle className="w-5 h-5 text-amber-400" />
+            Datos de Actividad
+            <span className="ml-auto text-xs font-normal text-muted-foreground normal-case tracking-normal">Solo informativo</span>
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -380,17 +344,15 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
                 <TableRow>
                   <TableHead>Factor</TableHead>
                   <TableHead>Valor</TableHead>
-                  <TableHead>Estado</TableHead>
+                  <TableHead>Nivel</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 <TableRow>
-                  <TableCell>Antigüedad de la Billetera</TableCell>
+                  <TableCell>Antigüedad de la Wallet</TableCell>
                   <TableCell>{daysSinceCreation} días</TableCell>
                   <TableCell>
-                    <Badge
-                      variant={daysSinceCreation < 30 ? "destructive" : daysSinceCreation <= 180 ? "outline" : "default"}
-                    >
+                    <Badge variant={daysSinceCreation < 30 ? "outline" : "default"}>
                       {daysSinceCreation < 30 ? "Nueva" : daysSinceCreation <= 180 ? "Reciente" : "Establecida"}
                     </Badge>
                   </TableCell>
@@ -399,10 +361,8 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
                   <TableCell>Volumen Total USDT</TableCell>
                   <TableCell>{formattedVolume} USDT</TableCell>
                   <TableCell>
-                    <Badge
-                      variant={totalVolumeUSDT > 1000000 ? "destructive" : totalVolumeUSDT > 100000 ? "outline" : "default"}
-                    >
-                      {totalVolumeUSDT > 1000000 ? "Muy Alto" : totalVolumeUSDT > 100000 ? "Alto" : "Normal"}
+                    <Badge variant="outline">
+                      {totalVolumeUSDT > 1_000_000 ? "Muy Alto" : totalVolumeUSDT > 100_000 ? "Alto" : "Normal"}
                     </Badge>
                   </TableCell>
                 </TableRow>
@@ -410,9 +370,7 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
                   <TableCell>Contrapartes Únicas</TableCell>
                   <TableCell>{uniqueWalletsCount}</TableCell>
                   <TableCell>
-                    <Badge
-                      variant={uniqueWalletsCount > 200 ? "destructive" : uniqueWalletsCount > 50 ? "outline" : "default"}
-                    >
+                    <Badge variant="outline">
                       {uniqueWalletsCount > 200 ? "Muy Alto" : uniqueWalletsCount > 50 ? "Alto" : "Normal"}
                     </Badge>
                   </TableCell>
@@ -421,9 +379,7 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
                   <TableCell>Frecuencia de Transacciones</TableCell>
                   <TableCell>{totalTx.toLocaleString()} tx</TableCell>
                   <TableCell>
-                    <Badge
-                      variant={totalTx > 500 ? "destructive" : totalTx > 100 ? "outline" : "default"}
-                    >
+                    <Badge variant="outline">
                       {totalTx > 500 ? "Muy Alta" : totalTx > 100 ? "Alta" : "Normal"}
                     </Badge>
                   </TableCell>
@@ -433,24 +389,20 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
                   <TableCell>{exchangeInteractions} de {transfersAnalyzed}</TableCell>
                   <TableCell>
                     <Badge variant="default">
-                      {transfersAnalyzed > 0
-                        ? `${Math.round((exchangeInteractions / transfersAnalyzed) * 100)}%`
-                        : "0%"}
+                      {transfersAnalyzed > 0 ? `${Math.round((exchangeInteractions / transfersAnalyzed) * 100)}%` : "0%"}
                     </Badge>
                   </TableCell>
                 </TableRow>
                 <TableRow>
-                  <TableCell>Interacciones Infectadas</TableCell>
+                  <TableCell>Interacciones con Riesgo Confirmado</TableCell>
                   <TableCell>{suspiciousInteractions} de {transfersAnalyzed}</TableCell>
                   <TableCell>
-                    <Badge
-                      variant={suspiciousInteractions >= 5 ? "destructive" : suspiciousInteractions >= 1 ? "outline" : "default"}
-                    >
+                    <Badge variant={suspiciousInteractions >= 1 ? "destructive" : "default"}>
                       {suspiciousInteractions >= 5
-                        ? "Nivel de Riesgo: Alto"
+                        ? "Riesgo Crítico"
                         : suspiciousInteractions >= 1
-                        ? "Nivel de Riesgo: Moderado"
-                        : "Nivel de Riesgo: Ninguno"}
+                        ? "Riesgo Confirmado"
+                        : "Sin riesgo"}
                     </Badge>
                   </TableCell>
                 </TableRow>
@@ -460,7 +412,7 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
         </CardContent>
       </Card>
 
-      {/* Sanctions */}
+      {/* ── Congelamientos y Sanciones ────────────────────────────────── */}
       <Card className="border-red-500/20">
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-2 text-lg text-red-500">
@@ -475,7 +427,7 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
                 <TableRow>
                   <TableHead>Tipo</TableHead>
                   <TableHead>Fecha de Operación</TableHead>
-                  <TableHead>Historial</TableHead>
+                  <TableHead>Estado</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -483,23 +435,28 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
                   <TableRow>
                     <TableCell className="font-medium text-red-500">USDT Blacklist / Congelada</TableCell>
                     <TableCell>{formattedLastTxDate}</TableCell>
-                    <TableCell>
-                      <Badge variant="destructive">Congelada</Badge>
-                    </TableCell>
+                    <TableCell><Badge variant="destructive">Congelada</Badge></TableCell>
+                  </TableRow>
+                )}
+                {isInBlacklistDB && !isFrozen && (
+                  <TableRow>
+                    <TableCell className="font-medium text-red-500">Lista negra USDT (Tether)</TableCell>
+                    <TableCell>Verificado</TableCell>
+                    <TableCell><Badge variant="destructive">Restringida</Badge></TableCell>
                   </TableRow>
                 )}
                 {suspiciousInteractions > 0 && (
                   <TableRow>
-                    <TableCell className="font-medium text-orange-500">Contrapartes Sospechosas</TableCell>
-                    <TableCell>{suspiciousInteractions} interacciones detectadas</TableCell>
+                    <TableCell className="font-medium text-orange-500">Contrapartes Peligrosas</TableCell>
+                    <TableCell>{suspiciousInteractions} interacción{suspiciousInteractions > 1 ? "es" : ""} detectada{suspiciousInteractions > 1 ? "s" : ""}</TableCell>
                     <TableCell>
                       <Badge variant={suspiciousInteractions >= 5 ? "destructive" : "outline"}>
-                        {suspiciousInteractions >= 5 ? "Alto Riesgo" : "Riesgo Moderado"}
+                        {suspiciousInteractions >= 5 ? "Riesgo Crítico" : "Riesgo Confirmado"}
                       </Badge>
                     </TableCell>
                   </TableRow>
                 )}
-                {!isFrozen && suspiciousInteractions === 0 && (
+                {!isFrozen && !isInBlacklistDB && suspiciousInteractions === 0 && (
                   <TableRow>
                     <TableCell colSpan={3} className="text-center text-muted-foreground py-4">
                       No se encontraron sanciones ni congelamientos para esta dirección.
@@ -512,7 +469,7 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
         </CardContent>
       </Card>
 
-      {/* Risk Counterparty */}
+      {/* ── Contrapartes de Riesgo ────────────────────────────────────── */}
       <Card className="border-orange-500/20">
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-2 text-lg text-orange-400">
@@ -528,7 +485,7 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
                   <TableHead>Nivel de Riesgo</TableHead>
                   <TableHead>Dirección Contraparte</TableHead>
                   <TableHead>Valor Transacción</TableHead>
-                  <TableHead>Etiqueta de Riesgo</TableHead>
+                  <TableHead>Etiqueta</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -540,40 +497,19 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
                   </TableRow>
                 ) : (
                   riskyCounterparties.map((r, i) => {
-                    const levelLabel =
-                      r.level === "critical" ? "Crítico"
-                      : r.level === "high" ? "Alto"
-                      : "Moderado";
-                    const levelColor =
-                      r.level === "critical" ? "text-red-500"
-                      : r.level === "high" ? "text-orange-400"
-                      : "text-yellow-400";
+                    const levelLabel = r.level === "critical" ? "Crítico" : r.level === "high" ? "Alto" : "Moderado";
+                    const levelColor = r.level === "critical" ? "text-red-500" : r.level === "high" ? "text-orange-400" : "text-yellow-400";
                     const valueColor = r.value >= 0 ? "text-green-400" : "text-red-400";
-                    const formattedValue =
-                      (r.value >= 0 ? "+" : "") +
-                      r.value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) +
-                      " USDT";
+                    const formattedValue = (r.value >= 0 ? "+" : "") + r.value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " USDT";
                     return (
                       <TableRow key={i}>
-                        <TableCell>
-                          <span className={`font-semibold text-sm ${levelColor}`}>{levelLabel}</span>
-                        </TableCell>
-                        <TableCell className="font-mono text-xs text-muted-foreground">
-                          {r.address.slice(0, 8)}…{r.address.slice(-6)}
-                        </TableCell>
-                        <TableCell className={`font-medium tabular-nums ${valueColor}`}>
-                          {formattedValue}
-                        </TableCell>
+                        <TableCell><span className={`font-semibold text-sm ${levelColor}`}>{levelLabel}</span></TableCell>
+                        <TableCell className="font-mono text-xs text-muted-foreground">{r.address.slice(0, 8)}…{r.address.slice(-6)}</TableCell>
+                        <TableCell className={`font-medium tabular-nums ${valueColor}`}>{formattedValue}</TableCell>
                         <TableCell>
                           <Badge
                             variant={r.level === "critical" ? "destructive" : "outline"}
-                            className={
-                              r.level === "high"
-                                ? "border-orange-500 text-orange-400"
-                                : r.level === "medium"
-                                ? "border-yellow-500 text-yellow-400"
-                                : ""
-                            }
+                            className={r.level === "high" ? "border-orange-500 text-orange-400" : r.level === "medium" ? "border-yellow-500 text-yellow-400" : ""}
                           >
                             {r.label}
                           </Badge>
@@ -588,7 +524,7 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
         </CardContent>
       </Card>
 
-      {/* Address + account type info */}
+      {/* ── Dirección + tipo de cuenta ────────────────────────────────── */}
       <div className="bg-muted/30 p-4 rounded-lg border border-border/50 flex items-start gap-3">
         <ShieldAlert className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" />
         <div className="space-y-1 flex-1">
@@ -601,7 +537,7 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
         </div>
       </div>
 
-      {/* Legal Notice */}
+      {/* ── Aviso Legal ───────────────────────────────────────────────── */}
       <div className="bg-muted/30 p-4 rounded-lg border border-border/50 mb-12 flex items-start gap-3">
         <ShieldAlert className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" />
         <p className="text-xs text-muted-foreground leading-relaxed">
