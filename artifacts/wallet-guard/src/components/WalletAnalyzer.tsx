@@ -286,6 +286,7 @@ interface ReportData {
   suspiciousInteractions: number;
   riskyCounterparties: RiskyCounterparty[];
   detectedViaTRC20?: boolean;
+  isInactiveAddress: boolean;
 }
 
 // Risk database: address → { label, level }
@@ -858,6 +859,14 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
       // Non-fatal: continue with whatever was already collected
     }
 
+    // Wallet no activada: sin cuenta en TronGrid, sin txs, sin balance
+    const isInactiveAddress =
+      !account &&
+      totalTx === 0 &&
+      balanceTRX === 0 &&
+      balanceUSDT === 0 &&
+      dateCreated === null;
+
     return {
       address: addr,
       accountType,
@@ -878,6 +887,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
       suspiciousInteractions: riskyCounterparties.length,
       riskyCounterparties,
       detectedViaTRC20,
+      isInactiveAddress,
     };
   };
 
@@ -1552,8 +1562,103 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, ease: "easeOut" }}
             >
+              {/* ── Wallet inactiva (sin activar en blockchain) ────────── */}
+              {reportData.isInactiveAddress && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.35 }}
+                  className="rounded-3xl p-6 mb-4"
+                  style={{
+                    background: "linear-gradient(135deg,#0a0f1e 0%,#060910 100%)",
+                    border: "1px solid rgba(96,165,250,0.25)",
+                    boxShadow: "0 8px 40px rgba(96,165,250,0.08)",
+                  }}
+                >
+                  {/* Icono + estado */}
+                  <div className="flex flex-col items-center text-center mb-5">
+                    <div className="flex h-16 w-16 items-center justify-center rounded-2xl mb-4"
+                      style={{ background: "rgba(96,165,250,0.10)", border: "2px solid rgba(96,165,250,0.30)", boxShadow: "0 0 32px rgba(96,165,250,0.12)" }}>
+                      <span style={{ fontSize: 28, lineHeight: 1 }}>📭</span>
+                    </div>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.2em] mb-3"
+                      style={{ color: "rgba(255,255,255,0.35)" }}>
+                      RESULTADO DEL ANÁLISIS
+                    </p>
+                    <span className="inline-flex items-center px-5 py-2.5 rounded-2xl font-black"
+                      style={{
+                        background: "rgba(96,165,250,0.12)",
+                        border: "2px solid rgba(96,165,250,0.35)",
+                        color: "#60A5FA",
+                        fontSize: 16,
+                        letterSpacing: "0.02em",
+                      }}>
+                      Wallet no activada
+                    </span>
+                  </div>
+
+                  {/* Mensaje */}
+                  <div className="rounded-xl px-4 py-3 mb-5"
+                    style={{ background: "rgba(96,165,250,0.07)", border: "1px solid rgba(96,165,250,0.20)", borderLeft: "4px solid rgba(96,165,250,0.5)" }}>
+                    <div className="flex items-start gap-2.5">
+                      <span style={{ fontSize: 20, lineHeight: 1, flexShrink: 0, marginTop: 1 }}>🔵</span>
+                      <p className="text-xs leading-relaxed" style={{ margin: 0, color: "rgba(255,255,255,0.80)" }}>
+                        Esta dirección aún no existe en la blockchain TRON. Se activará automáticamente cuando reciba su primera transacción.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Aclaraciones */}
+                  <div className="rounded-xl px-4 py-3 mb-5"
+                    style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)" }}>
+                    <p className="text-[10px] font-bold uppercase tracking-widest mb-3"
+                      style={{ color: "rgba(255,255,255,0.30)" }}>
+                      ¿QUÉ SIGNIFICA ESTO?
+                    </p>
+                    {[
+                      { icon: "✅", text: "La dirección es válida en formato TRON" },
+                      { icon: "✅", text: "No está en listas negras ni congelada" },
+                      { icon: "⭕", text: "Nunca ha sido usada en la blockchain" },
+                      { icon: "⭕", text: "No tiene transacciones ni balance registrado" },
+                    ].map(({ icon, text }) => (
+                      <div key={text} className="flex items-center gap-2.5 mb-2">
+                        <span style={{ fontSize: 13, flexShrink: 0 }}>{icon}</span>
+                        <p className="text-xs" style={{ margin: 0, color: "rgba(255,255,255,0.65)" }}>{text}</p>
+                      </div>
+                    ))}
+                    <p className="text-[10px] mt-3 italic" style={{ color: "rgba(255,255,255,0.28)" }}>
+                      Esto NO es una wallet nueva, riesgosa ni segura — simplemente no existe aún en blockchain.
+                    </p>
+                  </div>
+
+                  {/* Dirección */}
+                  <div style={{ marginBottom: 8 }}>
+                    <p style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.15em",
+                      color: "rgba(255,255,255,0.30)", textTransform: "uppercase", marginBottom: 6 }}>
+                      WALLET ADDRESS
+                    </p>
+                    <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl"
+                      style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)" }}>
+                      <span className="font-mono text-xs flex-1 truncate" style={{ color: "rgba(255,255,255,0.55)" }}>
+                        {reportData.address}
+                      </span>
+                      <button
+                        onClick={() => { navigator.clipboard.writeText(reportData.address); }}
+                        className="flex-shrink-0 p-1 rounded-lg"
+                        style={{ background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.40)" }}
+                      >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+
               {/* ── Risk Score Card — basado en datos reales on-chain ── */}
-              {(() => {
+              {!reportData.isInactiveAddress && (() => {
                 // ── Única fuente de verdad: datos reales on-chain ─────────────
                 // ── Jerarquía de prioridad ────────────────────────────────────
                 // 1. Blockchain (TronScan / TronGrid / USDT Blacklist) → SIEMPRE MANDA
@@ -1845,7 +1950,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
               })()}
 
               {/* ── 2×2 Detail cards ── */}
-              {(() => {
+              {!reportData.isInactiveAddress && (() => {
                 const isActive = reportData.totalTx > 0 || reportData.balanceTRX > 0 || reportData.balanceUSDT > 0;
                 const cards = [
                   {
@@ -1909,10 +2014,10 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
               })()}
 
               {/* ── Full analysis report ── */}
-              <TronAnalysisReport reportData={reportData} />
+              {!reportData.isInactiveAddress && <TronAnalysisReport reportData={reportData} />}
 
               {/* ── Predicción / Estado de congelamiento ── */}
-              {(() => {
+              {!reportData.isInactiveAddress && (() => {
                 // ── PRIORIDAD MÁXIMA: Wallet ya congelada o en blacklist ─────────
                 const isConfirmedFrozen = !!(reportData?.isFrozen || reportData?.isInBlacklistDB);
 
