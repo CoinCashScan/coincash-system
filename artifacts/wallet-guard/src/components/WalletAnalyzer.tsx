@@ -1555,18 +1555,27 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
               {/* ── Risk Score Card — basado en datos reales on-chain ── */}
               {(() => {
                 // ── Única fuente de verdad: datos reales on-chain ─────────────
+                // ── Jerarquía de prioridad ────────────────────────────────────
+                // 1. Blockchain (TronScan / TronGrid / USDT Blacklist) → SIEMPRE MANDA
+                // 2. Interacciones reales                              → Segundo nivel
+                // 3. Predicción CoinCash                              → SOLO INFORMATIVO
+
                 const risk       = evalRealRisk(reportData);
-                const { label, color, bg } = getRiskCardConfig(risk.level);
-                const rm         = getRiskCardMessage(risk.level);
                 const riskyCount = reportData.suspiciousInteractions ?? 0;
-                const isBlacklisted = !!(reportData.isInBlacklistDB);
-                const isFrozenWallet = !!(reportData.isFrozen);
 
-                // ── Módulos independientes ──────────────────────────────────
+                // Nivel 1 — flags blockchain reales
+                const isBlacklisted        = reportData.isInBlacklistDB === true;
+                const isFrozenWallet       = reportData.isFrozen === true;
+                // Nivel 2 — interacciones verificadas
+                const hasRiskyInteractions = riskyCount > 0;
+                // Resultado global
+                const isBlockchainSafe = !isBlacklisted && !isFrozenWallet && !hasRiskyInteractions;
+
+                // ── Módulos independientes (calculados antes de decidir color) ─
                 const walletAgeDays = reportData.dateCreated ? (Date.now() - reportData.dateCreated) / 86_400_000 : 0;
-                const totalVolume = (reportData.totalInUSDT + reportData.totalOutUSDT) || 0;
+                const totalVolume   = (reportData.totalInUSDT + reportData.totalOutUSDT) || 0;
 
-                // C) alertasComportamiento — señales estadísticas (nunca definen riesgo)
+                // Nivel 3 — señales estadísticas (nunca modifican el estado principal)
                 const alertasCmpt = calcularAlertasComportamiento({
                   walletAgeDays,
                   totalVolume,
@@ -1574,7 +1583,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                   exchangeInteractions: reportData.exchangeInteractions || 0,
                 });
 
-                // B) analisis adicional — predicción de congelamiento (informativo)
+                // Predicción informativa de congelamiento
                 const adicional = calcularAnalisisAdicional({
                   walletAgeDays,
                   totalVolume,
@@ -1583,6 +1592,42 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                   isLinkedToRiskWallet: riskyCount > 0,
                   riskyCount,
                 });
+
+                // ── Tres estados de render — jerarquía explícita ──────────────
+                // STATE 1: RED_ALERT — solo blacklist o frozen
+                let showRedAlert = false;
+                if (isBlacklisted || isFrozenWallet) showRedAlert = true;
+                if (isBlockchainSafe)                showRedAlert = false; // blockchain manda
+
+                // STATE 2: YELLOW_WARNING — blockchain segura pero señales altas
+                const showBehaviorWarning = isBlockchainSafe && alertasCmpt.totalScore >= 50;
+
+                // displayScore: reducir impacto visual cuando es solo comportamiento
+                const displayScore = (isBlockchainSafe && alertasCmpt.totalScore >= 50) ? 30 : risk.score;
+                void displayScore;
+
+                // ── Color, fondo y mensaje según estado ───────────────────────
+                const color = showRedAlert        ? DANGER
+                            : showBehaviorWarning ? AMBER
+                            :                       GREEN;
+
+                const bg = showRedAlert        ? "linear-gradient(135deg,#200808 0%,#120404 100%)"
+                         : showBehaviorWarning ? "linear-gradient(135deg,#1A1200 0%,#0F0B00 100%)"
+                         :                       "linear-gradient(135deg,#001A0E 0%,#000F08 100%)";
+
+                const label = showRedAlert        ? "RIESGO CRÍTICO CONFIRMADO"
+                            : showBehaviorWarning ? "Actividad inusual detectada"
+                            :                       "Sin riesgo en blockchain";
+
+                const msgIcono = showRedAlert        ? "⛔"
+                               : showBehaviorWarning ? "🟡"
+                               :                       "🟢";
+
+                const msgTexto = showRedAlert
+                  ? "RIESGO CRÍTICO CONFIRMADO. Esta wallet está en lista negra USDT o fue congelada en la red TRON. Evita cualquier interacción."
+                  : showBehaviorWarning
+                  ? "Se detectaron patrones como alto volumen o transferencias directas entre wallets. Esto no representa un riesgo confirmado en blockchain."
+                  : "Esta wallet no aparece en listas negras ni tiene restricciones activas en la red.";
 
                 const CheckRow = ({ ok, text, sub }: { ok: boolean; text: string; sub?: string }) => (
                   <div style={{
@@ -1619,7 +1664,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                           background: `${color}18`,
                           border: `2px solid ${color}55`,
                           color,
-                          fontSize: risk.level === "ALTO" ? 15 : 17,
+                          fontSize: showRedAlert ? 15 : 17,
                           letterSpacing: "0.02em",
                           boxShadow: `0 0 20px ${color}18`,
                         }}>
@@ -1629,11 +1674,11 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
 
                     {/* ── Mensaje principal ─────────────────────────────────────── */}
                     <div className="rounded-xl px-4 py-3 mb-5"
-                      style={{ background: `${rm.color}18`, border: `1px solid ${rm.color}55`, borderLeft: `4px solid ${rm.color}` }}>
+                      style={{ background: `${color}18`, border: `1px solid ${color}55`, borderLeft: `4px solid ${color}` }}>
                       <div className="flex items-start gap-2.5">
-                        <span style={{ fontSize: 20, lineHeight: 1, flexShrink: 0, marginTop: 1 }}>{rm.icono}</span>
+                        <span style={{ fontSize: 20, lineHeight: 1, flexShrink: 0, marginTop: 1 }}>{msgIcono}</span>
                         <p className="text-xs leading-relaxed" style={{ margin: 0, color: "rgba(255,255,255,0.85)" }}>
-                          {rm.mensaje}
+                          {msgTexto}
                         </p>
                       </div>
                     </div>
@@ -1710,14 +1755,14 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                           display: "flex", alignItems: "center", justifyContent: "space-between",
                         }}>
                           <span style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.8)" }}>
-                            ⚠️ Señales de comportamiento
+                            📊 Señales de comportamiento
                           </span>
                           <span style={{
                             padding: "2px 9px", borderRadius: 20,
                             background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.28)",
                             color: AMBER, fontSize: 9, fontWeight: 700, letterSpacing: "0.06em",
                           }}>
-                            ACTIVIDAD INUSUAL
+                            INFORMATIVO
                           </span>
                         </div>
                         <div style={{ padding: "10px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
