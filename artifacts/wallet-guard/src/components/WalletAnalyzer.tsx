@@ -1608,51 +1608,6 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                       </div>
                     )}
 
-                    {/* ── Predicción de congelamiento ──────────────────────────── */}
-                    {(() => {
-                      const nivelColor = adicional.nivel === "ALTO" ? DANGER : adicional.nivel === "MEDIO" ? ORANGE : GREEN;
-                      const nivelBg    = adicional.nivel === "ALTO" ? "rgba(255,77,79,0.07)" : adicional.nivel === "MEDIO" ? "rgba(255,107,53,0.06)" : "rgba(0,220,160,0.05)";
-                      const nivelBorder = adicional.nivel === "ALTO" ? "rgba(255,77,79,0.22)" : adicional.nivel === "MEDIO" ? "rgba(255,107,53,0.2)" : "rgba(0,220,160,0.15)";
-                      const pesoColor = (p: string) => p === "critico" ? DANGER : p === "alto" ? ORANGE : AMBER;
-                      return (
-                        <div style={{ borderRadius: 14, border: `1px solid ${nivelBorder}`, background: nivelBg, marginBottom: 16, overflow: "hidden" }}>
-                          <div style={{ padding: "11px 14px", borderBottom: `1px solid ${nivelBorder}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                            <span style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.8)" }}>
-                              🧊 Predicción de congelamiento
-                            </span>
-                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                              <span style={{ fontSize: 11, fontFamily: "monospace", color: "rgba(255,255,255,0.35)" }}>
-                                {adicional.score}/100
-                              </span>
-                              <span style={{ padding: "2px 10px", borderRadius: 20, background: nivelColor,
-                                color: "#fff", fontSize: 10, fontWeight: 800, letterSpacing: "0.05em" }}>
-                                {adicional.nivel}
-                              </span>
-                            </div>
-                          </div>
-                          <div style={{ padding: "11px 14px" }}>
-                            {!adicional.hasSignals ? (
-                              <p style={{ margin: 0, fontSize: 12, color: "#00DCA0" }}>
-                                ✓ Sin factores de riesgo de congelamiento detectados
-                              </p>
-                            ) : (
-                              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                                {adicional.factores.map((f, i) => (
-                                  <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
-                                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: pesoColor(f.peso), flexShrink: 0, marginTop: 5 }} />
-                                    <p style={{ margin: 0, fontSize: 11, color: "rgba(255,255,255,0.7)", lineHeight: 1.45 }}>{f.texto}</p>
-                                  </div>
-                                ))}
-                                <p style={{ margin: "6px 0 0", fontSize: 9, color: "rgba(255,255,255,0.25)", lineHeight: 1.5 }}>
-                                  Basado en criterios reales de congelamiento Tether/TRON. No garantiza congelamiento futuro.
-                                </p>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })()}
-
                     {/* Divider */}
                     <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", marginBottom: 16 }} />
 
@@ -1865,76 +1820,77 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                   <div style={{
                     margin: "16px 0 0",
                     borderRadius: 16,
-                    border: "1px solid rgba(255,255,255,0.07)",
-                    background: "rgba(255,255,255,0.03)",
+                    border: "1px solid rgba(245,158,11,0.2)",
+                    background: "rgba(245,158,11,0.05)",
                     overflow: "hidden",
                   }}>
-                    {(() => {
-                      const hColor = adicional.nivel === "ALTO" ? DANGER : adicional.nivel === "MEDIO" ? ORANGE : GREEN;
-                      return (
-                        <div style={{
-                          padding: "13px 18px",
-                          borderBottom: "1px solid rgba(255,255,255,0.07)",
-                          display: "flex", alignItems: "center", justifyContent: "space-between",
-                        }}>
-                          <span style={{ fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,0.85)" }}>
-                            🧊 Predicción de congelamiento
-                          </span>
-                          <span style={{
-                            padding: "3px 10px", borderRadius: 20,
-                            background: `${hColor}18`, border: `1px solid ${hColor}40`,
-                            color: hColor, fontSize: 10, fontWeight: 800, letterSpacing: "0.06em",
-                          }}>
-                            {adicional.nivel}
-                          </span>
-                        </div>
-                      );
-                    })()}
-
-                    {/* Score bar */}
-                    <div style={{ padding: "10px 18px 0", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-                      {(() => {
-                        const nivelColor2 = adicional.nivel === "ALTO" ? DANGER : adicional.nivel === "MEDIO" ? ORANGE : GREEN;
-                        return (
-                          <div>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                              <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>Probabilidad de congelamiento</span>
-                              <span style={{ fontSize: 12, fontWeight: 800, fontFamily: "monospace", color: nivelColor2 }}>{adicional.score}%</span>
-                            </div>
-                            <div style={{ height: 5, borderRadius: 4, background: "rgba(255,255,255,0.07)", marginBottom: 14, overflow: "hidden" }}>
-                              <div style={{ height: "100%", borderRadius: 4, width: `${adicional.score}%`, background: `linear-gradient(90deg, ${nivelColor2}90, ${nivelColor2})`, transition: "width 0.6s ease" }} />
-                            </div>
-                          </div>
-                        );
-                      })()}
+                    {/* Header — siempre en ámbar, tono informativo */}
+                    <div style={{
+                      padding: "13px 18px",
+                      borderBottom: "1px solid rgba(245,158,11,0.12)",
+                      display: "flex", alignItems: "center", justifyContent: "space-between",
+                    }}>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,0.85)" }}>
+                        🧊 Prevención de riesgo
+                      </span>
+                      <span style={{
+                        padding: "3px 10px", borderRadius: 20,
+                        background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.3)",
+                        color: AMBER, fontSize: 10, fontWeight: 700, letterSpacing: "0.06em",
+                      }}>
+                        ANÁLISIS INFORMATIVO
+                      </span>
                     </div>
 
+                    {/* Barra de probabilidad estimada — siempre ámbar */}
+                    <div style={{ padding: "12px 18px", borderBottom: "1px solid rgba(245,158,11,0.08)" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                        <span style={{ fontSize: 11, color: "rgba(255,255,255,0.45)" }}>Probabilidad estimada</span>
+                        <span style={{ fontSize: 12, fontWeight: 800, fontFamily: "monospace", color: AMBER }}>
+                          {adicional.score}%
+                        </span>
+                      </div>
+                      <div style={{ height: 4, borderRadius: 4, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
+                        <div style={{
+                          height: "100%", borderRadius: 4,
+                          width: `${adicional.score}%`,
+                          background: `linear-gradient(90deg, ${AMBER}70, ${AMBER})`,
+                          transition: "width 0.6s ease",
+                        }} />
+                      </div>
+                    </div>
+
+                    {/* Factores detectados */}
                     <div style={{ padding: "13px 18px" }}>
                       {!adicional.hasSignals ? (
-                        <p style={{ margin: 0, fontSize: 13, color: "#00DCA0" }}>
-                          ✓ Sin factores de riesgo de congelamiento detectados
+                        <p style={{ margin: 0, fontSize: 12, color: "rgba(255,255,255,0.45)" }}>
+                          Sin factores de riesgo detectados en el historial de esta wallet.
                         </p>
                       ) : (
                         <>
-                          <p style={{ margin: "0 0 10px", fontSize: 10, color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                          <p style={{ margin: "0 0 10px", fontSize: 10, color: "rgba(255,255,255,0.3)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
                             Factores detectados
                           </p>
-                          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 8 }}>
-                            {adicional.factores.map((f, i) => {
-                              const c = f.peso === "critico" ? DANGER : f.peso === "alto" ? ORANGE : AMBER;
-                              return (
-                                <li key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-                                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: c, flexShrink: 0, marginTop: 5 }} />
-                                  <span style={{ fontSize: 12, color: "rgba(255,255,255,0.78)", lineHeight: 1.45 }}>{f.texto}</span>
-                                </li>
-                              );
-                            })}
+                          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 7 }}>
+                            {adicional.factores.map((f, i) => (
+                              <li key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                                <span style={{ width: 6, height: 6, borderRadius: "50%", background: AMBER, flexShrink: 0, marginTop: 5, opacity: 0.7 }} />
+                                <span style={{ fontSize: 12, color: "rgba(255,255,255,0.65)", lineHeight: 1.45 }}>{f.texto}</span>
+                              </li>
+                            ))}
                           </ul>
-                          <p style={{ margin: "12px 0 0", fontSize: 10, color: "rgba(255,255,255,0.25)", lineHeight: 1.5 }}>
-                            Basado en criterios reales de congelamiento Tether/TRON. No garantiza congelamiento futuro.
-                          </p>
                         </>
                       )}
+
+                      {/* Disclaimer */}
+                      <div style={{
+                        marginTop: 14, padding: "9px 12px", borderRadius: 10,
+                        background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.15)",
+                      }}>
+                        <p style={{ margin: 0, fontSize: 10, color: "rgba(255,255,255,0.4)", lineHeight: 1.6 }}>
+                          ℹ️ Este análisis es informativo y no representa un riesgo confirmado en blockchain. Basado en patrones de comportamiento on-chain.
+                        </p>
+                      </div>
                     </div>
                   </div>
                 );
