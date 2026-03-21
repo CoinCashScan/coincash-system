@@ -1734,25 +1734,31 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                                      : riskScore >= 20                           ? "Riesgo moderado"
                                      :                                             "Riesgo bajo";
 
+                // "Riesgo crítico extremo": interacciones reales + score >= 65
+                const isCriticoExtremo = hasRiskyInteractions && riskScore >= 65;
+
                 // ── Color, fondo y mensaje según estado ───────────────────────
-                const color = showRedAlert        ? DANGER
-                            : showBehaviorWarning ? AMBER
-                            :                       GREEN;
+                const color = (showRedAlert || isCriticoExtremo) ? DANGER
+                            : showBehaviorWarning                 ? AMBER
+                            :                                       GREEN;
 
-                const bg = showRedAlert        ? "linear-gradient(135deg,#200808 0%,#120404 100%)"
-                         : showBehaviorWarning ? "linear-gradient(135deg,#1A1200 0%,#0F0B00 100%)"
-                         :                       "linear-gradient(135deg,#001A0E 0%,#000F08 100%)";
+                const bg = (showRedAlert || isCriticoExtremo) ? "linear-gradient(135deg,#200808 0%,#120404 100%)"
+                         : showBehaviorWarning                  ? "linear-gradient(135deg,#1A1200 0%,#0F0B00 100%)"
+                         :                                        "linear-gradient(135deg,#001A0E 0%,#000F08 100%)";
 
-                const label = showRedAlert        ? "RIESGO CRÍTICO CONFIRMADO"
+                const label = showRedAlert      ? "RIESGO CRÍTICO CONFIRMADO"
+                            : isCriticoExtremo  ? "RIESGO CRÍTICO EXTREMO"
                             : showBehaviorWarning ? "Actividad inusual detectada"
                             :                       "Sin riesgo en blockchain";
 
-                const msgIcono = showRedAlert        ? "⛔"
-                               : showBehaviorWarning ? "🟡"
-                               :                       "🟢";
+                const msgIcono = (showRedAlert || isCriticoExtremo) ? "⛔"
+                               : showBehaviorWarning                  ? "🟡"
+                               :                                        "🟢";
 
                 const msgTexto = showRedAlert
                   ? "RIESGO CRÍTICO CONFIRMADO. Esta wallet está en lista negra USDT o fue congelada en la red TRON. Evita cualquier interacción."
+                  : isCriticoExtremo
+                  ? "RIESGO CRÍTICO EXTREMO. Esta wallet interactuó con direcciones de alto riesgo y su puntuación acumulada supera el umbral crítico. Evita cualquier transacción."
                   : showBehaviorWarning
                   ? "Se detectaron patrones como alto volumen o transferencias directas entre wallets. Esto no representa un riesgo confirmado en blockchain."
                   : "Esta wallet no aparece en listas negras ni tiene restricciones activas en la red.";
