@@ -233,13 +233,16 @@ export function FreemiumProvider({ children }: { children: ReactNode }) {
       if (Date.now() - startTime > MAX_POLL_MS) {
         clearInterval(verifyPollRef.current!);
         verifyPollRef.current = null;
-        // Stop silently — backend will clean up via its own 3.5-min timeout
+        // Frontend timeout reached — revert UI and notify user
+        setPaymentStatus("none");
+        // Also ask the server to clear the pending upgrade request (fire-and-forget)
+        callVerifyPayment(id).catch(() => {});
         return;
       }
       const result = await callVerifyPayment(id);
       if (!result) return;
 
-      // Payment not found after timeout — server cleared the upgrade request
+      // Payment not found — server cleared the upgrade request
       if (result.status === "not_found") {
         clearInterval(verifyPollRef.current!);
         verifyPollRef.current = null;

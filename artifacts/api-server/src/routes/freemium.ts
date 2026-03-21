@@ -401,7 +401,7 @@ router.post("/freemium/verify-payment", async (req, res) => {
   const ccId = ((req.body?.ccId) ?? "").trim();
   if (!ccId) return res.status(400).json({ error: "ccId required" });
 
-  const VERIFY_TIMEOUT_MS = 3.5 * 60 * 1_000; // 3.5 min — slightly beyond the 3-min frontend poll
+  const VERIFY_TIMEOUT_MS = 2 * 60 * 1_000; // 2 min — fires while frontend is still polling (3 min)
 
   try {
     // 1. Get the timestamp when the user clicked "Ya pagué" and their current plan
