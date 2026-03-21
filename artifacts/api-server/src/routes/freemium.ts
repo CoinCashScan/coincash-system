@@ -311,6 +311,9 @@ router.post("/freemium/confirm-upgrade", async (req, res) => {
   if (!ccId) return res.status(400).json({ error: "ccId required" });
   try {
     await setUserPlan(ccId, "pro"); // also clears upgrade_requested_at
+    // Notify the specific user in real-time via Socket.io
+    const io = req.app.get("io");
+    if (io) io.to(ccId).emit("plan-updated", { ccId, plan: "pro" });
     return res.json({ ok: true, ccId, plan: "pro" });
   } catch (err: any) {
     console.error("[freemium] confirm-upgrade error:", err?.message);
@@ -327,6 +330,9 @@ router.post("/admin/revert-payment", async (req, res) => {
   try {
     await setUserPlan(ccId, "free");
     console.log(`[admin] revert-payment → ${ccId} set to FREE`);
+    // Notify the specific user in real-time via Socket.io
+    const io = req.app.get("io");
+    if (io) io.to(ccId).emit("plan-updated", { ccId, plan: "free" });
     return res.json({ ok: true, ccId, plan: "free", reverted: true });
   } catch (err: any) {
     console.error("[admin] revert-payment error:", err?.message);

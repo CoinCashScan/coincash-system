@@ -10,6 +10,7 @@ import TronAnalysisReport from "@/components/TronAnalysisReport";
 import ScanningAnimation from "@/components/ScanningAnimation";
 import QRScannerDialog from "@/components/QRScannerDialog";
 import { toast } from "sonner";
+import { usePlanSocket } from "@/hooks/usePlanSocket";
 
 const GREEN  = "#19C37D";
 const AMBER  = "#F59E0B";
@@ -385,6 +386,26 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
   const [sharingImage, setSharingImage] = useState(false);
 
   const PRO_ADDRESS = "TM2cRRegda1gQAQY9hGbg6DMscN7okNVA1";
+
+  // ── Real-time plan updates via Socket.io ─────────────────────────────────
+  usePlanSocket(ccId || null, ({ plan }) => {
+    setFreemium((prev) => {
+      if (prev.plan === plan) return prev;
+      return { ...prev, plan };
+    });
+    if (plan === "pro") {
+      setUpgradeRequested(false);
+      toast.success("🎉 ¡Plan PRO activado! Ya puedes usar análisis ilimitados.", {
+        duration: 6000,
+        style: { background: "#0D2D1F", border: "1px solid rgba(0,255,198,0.35)", color: "#00FFC6" },
+      });
+    } else {
+      toast.error("⚠️ Tu plan PRO ha sido desactivado. Si ya realizaste el pago, presiona \"Ya pagué\" nuevamente.", {
+        duration: 8000,
+        style: { background: "#1A0D0D", border: "1px solid rgba(255,80,80,0.35)", color: "#FF6B6B" },
+      });
+    }
+  });
 
   // Generate QR code for payment address on mount
   useEffect(() => {

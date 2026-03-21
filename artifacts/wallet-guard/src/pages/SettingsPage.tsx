@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import QRCode from "qrcode";
 import { Camera, Bell, BellOff, Check, Copy, Headphones, ChevronRight, Trash2, RotateCcw } from "lucide-react";
 import { API_BASE } from "@/lib/apiConfig";
+import { usePlanSocket } from "@/hooks/usePlanSocket";
 import { resetDeviceId } from "@/lib/identity";
 
 const TEAL   = "#00FFC6";
@@ -63,6 +64,19 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
   const [upgradeSending,   setUpgradeSending]   = useState(false);
   const [upgradeRequested, setUpgradeRequested] = useState(false);
   const [selectedPlan,     setSelectedPlan]     = useState<{ name: string; price: string }>({ name: "Pro", price: "19.99" });
+  const [planToast,        setPlanToast]        = useState<{ msg: string; type: "pro" | "free" } | null>(null);
+
+  // ── Real-time plan updates via Socket.io ────────────────────────────────
+  const handlePlanUpdated = useCallback(({ plan }: { plan: "free" | "pro" }) => {
+    setUserPlan(plan);
+    if (plan === "pro") {
+      setPlanToast({ msg: "🎉 ¡Plan PRO activado! Ya tienes acceso completo.", type: "pro" });
+    } else {
+      setPlanToast({ msg: "⚠️ Tu plan PRO ha sido desactivado. Si ya pagaste, presiona \"Ya pagué\" nuevamente.", type: "free" });
+    }
+    setTimeout(() => setPlanToast(null), 7000);
+  }, []);
+  usePlanSocket(ccId || null, handlePlanUpdated);
 
   const [visitStats, setVisitStats] = useState<{ total: number; today: number; online: number; countries: { name: string; code: string; count: number }[] } | null>(null);
   const [deviceReset, setDeviceReset] = useState(false);
@@ -279,6 +293,29 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
 
   return (
     <div style={{ minHeight: "100vh", background: BG, color: TEXT, fontFamily: "'Inter',sans-serif", paddingBottom: 80 }}>
+
+      {/* ── Plan-change toast ── */}
+      {planToast && (
+        <div style={{
+          position: "fixed", top: 16, left: "50%", transform: "translateX(-50%)",
+          zIndex: 9999, maxWidth: 340, width: "calc(100% - 32px)",
+          background: planToast.type === "pro" ? "#0D2D1F" : "#1A0D0D",
+          border: `1px solid ${planToast.type === "pro" ? "rgba(0,255,198,0.4)" : "rgba(255,80,80,0.4)"}`,
+          borderRadius: 14, padding: "13px 16px",
+          boxShadow: `0 8px 40px ${planToast.type === "pro" ? "rgba(0,255,198,0.15)" : "rgba(255,80,80,0.15)"}`,
+          display: "flex", alignItems: "flex-start", gap: 10,
+          animation: "slideDown 0.3s ease",
+        }}>
+          <span style={{ fontSize: 15, lineHeight: 1 }}>{planToast.type === "pro" ? "🎉" : "⚠️"}</span>
+          <p style={{ margin: 0, fontSize: 12, color: planToast.type === "pro" ? "#00FFC6" : "#FF6B6B", lineHeight: 1.6, flex: 1 }}>
+            {planToast.msg}
+          </p>
+          <button
+            onClick={() => setPlanToast(null)}
+            style={{ background: "none", border: "none", color: "rgba(255,255,255,0.3)", fontSize: 16, cursor: "pointer", padding: 0, lineHeight: 1 }}
+          >×</button>
+        </div>
+      )}
 
       {/* Crop modal */}
       {cropSrc && (
