@@ -77,7 +77,7 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
       setPlanToast({ msg: "🎉 ¡Plan PRO activado! Ya tienes acceso completo.", type: "pro" });
       setTimeout(() => setPlanToast(null), 7000);
     } else if (paymentStatus === "none" && (prev === "pending" || prev === "confirmed")) {
-      setPlanToast({ msg: "⚠️ Tu plan PRO ha sido desactivado. Si ya pagaste, presiona \"Ya pagué\" nuevamente.", type: "free" });
+      setPlanToast({ msg: "⚠️ No pudimos verificar tu pago. Si ya lo realizaste, puedes intentarlo nuevamente con 'Ya pagué'.", type: "free" });
       setTimeout(() => setPlanToast(null), 7000);
     }
   }, [paymentStatus]);

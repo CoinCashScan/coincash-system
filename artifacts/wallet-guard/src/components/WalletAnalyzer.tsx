@@ -405,7 +405,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
         style: { background: "#0D2D1F", border: "1px solid rgba(0,255,198,0.35)", color: "#00FFC6" },
       });
     } else if (paymentStatus === "none" && (prev === "pending" || prev === "confirmed")) {
-      toast.error("⚠️ Tu plan PRO ha sido desactivado. Si ya pagaste, presiona \"Ya pagué\" nuevamente.", {
+      toast.error("⚠️ No pudimos verificar tu pago. Si ya lo realizaste, puedes intentarlo nuevamente con 'Ya pagué'.", {
         duration: 8000,
         style: { background: "#1A0D0D", border: "1px solid rgba(255,80,80,0.35)", color: "#FF6B6B" },
       });
