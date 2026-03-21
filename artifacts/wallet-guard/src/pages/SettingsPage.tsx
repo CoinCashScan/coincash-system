@@ -553,12 +553,26 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
               {/* Plan Básico */}
               <div style={{
                 background: selectedPlan.name === "Básico" ? "rgba(0,255,198,0.07)" : "rgba(255,255,255,0.03)",
-                border: selectedPlan.name === "Básico" ? "1.5px solid rgba(0,255,198,0.45)" : "1px solid rgba(255,255,255,0.09)",
+                border: selectedPlan.name === "Básico" ? "2px solid rgba(0,255,198,0.7)" : "1px solid rgba(255,255,255,0.09)",
                 borderRadius: 14, padding: "14px 12px",
                 display: "flex", flexDirection: "column", gap: 7,
-                transition: "border-color 0.2s",
+                position: "relative",
+                boxShadow: selectedPlan.name === "Básico" ? "0 0 18px rgba(0,255,198,0.22)" : "none",
+                transform: selectedPlan.name === "Básico" ? "scale(1.02)" : "scale(1)",
+                transformOrigin: "center",
+                transition: "all 0.22s ease",
               }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: "#E5E7EB" }}>💳 Básico</div>
+                {/* Selected badge */}
+                {selectedPlan.name === "Básico" && (
+                  <div style={{
+                    position: "absolute", top: -10, left: "50%", transform: "translateX(-50%)",
+                    background: "linear-gradient(90deg,#00C896,#00FFC6)",
+                    borderRadius: 20, padding: "2px 10px",
+                    fontSize: 8, fontWeight: 800, color: "#0B0F14",
+                    letterSpacing: "0.04em", whiteSpace: "nowrap",
+                  }}>✔ Seleccionado</div>
+                )}
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#E5E7EB", marginTop: selectedPlan.name === "Básico" ? 4 : 0 }}>💳 Básico</div>
                 <div style={{ fontSize: 22, fontWeight: 900, color: "#fff", lineHeight: 1 }}>$9.99</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                   {["100 análisis", "✔ $0.099 por análisis"].map((f, i) => (
@@ -589,23 +603,25 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
 
               {/* Plan Pro */}
               <div style={{
-                background: selectedPlan.name === "Pro" ? "rgba(245,158,11,0.07)" : "rgba(255,255,255,0.03)",
-                border: selectedPlan.name === "Pro" ? "1.5px solid rgba(245,158,11,0.55)" : "1px solid rgba(255,255,255,0.09)",
+                background: selectedPlan.name === "Pro" ? "rgba(245,158,11,0.09)" : "rgba(255,255,255,0.03)",
+                border: selectedPlan.name === "Pro" ? "2px solid #F59E0B" : "1.5px solid rgba(245,158,11,0.4)",
                 borderRadius: 14, padding: "14px 12px",
                 display: "flex", flexDirection: "column", gap: 7,
                 position: "relative",
-                boxShadow: selectedPlan.name === "Pro" ? "0 0 16px rgba(245,158,11,0.12)" : "none",
+                boxShadow: selectedPlan.name === "Pro" ? "0 0 22px rgba(245,158,11,0.35)" : "0 0 10px rgba(245,158,11,0.08)",
                 transform: "scale(1.02)", transformOrigin: "center",
-                transition: "all 0.2s",
+                transition: "all 0.22s ease",
               }}>
-                {/* Badge */}
+                {/* Badge — changes on selection */}
                 <div style={{
                   position: "absolute", top: -10, left: "50%", transform: "translateX(-50%)",
-                  background: "linear-gradient(90deg,#F59E0B,#FBBF24)",
+                  background: selectedPlan.name === "Pro"
+                    ? "linear-gradient(90deg,#F59E0B,#FBBF24)"
+                    : "linear-gradient(90deg,#d97706,#F59E0B)",
                   borderRadius: 20, padding: "2px 9px",
                   fontSize: 8, fontWeight: 800, color: "#0B0F14",
                   letterSpacing: "0.05em", whiteSpace: "nowrap",
-                }}>⭐ MÁS VENDIDO</div>
+                }}>{selectedPlan.name === "Pro" ? "✔ Seleccionado" : "⭐ MÁS VENDIDO"}</div>
                 <div style={{ fontSize: 13, fontWeight: 700, color: "#E5E7EB", marginTop: 4 }}>🔥 PRO</div>
                 <div style={{ fontSize: 22, fontWeight: 900, color: "#F59E0B", lineHeight: 1 }}>$19.99</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
