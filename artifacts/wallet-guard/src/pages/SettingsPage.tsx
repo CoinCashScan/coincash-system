@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import QRCode from "qrcode";
 import { Camera, Bell, BellOff, Check, Copy, Headphones, ChevronRight, Trash2, RotateCcw } from "lucide-react";
 import { API_BASE } from "@/lib/apiConfig";
-import { usePlanSocket } from "@/hooks/usePlanSocket";
 import { resetDeviceId } from "@/lib/identity";
+import { useFreemium } from "@/context/FreemiumContext";
 
 const TEAL   = "#00FFC6";
 const BG     = "#0B0F14";
@@ -44,7 +44,6 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
 }
 
 export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => void }) {
-  const [ccId]         = useState<string>(getCcId);
   const [photoUrl,     setPhotoUrl]     = useState<string | null>(() => localStorage.getItem("coincash-profile-photo"));
   const [photoStored,  setPhotoStored]  = useState<boolean>(() => !!localStorage.getItem("coincash-profile-photo"));
   const [uploading,    setUploading]    = useState(false);
@@ -54,35 +53,34 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
   const [saved,        setSaved]        = useState(false);
   const [copiedId,     setCopiedId]     = useState(false);
 
-  // ── PRO upgrade ──────────────────────────────────────────────────────────
-  const PRO_ADDRESS     = "TM2cRRegda1gQAQY9hGbg6DMscN7okNVA1";
-  const [userPlan,         setUserPlan]         = useState<"free"|"pro">("free");
-  const [daysRemaining,    setDaysRemaining]    = useState<number | null>(null);
-  const [proQr,            setProQr]            = useState<string>("");
-  const [copiedAddr,       setCopiedAddr]       = useState(false);
-  const [upgradeEmail,     setUpgradeEmail]     = useState("");
-  const [upgradeSending,   setUpgradeSending]   = useState(false);
-  const [upgradeRequested, setUpgradeRequested] = useState(false);
-  const [selectedPlan,     setSelectedPlan]     = useState<{ name: string; price: string }>({ name: "Pro", price: "19.99" });
-  const [planToast,        setPlanToast]        = useState<{ msg: string; type: "pro" | "free" } | null>(null);
+  // ── Freemium shared context ───────────────────────────────────────────────
+  const { ccId, freemium, paymentStatus, requestPayment } = useFreemium();
+  const userPlan = freemium.plan;
 
-  // ── Real-time plan updates via Socket.io ────────────────────────────────
-  const handlePlanUpdated = useCallback(({ plan }: { plan: "free" | "pro" }) => {
-    setUserPlan(plan);
-    if (plan === "pro") {
-      // Clear pending state — user is now PRO
-      setUpgradeRequested(false);
-      setUpgradeSending(false);
+  // ── PRO upgrade ──────────────────────────────────────────────────────────
+  const PRO_ADDRESS = "TM2cRRegda1gQAQY9hGbg6DMscN7okNVA1";
+  const [daysRemaining, setDaysRemaining] = useState<number | null>(null);
+  const [proQr,         setProQr]         = useState<string>("");
+  const [copiedAddr,    setCopiedAddr]    = useState(false);
+  const [upgradeEmail,  setUpgradeEmail]  = useState("");
+  const [upgradeSending, setUpgradeSending] = useState(false);
+  const [selectedPlan,  setSelectedPlan]  = useState<{ name: string; price: string }>({ name: "Pro", price: "19.99" });
+  const [planToast, setPlanToast] = useState<{ msg: string; type: "pro" | "free" } | null>(null);
+
+  // Show in-page toast banner whenever paymentStatus transitions
+  const prevPaymentStatusRef = useRef(paymentStatus);
+  useEffect(() => {
+    const prev = prevPaymentStatusRef.current;
+    prevPaymentStatusRef.current = paymentStatus;
+    if (prev === paymentStatus) return;
+    if (paymentStatus === "confirmed") {
       setPlanToast({ msg: "🎉 ¡Plan PRO activado! Ya tienes acceso completo.", type: "pro" });
-    } else {
-      // Full reset — "Ya pagué" button must reappear
-      setUpgradeRequested(false);
-      setUpgradeSending(false);
+      setTimeout(() => setPlanToast(null), 7000);
+    } else if (paymentStatus === "none" && (prev === "pending" || prev === "confirmed")) {
       setPlanToast({ msg: "⚠️ Tu plan PRO ha sido desactivado. Si ya pagaste, presiona \"Ya pagué\" nuevamente.", type: "free" });
+      setTimeout(() => setPlanToast(null), 7000);
     }
-    setTimeout(() => setPlanToast(null), 7000);
-  }, []);
-  usePlanSocket(ccId || null, handlePlanUpdated);
+  }, [paymentStatus]);
 
   const [visitStats, setVisitStats] = useState<{ total: number; today: number; online: number; countries: { name: string; code: string; count: number }[] } | null>(null);
   const [deviceReset, setDeviceReset] = useState(false);
@@ -106,24 +104,25 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
       .catch(() => {});
   }, []);
 
-  // Generate PRO payment QR + fetch current plan (poll every 30s to catch admin activations)
+  // Generate PRO payment QR
   useEffect(() => {
     QRCode.toDataURL(PRO_ADDRESS, { width: 200, margin: 2, color: { dark: "#000000", light: "#FFFFFF" } })
       .then(setProQr).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-    const checkPlan = () => {
+  // Fetch daysRemaining (extra field not in context) whenever ccId is ready
+  useEffect(() => {
+    if (!ccId) return;
+    const fetch30 = () => {
       fetch(`${API_BASE}/freemium/status?ccId=${encodeURIComponent(ccId)}`)
         .then(r => r.json())
-        .then(d => {
-          if (d.plan) setUserPlan(d.plan);
-          setDaysRemaining(typeof d.daysRemaining === "number" ? d.daysRemaining : null);
-        })
+        .then(d => setDaysRemaining(typeof d.daysRemaining === "number" ? d.daysRemaining : null))
         .catch(() => {});
     };
-    checkPlan();
-    const t = setInterval(checkPlan, 30_000);
+    fetch30();
+    const t = setInterval(fetch30, 30_000);
     return () => clearInterval(t);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ccId]);
 
   // Check push permission on mount
   useEffect(() => {
@@ -731,9 +730,8 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
               </p>
             </div>
 
-            {/* Ya pagué / Pending message */}
-            {/* Show "Pago en verificación" only if user clicked the button AND plan is still free */}
-            {upgradeRequested && userPlan !== "pro" ? (
+            {/* "Ya pagué" / Pending — driven by shared paymentStatus */}
+            {paymentStatus === "pending" ? (
               <div style={{ background: "rgba(0,255,198,0.07)", border: "1px solid rgba(0,255,198,0.28)", borderRadius: 10, padding: "12px 14px", textAlign: "center" }}>
                 <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: TEAL }}>✓ Pago en verificación.</p>
                 <p style={{ margin: "4px 0 0", fontSize: 12, color: MUTED }}>Activación en pocos minutos.</p>
@@ -748,12 +746,7 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
                   onClick={async () => {
                     setUpgradeSending(true);
                     try {
-                      await fetch(`${API_BASE}/freemium/request-upgrade`, {
-                        method:  "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body:    JSON.stringify({ ccId, email: "" }),
-                      });
-                      setUpgradeRequested(true);
+                      await requestPayment(upgradeEmail);
                     } catch { /* ignore */ } finally { setUpgradeSending(false); }
                   }}
                   style={{

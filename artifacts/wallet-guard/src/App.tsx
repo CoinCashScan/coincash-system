@@ -14,6 +14,7 @@ import LegalPage from "@/pages/LegalPage";
 import IOSInstallBanner from "@/components/IOSInstallBanner";
 import SplashScreen from "@/components/SplashScreen";
 import { API_BASE } from "@/lib/apiConfig";
+import { FreemiumProvider } from "@/context/FreemiumContext";
 
 const queryClient = new QueryClient();
 
@@ -85,8 +86,10 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <ThemeProvider defaultTheme="dark" storageKey="wallet-guard-theme">
-          <MainApp />
-          <Toaster richColors position="top-center" />
+          <FreemiumProvider>
+            <MainApp />
+            <Toaster richColors position="top-center" />
+          </FreemiumProvider>
         </ThemeProvider>
       </TooltipProvider>
     </QueryClientProvider>

@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import html2canvas from "html2canvas";
 import QRCode from "qrcode";
 import { API_BASE } from "@/lib/apiConfig";
-import { resolveIdentity, getDeviceId } from "@/lib/identity";
+import { getDeviceId } from "@/lib/identity";
 import { ScanSearch, Loader2, QrCode, X, CheckCircle2, AlertTriangle, ShieldAlert,
          Copy, Check, CheckCheck, Activity, Zap, Hash, Shield } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -10,7 +10,7 @@ import TronAnalysisReport from "@/components/TronAnalysisReport";
 import ScanningAnimation from "@/components/ScanningAnimation";
 import QRScannerDialog from "@/components/QRScannerDialog";
 import { toast } from "sonner";
-import { usePlanSocket } from "@/hooks/usePlanSocket";
+import { useFreemium } from "@/context/FreemiumContext";
 
 const GREEN  = "#19C37D";
 const AMBER  = "#F59E0B";
@@ -369,47 +369,21 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
   const [dailyStats, setDailyStats] = useState<DailyStats>(() => getDailyStats());
   const [rateLimitMessage, setRateLimitMessage] = useState<string | null>(null);
   const [copiedAddress, setCopiedAddress] = useState(false);
-  const [freemium, setFreemium] = useState<FreemiumStatus>(DEFAULT_FREEMIUM);
-  const [freemiumLoaded, setFreemiumLoaded] = useState(false);
-  const [upgradeEmail,     setUpgradeEmail]     = useState("");
-  const [upgradeRequested, setUpgradeRequested] = useState(false);
-  const [upgradeSending,   setUpgradeSending]   = useState(false);
-  const [qrDataUrl,        setQrDataUrl]        = useState<string>("");
-  const [copiedAddr,       setCopiedAddr]       = useState(false);
-  const [selectedPlan,     setSelectedPlan]     = useState<{ name: string; price: string }>({ name: "Pro", price: "19.99" });
-  // ccId starts empty — always resolved from the API/fingerprint, never trusted blindly from localStorage
-  const [ccId, setCcId] = useState<string>("");
-  const resolvedRef  = useRef(false);
-  const pollRef      = useRef<ReturnType<typeof setInterval> | null>(null);
+  const {
+    ccId, freemium, freemiumLoaded,
+    paymentStatus, requestPayment, applyFreemiumUpdate, refreshFreemium,
+  } = useFreemium();
+
+  const [upgradeEmail,  setUpgradeEmail]  = useState("");
+  const [upgradeSending, setUpgradeSending] = useState(false);
+  const [qrDataUrl,      setQrDataUrl]      = useState<string>("");
+  const [copiedAddr,     setCopiedAddr]     = useState(false);
+  const [selectedPlan,   setSelectedPlan]   = useState<{ name: string; price: string }>({ name: "Pro", price: "19.99" });
   const resultRef    = useRef<HTMLDivElement>(null);
   const shareCardRef = useRef<HTMLDivElement>(null);
   const [sharingImage, setSharingImage] = useState(false);
 
   const PRO_ADDRESS = "TM2cRRegda1gQAQY9hGbg6DMscN7okNVA1";
-
-  // ── Real-time plan updates via Socket.io ─────────────────────────────────
-  usePlanSocket(ccId || null, ({ plan }) => {
-    setFreemium((prev) => {
-      if (prev.plan === plan) return prev;
-      return { ...prev, plan };
-    });
-    if (plan === "pro") {
-      setUpgradeRequested(false);
-      setUpgradeSending(false);
-      toast.success("🎉 ¡Plan PRO activado! Ya puedes usar análisis ilimitados.", {
-        duration: 6000,
-        style: { background: "#0D2D1F", border: "1px solid rgba(0,255,198,0.35)", color: "#00FFC6" },
-      });
-    } else {
-      // Full reset so "Ya pagué" button appears again
-      setUpgradeRequested(false);
-      setUpgradeSending(false);
-      toast.error("⚠️ Tu plan PRO ha sido desactivado. Si ya realizaste el pago, presiona \"Ya pagué\" nuevamente.", {
-        duration: 8000,
-        style: { background: "#1A0D0D", border: "1px solid rgba(255,80,80,0.35)", color: "#FF6B6B" },
-      });
-    }
-  });
 
   // Generate QR code for payment address on mount
   useEffect(() => {
@@ -419,50 +393,24 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
     }).then(setQrDataUrl).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Identity + plan resolution (single authoritative flow) ──────────────────
-  // Step 1: resolve the persistent CC-ID (fingerprint-backed, DB-verified)
-  // Step 2: immediately fetch THIS user's plan from the DB using that CC-ID
-  // Step 3: start a 30-second poll to catch admin activations
-  // The plan is NEVER read from localStorage — it always comes from the API.
+  // Show Sonner toast when plan status changes (socket handled by context)
+  const prevPaymentStatusRef = useRef(paymentStatus);
   useEffect(() => {
-    let cancelled = false;
-
-    async function boot() {
-      const id = await resolveIdentity();
-      if (cancelled) return;
-
-      setCcId(id);
-      resolvedRef.current = true;
-
-      // First load — fetch plan tied to THIS user_id from the DB
-      const status = await fetchFreemiumStatus(id);
-      if (cancelled) return;
-
-      setFreemium(status);
-      setFreemiumLoaded(true);
-
-      // Poll every 30 s to pick up admin-activated PRO upgrades
-      pollRef.current = setInterval(async () => {
-        const s = await fetchFreemiumStatus(id);
-        setFreemium((prev) => {
-          if (prev.plan !== "pro" && s.plan === "pro") {
-            setUpgradeRequested(false);
-          }
-          return s;
-        });
-      }, 30_000);
+    const prev = prevPaymentStatusRef.current;
+    prevPaymentStatusRef.current = paymentStatus;
+    if (prev === paymentStatus) return;
+    if (paymentStatus === "confirmed") {
+      toast.success("🎉 ¡Plan PRO activado! Ya puedes usar análisis ilimitados.", {
+        duration: 6000,
+        style: { background: "#0D2D1F", border: "1px solid rgba(0,255,198,0.35)", color: "#00FFC6" },
+      });
+    } else if (paymentStatus === "none" && (prev === "pending" || prev === "confirmed")) {
+      toast.error("⚠️ Tu plan PRO ha sido desactivado. Si ya pagaste, presiona \"Ya pagué\" nuevamente.", {
+        duration: 8000,
+        style: { background: "#1A0D0D", border: "1px solid rgba(255,80,80,0.35)", color: "#FF6B6B" },
+      });
     }
-
-    boot().catch(() => {
-      // Network failure on boot — mark as loaded with defaults so UI isn't stuck
-      setFreemiumLoaded(true);
-    });
-
-    return () => {
-      cancelled = true;
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [paymentStatus]);
 
   // Sync daily stats from localStorage on mount
   useEffect(() => {
@@ -807,7 +755,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
     // Must have the plan confirmed from DB before allowing any scan
     if (!freemiumLoaded || !ccId) return;
     const latestStatus = await fetchFreemiumStatus(ccId);
-    setFreemium(latestStatus);
+    applyFreemiumUpdate(latestStatus);
     if (!latestStatus.canScan) return; // UI already shows the limit message
 
     setIsAnalyzing(true);
@@ -819,7 +767,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
       setShowReport(true);
 
       // Unified call: validates limit backend-side + records tracking + returns updated freemium status
-      recordScanUnified(ccId, trimmed).then(setFreemium);
+      recordScanUnified(ccId, trimmed).then(applyFreemiumUpdate);
 
       // Smooth-scroll to results so mobile users see them immediately
       setTimeout(() => {
@@ -998,10 +946,10 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                       const status = await fetchFreemiumStatus(ccId);
                       // If backend no longer blocks (admin whitelisted IP), clear evasion state
                       if (status.canScan) {
-                        setFreemium(status);
+                        applyFreemiumUpdate(status);
                       } else {
                         // Still blocked — try a scan call to get the real reason
-                        setFreemium(f => ({ ...f, blocked: "limit_reached" }));
+                        applyFreemiumUpdate({ ...freemium, blocked: "limit_reached" });
                       }
                     }}
                     style={{
@@ -1015,7 +963,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                     🔄 Reintentar
                   </button>
                   <button
-                    onClick={() => setFreemium(f => ({ ...f, blocked: "limit_reached" }))}
+                    onClick={() => applyFreemiumUpdate({ ...freemium, blocked: "limit_reached" })}
                     style={{
                       flex: 1, padding: "11px 0", borderRadius: 12, border: "none",
                       background: "linear-gradient(135deg,#00FFC6,#00B8A9)",
@@ -1273,9 +1221,8 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                   </p>
                 </div>
 
-                {/* Email + Ya pagué / Pending message */}
-                {/* Only show "Pago en verificación" if user clicked "Ya pagué" AND plan is still free */}
-                {upgradeRequested && freemium.plan !== "pro" ? (
+                {/* "Ya pagué" button / verification message — driven by shared paymentStatus */}
+                {paymentStatus === "pending" ? (
                   <div style={{
                     background: "rgba(0,255,198,0.07)", border: "1px solid rgba(0,255,198,0.3)",
                     borderRadius: 10, padding: "12px 14px", textAlign: "center",
@@ -1297,12 +1244,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                       onClick={async () => {
                         setUpgradeSending(true);
                         try {
-                          await fetch(`${API_BASE}/freemium/request-upgrade`, {
-                            method:  "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body:    JSON.stringify({ ccId, email: "" }),
-                          });
-                          setUpgradeRequested(true);
+                          await requestPayment(upgradeEmail);
                         } catch { /* ignore */ } finally { setUpgradeSending(false); }
                       }}
                       style={{
