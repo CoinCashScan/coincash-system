@@ -399,10 +399,10 @@ async function recordScanUnified(ccId: string, wallet: string): Promise<Freemium
     });
     const data = await res.json();
     if (data.blocked === "evasion") {
-      return { plan: "free", scansToday: data.scansToday ?? 0, limit: FREE_SCAN_LIMIT, canScan: false, remaining: 0, blocked: "evasion", ipHash: data.ipHash };
+      return { plan: "free", scansToday: data.scansToday ?? 0, limit: FREE_SCAN_LIMIT, canScan: false, remaining: 0, blocked: "evasion", ipHash: data.ipHash, paidScansRemaining: null };
     }
     if (res.status === 429 || data.error === "limit_reached") {
-      return { plan: "free", scansToday: data.scansToday ?? 5, limit: FREE_SCAN_LIMIT, canScan: false, remaining: 0, blocked: "limit_reached" };
+      return { plan: "free", scansToday: data.scansToday ?? 5, limit: FREE_SCAN_LIMIT, canScan: false, remaining: 0, blocked: "limit_reached", paidScansRemaining: null };
     }
     if (data.plan === "basico" || data.plan === "pro") {
       return {
@@ -2109,7 +2109,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                   borderRadius: 6, padding: "2px 8px",
                   fontSize: 9, fontWeight: 800, color: freezeColor, letterSpacing: "0.06em",
                 }}>
-                  {freezeNivel} · {freezeScore}/100
+                  {freezeNivel} · {adicionalShare.score}/100
                 </div>
               </div>
               {motivosList.length > 0 && (
