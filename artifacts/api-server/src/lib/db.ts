@@ -1181,6 +1181,18 @@ export async function ensureFreemiumTable(): Promise<void> {
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS upgrade_requested_at TIMESTAMP`);
   // Timestamp when PRO was activated (used to calculate 30-day expiry)
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS pro_activated_at TIMESTAMP`);
+  // Remaining scans for paid plans (basico=100, pro=250; NULL = unlimited legacy pro or free)
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS paid_scans_remaining INT`);
+  // Table to prevent double-spending of the same TronGrid transaction ID
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS payment_txids (
+      tx_id        TEXT PRIMARY KEY,
+      coincash_id  TEXT NOT NULL,
+      plan         TEXT NOT NULL,
+      amount_usdt  NUMERIC(12,6) NOT NULL,
+      verified_at  TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
   // Daily scan counter per CC-ID
   await pool.query(`
     CREATE TABLE IF NOT EXISTS scan_limits (
@@ -1515,20 +1527,30 @@ export async function ensureFreemiumUser(ccId: string): Promise<void> {
 export const PRO_DURATION_DAYS = 30;
 
 /** Get the plan for a CC-ID, auto-expiring PRO after 30 days. Falls back to 'free'. */
-export async function getUserPlan(ccId: string): Promise<"free" | "pro"> {
-  const res = await pool.query<{ plan: string; pro_activated_at: string | null }>(
-    `SELECT plan, pro_activated_at FROM users WHERE coincash_id = $1 LIMIT 1`,
+export async function getUserPlan(ccId: string): Promise<"free" | "basico" | "pro"> {
+  const res = await pool.query<{
+    plan: string; pro_activated_at: string | null; paid_scans_remaining: number | null;
+  }>(
+    `SELECT plan, pro_activated_at, paid_scans_remaining FROM users WHERE coincash_id = $1 LIMIT 1`,
     [ccId],
   );
   const row = res.rows[0];
-  if (!row || row.plan !== "pro") return "free";
+  if (!row || (row.plan !== "pro" && row.plan !== "basico")) return "free";
 
-  // Auto-expire if 30 days have passed
-  if (row.pro_activated_at) {
+  // Auto-expire paid plans with empty scan budgets
+  if (row.paid_scans_remaining !== null && row.paid_scans_remaining <= 0) {
+    await pool.query(
+      `UPDATE users SET plan = 'free', pro_activated_at = NULL, paid_scans_remaining = NULL WHERE coincash_id = $1`,
+      [ccId],
+    );
+    return "free";
+  }
+
+  // Legacy PRO (no scan budget) — auto-expire after 30 days
+  if (row.plan === "pro" && row.paid_scans_remaining === null && row.pro_activated_at) {
     const expiry = new Date(row.pro_activated_at);
     expiry.setDate(expiry.getDate() + PRO_DURATION_DAYS);
     if (new Date() > expiry) {
-      // Downgrade silently
       await pool.query(
         `UPDATE users SET plan = 'free', pro_activated_at = NULL WHERE coincash_id = $1`,
         [ccId],
@@ -1536,7 +1558,8 @@ export async function getUserPlan(ccId: string): Promise<"free" | "pro"> {
       return "free";
     }
   }
-  return "pro";
+
+  return row.plan as "basico" | "pro";
 }
 
 /** Return the number of days remaining in the PRO subscription (null if not PRO). */
@@ -1587,11 +1610,77 @@ export async function setUserPlan(ccId: string, plan: "free" | "pro"): Promise<v
   } else {
     await pool.query(
       `UPDATE users
-          SET plan = 'free', upgrade_requested_at = NULL, pro_activated_at = NULL
+          SET plan = 'free', upgrade_requested_at = NULL, pro_activated_at = NULL,
+              paid_scans_remaining = NULL
         WHERE coincash_id = $1`,
       [ccId],
     );
   }
+}
+
+/**
+ * Activate a paid plan (basico=100 scans | pro=250 scans) from a verified blockchain payment.
+ * Sets `paid_scans_remaining`, clears `upgrade_requested_at`, records `pro_activated_at`.
+ */
+export async function setPaidPlan(
+  ccId: string,
+  plan: "basico" | "pro",
+  scans: number,
+): Promise<void> {
+  await pool.query(
+    `UPDATE users
+        SET plan = $2, paid_scans_remaining = $3,
+            upgrade_requested_at = NULL, pro_activated_at = NOW()
+      WHERE coincash_id = $1`,
+    [ccId, plan, scans],
+  );
+}
+
+/** Returns remaining paid scans (null if not a paid-scan plan). */
+export async function getPaidScansRemaining(ccId: string): Promise<number | null> {
+  const res = await pool.query<{ paid_scans_remaining: number | null }>(
+    `SELECT paid_scans_remaining FROM users WHERE coincash_id = $1 LIMIT 1`,
+    [ccId],
+  );
+  return res.rows[0]?.paid_scans_remaining ?? null;
+}
+
+/**
+ * Decrement paid scan budget by 1. Returns the new remaining count.
+ * Returns null if no budget is tracked (legacy unlimited pro / free).
+ */
+export async function decrementPaidScans(ccId: string): Promise<number | null> {
+  const res = await pool.query<{ paid_scans_remaining: number | null }>(
+    `UPDATE users
+        SET paid_scans_remaining = GREATEST(0, paid_scans_remaining - 1)
+      WHERE coincash_id = $1 AND paid_scans_remaining IS NOT NULL AND paid_scans_remaining > 0
+      RETURNING paid_scans_remaining`,
+    [ccId],
+  );
+  return res.rows[0]?.paid_scans_remaining ?? null;
+}
+
+/** Return true if this blockchain tx_id has already been used for a payment. */
+export async function isTxUsed(txId: string): Promise<boolean> {
+  const res = await pool.query<{ tx_id: string }>(
+    `SELECT tx_id FROM payment_txids WHERE tx_id = $1 LIMIT 1`,
+    [txId],
+  );
+  return res.rows.length > 0;
+}
+
+/** Record a verified tx_id so it cannot be reused. */
+export async function markTxUsed(
+  txId: string,
+  ccId: string,
+  plan: string,
+  amountUsdt: number,
+): Promise<void> {
+  await pool.query(
+    `INSERT INTO payment_txids (tx_id, coincash_id, plan, amount_usdt)
+     VALUES ($1, $2, $3, $4) ON CONFLICT (tx_id) DO NOTHING`,
+    [txId, ccId, plan, amountUsdt],
+  );
 }
 
 /**
@@ -1619,6 +1708,7 @@ export async function fullSystemReset(): Promise<void> {
       chat_messages,
       chat_users,
       device_ids,
+      payment_txids,
       users
     RESTART IDENTITY CASCADE
   `);

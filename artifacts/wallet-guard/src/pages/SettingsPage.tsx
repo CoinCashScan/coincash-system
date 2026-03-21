@@ -74,7 +74,8 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
     prevPaymentStatusRef.current = paymentStatus;
     if (prev === paymentStatus) return;
     if (paymentStatus === "confirmed") {
-      setPlanToast({ msg: "🎉 ¡Plan PRO activado! Ya tienes acceso completo.", type: "pro" });
+      const planName = freemium.plan === "basico" ? "BÁSICO" : "PRO";
+      setPlanToast({ msg: `🎉 ¡Plan ${planName} activado! Ya tienes acceso completo.`, type: "pro" });
       setTimeout(() => setPlanToast(null), 7000);
     } else if (paymentStatus === "none" && (prev === "pending" || prev === "confirmed")) {
       setPlanToast({ msg: "⚠️ No pudimos verificar tu pago. Si ya lo realizaste, puedes intentarlo nuevamente con 'Ya pagué'.", type: "free" });
@@ -736,10 +737,10 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
                 <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: TEAL }}>✓ Pago en verificación.</p>
                 <p style={{ margin: "4px 0 0", fontSize: 12, color: MUTED }}>Activación en pocos minutos.</p>
               </div>
-            ) : userPlan !== "pro" ? (
+            ) : userPlan === "free" ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <p style={{ margin: 0, fontSize: 12, color: MUTED, lineHeight: 1.5 }}>
-                  📩 Envía el capture de tu pago a soporte para agilizar la activación PRO.
+                  📩 Tras enviar el pago, presiona el botón para verificar automáticamente.
                 </p>
                 <button
                   disabled={upgradeSending}
@@ -759,7 +760,7 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
                     cursor: upgradeSending ? "not-allowed" : "pointer", width: "100%",
                   }}
                 >
-                  {upgradeSending ? "Enviando…" : "💳 Ya pagué — Activar PRO"}
+                  {upgradeSending ? "Verificando…" : "💳 Ya pagué — Verificar pago"}
                 </button>
               </div>
             ) : null}

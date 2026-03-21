@@ -26,6 +26,11 @@ import {
   getGroupScanCount,
   incrementGroupScan,
   setUserPlan,
+  setPaidPlan,
+  getPaidScansRemaining,
+  decrementPaidScans,
+  isTxUsed,
+  markTxUsed,
   resetScanCount,
   requestUpgrade,
   getAllUsersWithPlans,
@@ -36,6 +41,7 @@ import {
   getDeviceBySyncCode,
   recordScanFull,
   fullSystemReset,
+  pool,
   FREE_SCAN_LIMIT,
   PRO_DURATION_DAYS,
 } from "../lib/db";
@@ -137,23 +143,43 @@ router.get("/freemium/status", async (req, res) => {
       deviceId ? getDeviceScanCount(deviceId) : Promise.resolve(0), // fallback: solo device
     ]);
 
+    const isPaid = plan === "basico" || plan === "pro";
+
     // If we have a group (IP resolved) → group total is the limit.
     // If no IP → fall back to individual device count.
     // CC-ID count is always checked as the floor.
     const scansToday    = groupId
       ? Math.max(ccScans, groupScans)
       : Math.max(ccScans, deviceScans);
-    const isPro         = plan === "pro";
-    const canScan       = isPro || scansToday < FREE_SCAN_LIMIT;
-    const remaining     = isPro ? null : Math.max(0, FREE_SCAN_LIMIT - scansToday);
-    const daysRemaining = isPro ? await getProDaysRemaining(ccId) : null;
+
+    // Paid plans: canScan depends on remaining scan budget, not daily limit
+    let canScan: boolean;
+    let remaining: number | null;
+    let paidScansRemaining: number | null = null;
+
+    if (isPaid) {
+      paidScansRemaining = await getPaidScansRemaining(ccId);
+      if (paidScansRemaining === null) {
+        // Legacy unlimited pro (admin-granted without scan budget)
+        canScan   = true;
+        remaining = null;
+      } else {
+        canScan   = paidScansRemaining > 0;
+        remaining = paidScansRemaining;
+      }
+    } else {
+      canScan   = scansToday < FREE_SCAN_LIMIT;
+      remaining = Math.max(0, FREE_SCAN_LIMIT - scansToday);
+    }
+
+    const daysRemaining = plan === "pro" ? await getProDaysRemaining(ccId) : null;
     const proExpiresAt  = daysRemaining !== null
       ? new Date(Date.now() + daysRemaining * 86_400_000).toISOString()
       : null;
 
     return res.json({
       plan, scansToday, limit: FREE_SCAN_LIMIT, canScan, remaining,
-      daysRemaining, proExpiresAt, proDurationDays: PRO_DURATION_DAYS,
+      paidScansRemaining, daysRemaining, proExpiresAt, proDurationDays: PRO_DURATION_DAYS,
     });
   } catch (err: any) {
     console.error("[freemium] status error:", err?.message);
@@ -173,8 +199,21 @@ router.post("/freemium/record", async (req, res) => {
   try {
     const plan = await getUserPlan(ccId);
 
-    if (plan === "pro") {
-      return res.json({ ok: true, plan: "pro", scansToday: null, remaining: null });
+    // Paid plans (basico / pro): decrement scan budget instead of daily limit
+    if (plan === "basico" || plan === "pro") {
+      const newRemaining = await decrementPaidScans(ccId);
+      // If newRemaining is null, this is a legacy unlimited-pro (admin-granted) — allow freely
+      if (newRemaining !== null && newRemaining < 0) {
+        return res.status(429).json({
+          error: "limit_reached", message: "Has agotado tus scans del plan.",
+          scansToday: 0, limit: 0,
+        });
+      }
+      return res.json({
+        ok: true, plan,
+        scansToday: null, remaining: newRemaining,
+        paidScansRemaining: newRemaining,
+      });
     }
 
     // Read current group total AND CC-ID count in parallel
@@ -277,12 +316,21 @@ router.get("/freemium/pending", async (req, res) => {
 router.post("/freemium/set-plan", async (req, res) => {
   if (!adminGuard(req, res)) return;
   const ccId = ((req.body?.ccId) ?? "").trim();
-  const plan = ((req.body?.plan) ?? "").trim() as "free" | "pro";
-  if (!ccId || !["free", "pro"].includes(plan)) {
-    return res.status(400).json({ error: "ccId and plan (free|pro) required" });
+  const plan = ((req.body?.plan) ?? "").trim() as "free" | "basico" | "pro";
+  if (!ccId || !["free", "basico", "pro"].includes(plan)) {
+    return res.status(400).json({ error: "ccId and plan (free|basico|pro) required" });
   }
   try {
-    await setUserPlan(ccId, plan);
+    if (plan === "basico") {
+      await setPaidPlan(ccId, "basico", 100);
+    } else if (plan === "pro") {
+      await setPaidPlan(ccId, "pro", 250);
+    } else {
+      await setUserPlan(ccId, "free");
+    }
+    // Notify user in real-time
+    const io = req.app.get("io");
+    if (io) io.to(ccId).emit("plan-updated", { ccId, plan });
     return res.json({ ok: true, ccId, plan });
   } catch (err: any) {
     console.error("[freemium] set-plan error:", err?.message);
@@ -305,19 +353,146 @@ router.post("/freemium/reset-scans", async (req, res) => {
 });
 
 // ── POST /api/freemium/confirm-upgrade ────────────────────────────────────────
+// Admin-side manual confirmation. plan defaults to "pro" (250 scans) if not specified.
 router.post("/freemium/confirm-upgrade", async (req, res) => {
   if (!adminGuard(req, res)) return;
   const ccId = ((req.body?.ccId) ?? "").trim();
+  const plan = (((req.body?.plan) ?? "pro") as string).trim() as "basico" | "pro";
   if (!ccId) return res.status(400).json({ error: "ccId required" });
   try {
-    await setUserPlan(ccId, "pro"); // also clears upgrade_requested_at
-    // Notify the specific user in real-time via Socket.io
+    const scans = plan === "basico" ? 100 : 250;
+    await setPaidPlan(ccId, plan, scans);
     const io = req.app.get("io");
-    if (io) io.to(ccId).emit("plan-updated", { ccId, plan: "pro" });
-    return res.json({ ok: true, ccId, plan: "pro" });
+    if (io) io.to(ccId).emit("plan-updated", { ccId, plan, paidScansRemaining: scans });
+    return res.json({ ok: true, ccId, plan });
   } catch (err: any) {
     console.error("[freemium] confirm-upgrade error:", err?.message);
     return res.status(500).json({ error: "Error al confirmar upgrade" });
+  }
+});
+
+// ── POST /api/freemium/verify-payment ─────────────────────────────────────────
+// Automatic blockchain verification via TronGrid.
+// Looks for a USDT TRC20 transfer to our wallet after the user's upgrade_requested_at timestamp.
+// Accepts ~10 USDT → basico (100 scans) | ~20 USDT → pro (250 scans).
+// Body: { ccId: string }
+// Returns: { status: "confirmed", plan, paidScansRemaining, txId }
+//        | { status: "pending" }
+//        | { status: "error", message }
+const TRON_WALLET  = "TM2cRRegda1gQAQY9hGbg6DMscN7okNVA1";
+const USDT_TRC20   = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"; // mainnet USDT contract
+
+router.post("/freemium/verify-payment", async (req, res) => {
+  const ccId = ((req.body?.ccId) ?? "").trim();
+  if (!ccId) return res.status(400).json({ error: "ccId required" });
+
+  try {
+    // 1. Get the timestamp when the user clicked "Ya pagué"
+    const userRow = await pool.query<{ upgrade_requested_at: string | null; plan: string }>(
+      `SELECT upgrade_requested_at, plan FROM users WHERE coincash_id = $1 LIMIT 1`,
+      [ccId],
+    );
+    const row = userRow.rows[0];
+    if (!row) return res.json({ status: "pending" });
+
+    // Already on a paid plan (might have been confirmed by admin in the meantime)
+    if (row.plan === "basico" || row.plan === "pro") {
+      const remaining = await getPaidScansRemaining(ccId);
+      return res.json({ status: "confirmed", plan: row.plan, paidScansRemaining: remaining });
+    }
+
+    if (!row.upgrade_requested_at) {
+      return res.json({ status: "pending" });
+    }
+
+    const requestedAtMs = new Date(row.upgrade_requested_at).getTime();
+
+    // 2. Query TronGrid for recent TRC20 transfers to our wallet
+    const tronUrl =
+      `https://api.trongrid.io/v1/accounts/${TRON_WALLET}/transactions/trc20` +
+      `?limit=50&contract_address=${USDT_TRC20}&only_to=true`;
+
+    let tronData: any;
+    try {
+      const tronRes = await fetch(tronUrl, {
+        headers: { "Accept": "application/json" },
+        signal: AbortSignal.timeout(10_000),
+      });
+      tronData = await tronRes.json();
+    } catch (fetchErr: any) {
+      console.error("[verify-payment] TronGrid fetch failed:", fetchErr?.message);
+      return res.json({ status: "pending", detail: "trongrid_unavailable" });
+    }
+
+    if (!Array.isArray(tronData?.data)) {
+      console.warn("[verify-payment] Unexpected TronGrid response shape:", JSON.stringify(tronData)?.slice(0, 200));
+      return res.json({ status: "pending", detail: "trongrid_bad_response" });
+    }
+
+    // 3. Find a valid, unused transaction
+    const txs: any[] = tronData.data;
+    let found: { txId: string; plan: "basico" | "pro"; scans: number; amountUsdt: number } | null = null;
+
+    for (const tx of txs) {
+      const symbol    = tx.token_info?.symbol ?? tx.token_info?.name ?? "";
+      const toAddress = tx.to ?? "";
+      const amountRaw = parseInt(tx.value ?? "0", 10);
+      const amount    = amountRaw / 1_000_000;          // USDT has 6 decimals
+      const txTime    = tx.block_timestamp ?? 0;        // Unix ms
+      const txId      = tx.transaction_id ?? "";
+
+      // Must be USDT, must be sent TO our wallet, must be AFTER upgrade request
+      if (
+        symbol    !== "USDT"   ||
+        toAddress !== TRON_WALLET ||
+        txTime    <  requestedAtMs ||
+        !txId
+      ) continue;
+
+      const isBasico = amount >= 9.5  && amount <= 10.5;
+      const isPro    = amount >= 19.5 && amount <= 20.5;
+      if (!isBasico && !isPro) continue;
+
+      // Check double-spend guard
+      const alreadyUsed = await isTxUsed(txId);
+      if (alreadyUsed) continue;
+
+      found = {
+        txId,
+        plan:       isBasico ? "basico" : "pro",
+        scans:      isBasico ? 100 : 250,
+        amountUsdt: amount,
+      };
+      break; // Take the first valid tx
+    }
+
+    if (!found) {
+      console.log(`[verify-payment] No valid tx found for ${ccId} after ${row.upgrade_requested_at}`);
+      return res.json({ status: "pending" });
+    }
+
+    // 4. Mark tx as used, then upgrade the user atomically
+    await markTxUsed(found.txId, ccId, found.plan, found.amountUsdt);
+    await setPaidPlan(ccId, found.plan, found.scans);
+
+    console.log(`[verify-payment] ✅ ${ccId} → ${found.plan} (${found.scans} scans) txId=${found.txId} amount=${found.amountUsdt} USDT`);
+
+    // 5. Emit real-time update to the user's socket room
+    const io = req.app.get("io");
+    if (io) io.to(ccId).emit("plan-updated", {
+      ccId, plan: found.plan, paidScansRemaining: found.scans,
+    });
+
+    return res.json({
+      status:            "confirmed",
+      plan:              found.plan,
+      paidScansRemaining: found.scans,
+      txId:              found.txId,
+      amountUsdt:        found.amountUsdt,
+    });
+  } catch (err: any) {
+    console.error("[freemium/verify-payment]", err?.message);
+    return res.status(500).json({ status: "error", message: "Error interno al verificar pago" });
   }
 });
 

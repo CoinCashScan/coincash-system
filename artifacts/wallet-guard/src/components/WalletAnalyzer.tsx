@@ -306,16 +306,20 @@ interface WalletAnalyzerProps {
 const FREE_SCAN_LIMIT = 5;
 
 interface FreemiumStatus {
-  plan:       "free" | "pro";
-  scansToday: number;
-  limit:      number;
-  canScan:    boolean;
-  remaining:  number | null;
-  blocked?:   "evasion" | "limit_reached" | string;
-  ipHash?:    string;
+  plan:               "free" | "basico" | "pro";
+  scansToday:         number;
+  limit:              number;
+  canScan:            boolean;
+  remaining:          number | null;
+  paidScansRemaining: number | null;
+  blocked?:           "evasion" | "limit_reached" | string;
+  ipHash?:            string;
 }
 
-const DEFAULT_FREEMIUM: FreemiumStatus = { plan: "free", scansToday: 0, limit: 5, canScan: true, remaining: 5 };
+const DEFAULT_FREEMIUM: FreemiumStatus = {
+  plan: "free", scansToday: 0, limit: 5, canScan: true,
+  remaining: 5, paidScansRemaining: null,
+};
 
 async function fetchFreemiumStatus(ccId: string): Promise<FreemiumStatus> {
   try {
@@ -345,15 +349,23 @@ async function recordScanUnified(ccId: string, wallet: string): Promise<Freemium
     if (res.status === 429 || data.error === "limit_reached") {
       return { plan: "free", scansToday: data.scansToday ?? 5, limit: FREE_SCAN_LIMIT, canScan: false, remaining: 0, blocked: "limit_reached" };
     }
-    if (data.plan === "pro") {
-      return { plan: "pro", scansToday: 0, limit: FREE_SCAN_LIMIT, canScan: true, remaining: null };
+    if (data.plan === "basico" || data.plan === "pro") {
+      return {
+        plan:               data.plan,
+        scansToday:         0,
+        limit:              FREE_SCAN_LIMIT,
+        canScan:            data.remaining !== null ? data.remaining > 0 : true,
+        remaining:          data.remaining ?? null,
+        paidScansRemaining: data.paidScansRemaining ?? data.remaining ?? null,
+      };
     }
     return {
-      plan:       "free",
-      scansToday: data.scansToday ?? 0,
-      limit:      FREE_SCAN_LIMIT,
-      canScan:    data.canScan ?? true,
-      remaining:  data.remaining ?? FREE_SCAN_LIMIT,
+      plan:               "free",
+      scansToday:         data.scansToday ?? 0,
+      limit:              FREE_SCAN_LIMIT,
+      canScan:            data.canScan ?? true,
+      remaining:          data.remaining ?? FREE_SCAN_LIMIT,
+      paidScansRemaining: null,
     };
   } catch {
     return DEFAULT_FREEMIUM;
@@ -855,15 +867,16 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
     }
   }, [reportData]);
 
-  const isPro = freemiumLoaded && freemium.plan === "pro";
+  const isPro  = freemiumLoaded && (freemium.plan === "pro" || freemium.plan === "basico");
+  const planLabel = freemium.plan === "basico" ? "BÁSICO" : freemium.plan === "pro" ? "PRO" : "";
 
   return (
     <div className="flex flex-col w-full px-4 mx-auto" style={{ maxWidth: "640px" }}>
 
-      {/* ── PRO badge row ── */}
+      {/* ── Plan badge row ── */}
       {isPro && (
         <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
-          <span className="pro-badge">⭐ PRO</span>
+          <span className="pro-badge">⭐ {planLabel}</span>
         </div>
       )}
 
@@ -1234,10 +1247,10 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                       Activación en pocos minutos.
                     </p>
                   </div>
-                ) : freemium.plan !== "pro" ? (
+                ) : freemium.plan === "free" ? (
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                     <p style={{ margin: 0, fontSize: 12, color: "rgba(255,255,255,0.45)", lineHeight: 1.5 }}>
-                      📩 Envía el capture de tu pago a soporte para agilizar la activación PRO.
+                      📩 Tras enviar el pago, presiona el botón para verificar automáticamente.
                     </p>
                     <button
                       disabled={upgradeSending}
@@ -1257,7 +1270,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                         width: "100%", letterSpacing: "0.02em",
                       }}
                     >
-                      {upgradeSending ? "Enviando…" : "💳 Ya pagué — Activar PRO"}
+                      {upgradeSending ? "Verificando…" : "💳 Ya pagué — Verificar pago"}
                     </button>
                   </div>
                 ) : null}
@@ -1331,6 +1344,18 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
             <span>Scan QR</span>
           </button>
         </div>
+
+        {/* Scan counter badge for paid plans (basico/pro) */}
+        {freemiumLoaded && isPro && freemium.paidScansRemaining !== null && (
+          <div style={{
+            display: "flex", alignItems: "center", justifyContent: "center",
+            gap: 8, marginTop: 10,
+          }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: "#F59E0B", letterSpacing: "0.02em" }}>
+              ⭐ {freemium.paidScansRemaining} scans restantes en tu plan {planLabel}
+            </span>
+          </div>
+        )}
 
         {/* Scan counter badge — visible for free users once plan is confirmed from DB */}
         {freemiumLoaded && freemium.plan === "free" && freemium.canScan && (() => {
