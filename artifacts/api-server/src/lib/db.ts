@@ -1876,61 +1876,66 @@ export async function getPendingUpgrades(): Promise<{
 
 /**
  * Find the best-matching pending user for an incoming payment amount.
- * Strategy: amount-aware match first (oldest user waiting for that specific plan amount),
- * then plain oldest-pending as fallback.
- * Excludes users whose upgrade_requested_at is NEWER than the tx timestamp (can't have paid before clicking "Ya pagué").
+ *
+ * Real-world flow: user pays → then opens app → clicks "Ya pagué".
+ * So upgrade_requested_at is ALWAYS after the tx timestamp. We must NOT
+ * filter by timestamp — just find the oldest pending free user whose
+ * intended plan matches the amount.
+ *
+ * Priority:
+ *   1. Oldest free user who explicitly selected the matching plan (basico/pro)
+ *   2. Oldest free user with any pending request (plan intent unknown)
+ *
+ * Fraud protection is handled by the payment_txids dedup table, not timestamps.
  */
 export async function getPendingUserForAmount(
-  amountUsdt:   number,
-  txTimestampMs: number,          // block_timestamp from TronScan (ms)
+  amountUsdt:    number,
+  _txTimestampMs: number,   // kept for logging, no longer used as a DB filter
 ): Promise<{
   ccId: string; upgradePlan: "basico" | "pro"; upgradeScans: number;
 } | null> {
-  const txTime = new Date(txTimestampMs);
-
   const isBasico = amountUsdt >= 9.5  && amountUsdt <= 10.5;
   const isPro    = amountUsdt >= 19.5 && amountUsdt <= 20.5;
   if (!isBasico && !isPro) return null;
 
-  const intendedPlan = isBasico ? "basico" : "pro";
+  const intendedPlan  = isBasico ? "basico" : "pro";
   const intendedScans = isBasico ? 100 : 250;
 
-  // 1. Prefer user who explicitly selected this plan and clicked "Ya pagué" before the tx
-  const exact = await pool.query<{ coincash_id: string; upgrade_plan: string | null; upgrade_scans: number | null }>(
+  // 1. Prefer user who explicitly selected this plan
+  const exact = await pool.query<{
+    coincash_id: string; upgrade_plan: string | null; upgrade_scans: number | null;
+  }>(
     `SELECT coincash_id, upgrade_plan, upgrade_scans
        FROM users
       WHERE plan = 'free'
         AND upgrade_requested_at IS NOT NULL
-        AND upgrade_requested_at <= $1
-        AND (upgrade_plan = $2 OR upgrade_plan IS NULL)
+        AND upgrade_plan = $1
       ORDER BY upgrade_requested_at ASC
       LIMIT 1`,
-    [txTime, intendedPlan],
+    [intendedPlan],
   );
   if (exact.rows.length > 0) {
     const r = exact.rows[0];
     return {
-      ccId:        r.coincash_id,
-      upgradePlan: (r.upgrade_plan as "basico" | "pro") ?? intendedPlan,
+      ccId:         r.coincash_id,
+      upgradePlan:  (r.upgrade_plan as "basico" | "pro") ?? intendedPlan,
       upgradeScans: r.upgrade_scans ?? intendedScans,
     };
   }
 
-  // 2. Fallback: oldest pending user regardless of plan intent
+  // 2. Fallback: oldest pending user regardless of which plan they selected
   const fallback = await pool.query<{ coincash_id: string }>(
     `SELECT coincash_id
        FROM users
       WHERE plan = 'free'
         AND upgrade_requested_at IS NOT NULL
-        AND upgrade_requested_at <= $1
       ORDER BY upgrade_requested_at ASC
       LIMIT 1`,
-    [txTime],
   );
   if (fallback.rows.length === 0) return null;
   return {
-    ccId:        fallback.rows[0].coincash_id,
-    upgradePlan: intendedPlan,
+    ccId:         fallback.rows[0].coincash_id,
+    upgradePlan:  intendedPlan,
     upgradeScans: intendedScans,
   };
 }

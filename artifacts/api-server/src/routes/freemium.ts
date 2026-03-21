@@ -454,11 +454,13 @@ router.post("/freemium/verify-payment", async (req, res) => {
       const txTime    = tx.block_timestamp ?? 0;        // Unix ms
       const txId      = tx.transaction_id ?? "";
 
-      // Must be USDT, must be sent TO our wallet, must be AFTER upgrade request
+      // Must be USDT, sent TO our wallet, within 48 h before OR after the upgrade request
+      // (user typically pays first, THEN clicks "Ya pagué" — so tx can predate the request)
+      const windowMs = 48 * 60 * 60 * 1000;
       if (
         symbol    !== "USDT"   ||
         toAddress !== TRON_WALLET ||
-        txTime    <  requestedAtMs ||
+        txTime    <  (requestedAtMs - windowMs) ||
         !txId
       ) continue;
 
