@@ -1815,11 +1815,13 @@ export async function requestUpgrade(
 
 /** Return all users + their today's scan count. */
 export async function getAllUsersWithPlans(): Promise<{
-  ccId: string; email: string; plan: string; scansToday: number; upgradeRequestedAt: string | null;
+  ccId: string; email: string; plan: string; scansToday: number;
+  upgradeRequestedAt: string | null; paidScansRemaining: number | null;
 }[]> {
   const res = await pool.query<{
     coincash_id: string; email: string; plan: string;
     scans_today: string; upgrade_requested_at: string | null;
+    paid_scans_remaining: number | null;
   }>(`
     -- Union: all registered users + any cc_ids from scan history not yet registered
     WITH all_ids AS (
@@ -1833,18 +1835,20 @@ export async function getAllUsersWithPlans(): Promise<{
            COALESCE(u.email, '')                  AS email,
            COALESCE(u.plan, 'free')               AS plan,
            COALESCE(sl.scan_count, 0)             AS scans_today,
-           u.upgrade_requested_at
+           u.upgrade_requested_at,
+           u.paid_scans_remaining
       FROM all_ids a
       LEFT JOIN users u        ON u.coincash_id = a.cc_id
       LEFT JOIN scan_limits sl ON sl.cc_id = a.cc_id AND sl.scan_date = CURRENT_DATE
      ORDER BY u.upgrade_requested_at DESC NULLS LAST, a.cc_id
   `);
   return res.rows.map((r) => ({
-    ccId:               r.coincash_id,
-    email:              r.email,
-    plan:               r.plan,
-    scansToday:         parseInt(r.scans_today as any, 10) || 0,
-    upgradeRequestedAt: r.upgrade_requested_at ?? null,
+    ccId:                r.coincash_id,
+    email:               r.email,
+    plan:                r.plan,
+    scansToday:          parseInt(r.scans_today as any, 10) || 0,
+    upgradeRequestedAt:  r.upgrade_requested_at ?? null,
+    paidScansRemaining:  r.paid_scans_remaining ?? null,
   }));
 }
 

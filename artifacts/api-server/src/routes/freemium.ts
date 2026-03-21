@@ -335,10 +335,11 @@ router.post("/freemium/set-plan", async (req, res) => {
     } else {
       await setUserPlan(ccId, "free");
     }
-    // Notify user in real-time
+    // Notify user in real-time (include scan budget so frontend updates immediately)
     const io = req.app.get("io");
-    if (io) io.to(ccId).emit("plan-updated", { ccId, plan });
-    return res.json({ ok: true, ccId, plan });
+    const scansGranted = plan === "basico" ? 100 : plan === "pro" ? 250 : undefined;
+    if (io) io.to(ccId).emit("plan-updated", { ccId, plan, paidScansRemaining: scansGranted });
+    return res.json({ ok: true, ccId, plan, paidScansRemaining: scansGranted });
   } catch (err: any) {
     console.error("[freemium] set-plan error:", err?.message);
     return res.status(500).json({ error: "Error al cambiar plan" });

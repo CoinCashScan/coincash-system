@@ -297,7 +297,7 @@ function AdminPanelInner() {
   const [whitelistBusy,   setWhitelistBusy]   = useState<string | null>(null);
 
   // ── Planes state ─────────────────────────────────────────────────────────
-  interface PlanUser { ccId: string; email: string; plan: string; scansToday: number; upgradeRequestedAt: string | null; }
+  interface PlanUser { ccId: string; email: string; plan: string; scansToday: number; upgradeRequestedAt: string | null; paidScansRemaining: number | null; }
   interface PlanesStats { totalUsers: number; proUsers: number; freeUsers: number; scansToday: number; }
   interface PendingUser {
     ccId:          string;
@@ -1351,9 +1351,16 @@ function AdminPanelInner() {
                               {/* Row 2: email + scans */}
                               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                                 <span style={{ fontSize: 11, color: "#6B7280", flex: 1 }}>{u.email || "—"}</span>
-                                <span style={{ fontSize: 11, color: isActiveUser ? "#00DCA0" : "#4B5563" }}>
-                                  Scans hoy: <strong style={{ color: isActiveUser ? "#00FFC6" : "#6B7280" }}>{u.scansToday}</strong>
-                                </span>
+                                {isPaid && u.paidScansRemaining !== null ? (
+                                  <span style={{ fontSize: 11, color: "#60A5FA" }}>
+                                    Créditos: <strong style={{ color: u.paidScansRemaining > 10 ? "#00FFC6" : "#F59E0B" }}>{u.paidScansRemaining}</strong>
+                                    <span style={{ color: "#4B5563" }}> / {u.plan === "pro" ? "250" : "100"}</span>
+                                  </span>
+                                ) : (
+                                  <span style={{ fontSize: 11, color: isActiveUser ? "#00DCA0" : "#4B5563" }}>
+                                    Scans hoy: <strong style={{ color: isActiveUser ? "#00FFC6" : "#6B7280" }}>{u.scansToday}</strong>
+                                  </span>
+                                )}
                               </div>
                               {/* Row 3: action buttons */}
                               <div style={{ display: "flex", gap: 6 }}>
