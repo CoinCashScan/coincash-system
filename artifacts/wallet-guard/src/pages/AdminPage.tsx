@@ -303,6 +303,7 @@ function AdminPanelInner() {
   const [planesLoading,   setPlanesLoading]   = useState(false);
   const [actionBusy,      setActionBusy]      = useState<string | null>(null);
   const [showOnlyActive,  setShowOnlyActive]  = useState(true);
+  const [revertModal,     setRevertModal]     = useState<{ ccId: string; context: "pending" | "pro" } | null>(null);
 
   // ── Reset stats state ─────────────────────────────────────────────────────
   const [resetModal,      setResetModal]      = useState<null | "visitas" | "scans" | "fullReset">(null);
@@ -385,6 +386,19 @@ function AdminPanelInner() {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({ key: SCAN_KEY, ccId, ...extra }),
+      });
+      await Promise.all([fetchPlanesData(), fetchPendingData()]);
+    } catch { /* ignore */ } finally { setActionBusy(null); }
+  }, [fetchPlanesData, fetchPendingData]);
+
+  const revertAction = useCallback(async (ccId: string) => {
+    setRevertModal(null);
+    setActionBusy(ccId);
+    try {
+      await fetch(`${API}/admin/revert-payment`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ key: SCAN_KEY, ccId }),
       });
       await Promise.all([fetchPlanesData(), fetchPendingData()]);
     } catch { /* ignore */ } finally { setActionBusy(null); }
@@ -1156,17 +1170,30 @@ function AdminPanelInner() {
                           {u.email && <div style={{ fontSize: 11, color: "#6B7280" }}>{u.email}</div>}
                           <div style={{ fontSize: 10, color: "#4B5563", marginTop: 1 }}>{timeAgo(u.requestedAt)}</div>
                         </div>
-                        <button
-                          disabled={actionBusy === u.ccId}
-                          onClick={() => planAction("confirm-upgrade", u.ccId)}
-                          style={{
-                            background: actionBusy === u.ccId ? "rgba(167,139,250,0.2)" : "linear-gradient(135deg,#7C3AED,#A78BFA)",
-                            border: "none", borderRadius: 8, color: "#fff", fontSize: 11, fontWeight: 700,
-                            padding: "6px 12px", cursor: actionBusy === u.ccId ? "not-allowed" : "pointer", whiteSpace: "nowrap",
-                          }}
-                        >
-                          {actionBusy === u.ccId ? "…" : "✓ Confirmar pago"}
-                        </button>
+                        <div style={{ display: "flex", gap: 7 }}>
+                          <button
+                            disabled={actionBusy === u.ccId}
+                            onClick={() => planAction("confirm-upgrade", u.ccId)}
+                            style={{
+                              background: actionBusy === u.ccId ? "rgba(167,139,250,0.2)" : "linear-gradient(135deg,#7C3AED,#A78BFA)",
+                              border: "none", borderRadius: 8, color: "#fff", fontSize: 11, fontWeight: 700,
+                              padding: "6px 12px", cursor: actionBusy === u.ccId ? "not-allowed" : "pointer", whiteSpace: "nowrap",
+                            }}
+                          >
+                            {actionBusy === u.ccId ? "…" : "✓ Confirmar pago"}
+                          </button>
+                          <button
+                            disabled={actionBusy === u.ccId}
+                            onClick={() => setRevertModal({ ccId: u.ccId, context: "pending" })}
+                            style={{
+                              background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.3)",
+                              borderRadius: 8, color: "#FF6B6B", fontSize: 11, fontWeight: 700,
+                              padding: "6px 12px", cursor: actionBusy === u.ccId ? "not-allowed" : "pointer", whiteSpace: "nowrap",
+                            }}
+                          >
+                            🔄 Revertir
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1291,15 +1318,15 @@ function AdminPanelInner() {
                                 ) : (
                                   <button
                                     disabled={isBusy}
-                                    onClick={() => planAction("set-plan", u.ccId, { plan: "free" })}
+                                    onClick={() => setRevertModal({ ccId: u.ccId, context: "pro" })}
                                     style={{
-                                      flex: 1, background: "rgba(107,114,128,0.1)",
-                                      border: "1px solid rgba(107,114,128,0.3)", borderRadius: 8,
-                                      color: "#9CA3AF", fontSize: 11, fontWeight: 700, padding: "6px 0",
+                                      flex: 1, background: "rgba(255,80,80,0.08)",
+                                      border: "1px solid rgba(255,80,80,0.3)", borderRadius: 8,
+                                      color: "#FF6B6B", fontSize: 11, fontWeight: 700, padding: "6px 0",
                                       cursor: isBusy ? "not-allowed" : "pointer",
                                     }}
                                   >
-                                    {isBusy ? "…" : "⬇ Quitar PRO"}
+                                    {isBusy ? "…" : "🔄 Revertir pago"}
                                   </button>
                                 )}
                                 <button
@@ -1432,7 +1459,76 @@ function AdminPanelInner() {
         </div>
         )}
 
-        {/* ── Confirmation Modal ── */}
+        {/* ── Revert payment confirmation modal ── */}
+        {revertModal && (
+          <div style={{
+            position: "fixed", inset: 0, zIndex: 9999,
+            background: "rgba(0,0,0,0.78)", backdropFilter: "blur(6px)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            padding: "24px",
+          }} onClick={() => setRevertModal(null)}>
+            <div
+              style={{
+                background: "#111827",
+                border: "1px solid rgba(255,80,80,0.35)",
+                borderRadius: 18, padding: "24px 20px", maxWidth: 340, width: "100%",
+                boxShadow: "0 24px 80px rgba(0,0,0,0.7)",
+              }}
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Icon + title */}
+              <div style={{ textAlign: "center", marginBottom: 16 }}>
+                <div style={{ fontSize: 38, marginBottom: 8 }}>⚠️</div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: "#F9FAFB" }}>
+                  ¿Revertir este pago?
+                </div>
+              </div>
+
+              {/* CC ID */}
+              <div style={{
+                background: "rgba(255,255,255,0.04)", borderRadius: 10,
+                padding: "9px 12px", marginBottom: 14, textAlign: "center",
+              }}>
+                <span style={{ fontSize: 12, fontFamily: "monospace", color: "#9CA3AF" }}>
+                  {revertModal.ccId}
+                </span>
+              </div>
+
+              {/* Warning text */}
+              <p style={{ margin: "0 0 18px", fontSize: 12, color: "rgba(255,255,255,0.55)", lineHeight: 1.65, textAlign: "center" }}>
+                {revertModal.context === "pro"
+                  ? "Esto desactivará el acceso PRO del usuario y lo regresará al plan FREE."
+                  : "Esto eliminará la solicitud de pago pendiente. El usuario volverá al plan FREE."
+                }
+              </p>
+
+              {/* Buttons */}
+              <div style={{ display: "flex", gap: 10 }}>
+                <button
+                  onClick={() => setRevertModal(null)}
+                  style={{
+                    flex: 1, padding: "10px 0", borderRadius: 10,
+                    background: "rgba(255,255,255,0.06)",
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    color: "#9CA3AF", fontSize: 12, fontWeight: 700,
+                    cursor: "pointer", fontFamily: "inherit",
+                  }}
+                >Cancelar</button>
+                <button
+                  onClick={() => revertAction(revertModal.ccId)}
+                  style={{
+                    flex: 1, padding: "10px 0", borderRadius: 10,
+                    background: "rgba(255,80,80,0.15)",
+                    border: "1px solid rgba(255,80,80,0.45)",
+                    color: "#FF6B6B", fontSize: 12, fontWeight: 800,
+                    cursor: "pointer", fontFamily: "inherit",
+                  }}
+                >🔄 Sí, revertir</button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {resetModal && (
           <div style={{
             position: "fixed", inset: 0, zIndex: 9999,

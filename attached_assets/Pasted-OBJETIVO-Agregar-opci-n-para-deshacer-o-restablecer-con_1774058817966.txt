@@ -1,0 +1,116 @@
+OBJETIVO:
+Agregar opción para deshacer o restablecer confirmaciones de pago en el panel admin.
+
+--------------------------------------------------
+
+1. UBICACIÓN:
+
+En la sección:
+
+"PAGOS PENDIENTES"
+
+y también en usuarios que ya fueron activados (PRO)
+
+--------------------------------------------------
+
+2. NUEVO BOTÓN:
+
+Agregar botón secundario junto a:
+
+✔ Confirmar pago
+
+👉 Nuevo botón:
+🔄 Revertir pago
+
+--------------------------------------------------
+
+3. DISEÑO:
+
+- Color: rojo suave / warning
+- Estilo: outline o semi-transparente
+
+Ejemplo:
+
+.btn-revert {
+  background: rgba(255, 80, 80, 0.1);
+  color: #ff4d4d;
+  border: 1px solid rgba(255, 80, 80, 0.3);
+  border-radius: 8px;
+  padding: 6px 12px;
+}
+
+--------------------------------------------------
+
+4. FUNCIONALIDAD:
+
+Al hacer clic en "Revertir pago":
+
+- Cambiar estado del usuario:
+   PRO → FREE
+   PENDIENTE → eliminado o reiniciado
+
+- Resetear:
+   scans usados (opcional)
+   estado de pago
+   bandera de "pagado"
+
+--------------------------------------------------
+
+5. CONFIRMACIÓN (IMPORTANTE):
+
+Antes de ejecutar:
+
+Mostrar modal:
+
+⚠️ ¿Seguro que deseas revertir este pago?
+
+Esto desactivará el acceso PRO del usuario.
+
+[Cancelar]   [Sí, revertir]
+
+--------------------------------------------------
+
+6. BACKEND:
+
+Crear endpoint:
+
+POST /admin/revert-payment
+
+Body:
+{
+  userId: "CC-XXXXXX"
+}
+
+Acciones:
+- update user.plan = "free"
+- update payment.status = "reverted"
+- log admin action
+
+--------------------------------------------------
+
+7. EXTRA PRO (RECOMENDADO):
+
+Agregar historial:
+
+📜 Historial de pagos
+
+- confirmado
+- revertido
+- pendiente
+
+--------------------------------------------------
+
+8. IMPORTANTE:
+
+- Solo visible para admin
+- No afectar diseño actual
+- Mantener consistencia visual
+
+--------------------------------------------------
+
+RESULTADO:
+
+✔ Puedes corregir errores manuales
+✔ Control total sobre pagos
+✔ Evitas pérdidas o accesos indebidos
+✔ Sistema más profesional tipo SaaS real

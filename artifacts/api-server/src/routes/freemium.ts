@@ -318,6 +318,22 @@ router.post("/freemium/confirm-upgrade", async (req, res) => {
   }
 });
 
+// ── POST /api/admin/revert-payment ────────────────────────────────────────────
+// Reverts a user from PRO to FREE (or clears a pending upgrade request).
+router.post("/admin/revert-payment", async (req, res) => {
+  if (!adminGuard(req, res)) return;
+  const ccId = ((req.body?.ccId) ?? "").trim();
+  if (!ccId) return res.status(400).json({ error: "ccId required" });
+  try {
+    await setUserPlan(ccId, "free");
+    console.log(`[admin] revert-payment → ${ccId} set to FREE`);
+    return res.json({ ok: true, ccId, plan: "free", reverted: true });
+  } catch (err: any) {
+    console.error("[admin] revert-payment error:", err?.message);
+    return res.status(500).json({ error: "Error al revertir pago" });
+  }
+});
+
 // ── POST /api/admin/full-reset ────────────────────────────────────────────────
 // Wipes ALL operational data and re-seeds system accounts.
 // Requires admin key + confirmation token "RESET" in body.
