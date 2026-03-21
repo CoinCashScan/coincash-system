@@ -1666,6 +1666,22 @@ export async function decrementPaidScans(ccId: string): Promise<number | null> {
   return res.rows[0]?.paid_scans_remaining ?? null;
 }
 
+/**
+ * Clear the upgrade request fields for a user (e.g., after timeout or failed verification).
+ * Does NOT change the plan itself.
+ */
+export async function clearUpgradeRequest(ccId: string): Promise<void> {
+  await pool.query(
+    `UPDATE users
+        SET upgrade_requested_at = NULL,
+            upgrade_plan         = NULL,
+            upgrade_amount       = NULL,
+            upgrade_scans        = NULL
+      WHERE coincash_id = $1`,
+    [ccId],
+  );
+}
+
 /** Return true if this blockchain tx_id has already been used for a payment. */
 export async function isTxUsed(txId: string): Promise<boolean> {
   const res = await pool.query<{ tx_id: string }>(

@@ -75,7 +75,7 @@ async function fetchFreemiumStatus(ccId: string): Promise<FreemiumStatus> {
  * Returns the result payload or null on network error.
  */
 async function callVerifyPayment(ccId: string): Promise<{
-  status: "confirmed" | "pending" | "error";
+  status: "confirmed" | "pending" | "error" | "not_found";
   plan?: PlanName;
   paidScansRemaining?: number;
   txId?: string;
@@ -233,10 +233,21 @@ export function FreemiumProvider({ children }: { children: ReactNode }) {
       if (Date.now() - startTime > MAX_POLL_MS) {
         clearInterval(verifyPollRef.current!);
         verifyPollRef.current = null;
+        // Stop silently — backend will clean up via its own 12-min timeout
         return;
       }
       const result = await callVerifyPayment(id);
-      if (!result || result.status !== "confirmed") return;
+      if (!result) return;
+
+      // Payment not found after timeout — server cleared the upgrade request
+      if (result.status === "not_found") {
+        clearInterval(verifyPollRef.current!);
+        verifyPollRef.current = null;
+        setPaymentStatus("none");
+        return;
+      }
+
+      if (result.status !== "confirmed") return;
 
       // Payment detected — update state
       clearInterval(verifyPollRef.current!);

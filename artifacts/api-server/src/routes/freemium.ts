@@ -31,6 +31,7 @@ import {
   decrementPaidScans,
   isTxUsed,
   markTxUsed,
+  clearUpgradeRequest,
   resetScanCount,
   requestUpgrade,
   getUpgradeIntent,
@@ -400,8 +401,10 @@ router.post("/freemium/verify-payment", async (req, res) => {
   const ccId = ((req.body?.ccId) ?? "").trim();
   if (!ccId) return res.status(400).json({ error: "ccId required" });
 
+  const VERIFY_TIMEOUT_MS = 12 * 60 * 1_000; // 12 min — slightly beyond the 10-min frontend poll
+
   try {
-    // 1. Get the timestamp when the user clicked "Ya pagué"
+    // 1. Get the timestamp when the user clicked "Ya pagué" and their current plan
     const userRow = await pool.query<{ upgrade_requested_at: string | null; plan: string }>(
       `SELECT upgrade_requested_at, plan FROM users WHERE coincash_id = $1 LIMIT 1`,
       [ccId],
@@ -409,17 +412,30 @@ router.post("/freemium/verify-payment", async (req, res) => {
     const row = userRow.rows[0];
     if (!row) return res.json({ status: "pending" });
 
-    // Already on a paid plan (might have been confirmed by admin in the meantime)
-    if (row.plan === "basico" || row.plan === "pro") {
+    const isPaid = row.plan === "basico" || row.plan === "pro";
+    const hasPendingIntent = !!row.upgrade_requested_at;
+
+    // Already on a paid plan with NO re-purchase intent → just confirmed
+    if (isPaid && !hasPendingIntent) {
       const remaining = await getPaidScansRemaining(ccId);
       return res.json({ status: "confirmed", plan: row.plan, paidScansRemaining: remaining });
     }
 
-    if (!row.upgrade_requested_at) {
+    // No pending upgrade request
+    if (!hasPendingIntent) {
       return res.json({ status: "pending" });
     }
 
-    const requestedAtMs = new Date(row.upgrade_requested_at).getTime();
+    const requestedAtMs = new Date(row.upgrade_requested_at!).getTime();
+
+    // ── Timeout check ────────────────────────────────────────────────────────
+    // If upgrade was requested more than VERIFY_TIMEOUT_MS ago and we're here,
+    // no valid transaction was found → clear the request and tell the frontend.
+    if (Date.now() - requestedAtMs > VERIFY_TIMEOUT_MS) {
+      await clearUpgradeRequest(ccId);
+      console.log(`[verify-payment] ⏱ Timeout — clearing upgrade request for ${ccId}`);
+      return res.json({ status: "not_found" });
+    }
 
     // 2. Query TronGrid for recent TRC20 transfers to our wallet
     const tronUrl =
