@@ -1,0 +1,103 @@
+REESTRUCTURAR SECCIÓN DE PLANES SIN AFECTAR DISEÑO EXISTENTE
+
+OBJETIVO:
+Mejorar conversión y claridad de precios manteniendo el mismo layout visual.
+
+--------------------------------------------------
+
+1. NO CAMBIAR:
+
+- estructura HTML principal
+- layout actual
+- colores base del sistema
+- diseño general de la app
+
+SOLO mejorar contenido y estilos internos.
+
+--------------------------------------------------
+
+2. ACTUALIZAR PLANES
+
+Reemplazar contenido actual por:
+
+PLAN 1:
+Título: "💳 Básico"
+Precio: "$9.99"
+Contenido:
+- "100 análisis"
+- "$0.099 por análisis"
+- "🔍 Verifica wallets antes de enviar USDT"
+
+PLAN 2:
+Título: "⚡ Pro"
+Precio: "$19.99"
+Contenido:
+- "250 análisis"
+- "$0.079 por análisis"
+- "🚀 Análisis avanzado + detección de congelamiento"
+
+--------------------------------------------------
+
+3. DESTACAR PLAN MÁS VENDIDO
+
+En el plan de $19.99:
+
+- agregar badge:
+"🔥 MÁS POPULAR"
+
+- aplicar:
+border dorado suave
+ligero scale (1.03 max)
+sin romper responsive
+
+--------------------------------------------------
+
+4. MEJORAR COPY GENERAL
+
+Agregar encima de los planes:
+
+"🛡️ Protege tu dinero antes de enviar USDT"
+
+--------------------------------------------------
+
+5. BOTONES
+
+Mantener botones actuales pero cambiar texto a:
+
+"💳 Comprar ahora"
+
+--------------------------------------------------
+
+6. CONSISTENCIA VISUAL
+
+- mantener tipografía actual
+- mantener espaciado
+- mantener modo oscuro si existe
+- no alterar diseño mobile
+
+--------------------------------------------------
+
+7. UX MEJORA (IMPORTANTE)
+
+Agregar debajo de cada plan:
+
+pequeño texto:
+"Pago único - sin suscripción"
+
+--------------------------------------------------
+
+8. NO ROMPER FUNCIONALIDAD
+
+- mantener lógica actual de pagos
+- no modificar backend
+- no eliminar clases existentes
+
+--------------------------------------------------
+
+RESULTADO ESPERADO:
+
+✔ Mismo diseño visual
+✔ Mejores textos
+✔ Mayor conversión
+✔ Plan de $19.99 destacado
+✔ Interfaz más profesional
