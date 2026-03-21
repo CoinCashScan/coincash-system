@@ -375,6 +375,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
   const [upgradeSending,   setUpgradeSending]   = useState(false);
   const [qrDataUrl,        setQrDataUrl]        = useState<string>("");
   const [copiedAddr,       setCopiedAddr]       = useState(false);
+  const [selectedPlan,     setSelectedPlan]     = useState<{ name: string; price: string }>({ name: "Pro", price: "19.99" });
   // ccId starts empty — always resolved from the API/fingerprint, never trusted blindly from localStorage
   const [ccId, setCcId] = useState<string>("");
   const resolvedRef  = useRef(false);
@@ -1068,6 +1069,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                     </div>
                     <button
                       onClick={() => {
+                        setSelectedPlan({ name: "Básico", price: "9.99" });
                         const el = document.getElementById("wg-payment-section");
                         el?.scrollIntoView({ behavior: "smooth" });
                       }}
@@ -1115,6 +1117,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                     </div>
                     <button
                       onClick={() => {
+                        setSelectedPlan({ name: "Pro", price: "19.99" });
                         const el = document.getElementById("wg-payment-section");
                         el?.scrollIntoView({ behavior: "smooth" });
                       }}
@@ -1141,6 +1144,25 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                     color: "#FF6B6B", borderRadius: 6, padding: "3px 8px",
                   }}>TRC20</span>
                   <span style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>Red TRON · USDT</span>
+                </div>
+
+                {/* Plan seleccionado */}
+                <div style={{
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                  background: "rgba(0,255,198,0.06)", border: "1px solid rgba(0,255,198,0.2)",
+                  borderRadius: 10, padding: "8px 14px",
+                }}>
+                  <span style={{ fontSize: 11, color: "rgba(255,255,255,0.45)" }}>Plan seleccionado:</span>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: selectedPlan.name === "Pro" ? "#F59E0B" : "#00FFC6" }}>
+                    {selectedPlan.name === "Pro" ? "⚡" : "💳"} {selectedPlan.name}
+                  </span>
+                  <span style={{
+                    fontSize: 11, fontWeight: 700,
+                    color: selectedPlan.name === "Pro" ? "#F59E0B" : "#00FFC6",
+                    background: selectedPlan.name === "Pro" ? "rgba(245,158,11,0.12)" : "rgba(0,255,198,0.12)",
+                    border: `1px solid ${selectedPlan.name === "Pro" ? "rgba(245,158,11,0.35)" : "rgba(0,255,198,0.3)"}`,
+                    borderRadius: 6, padding: "1px 7px",
+                  }}>${selectedPlan.price}</span>
                 </div>
 
                 {/* QR code */}
@@ -1191,7 +1213,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                   borderRadius: 10, padding: "10px 12px",
                 }}>
                   <p style={{ margin: 0, fontSize: 12, color: "rgba(255,255,255,0.7)", lineHeight: 1.6 }}>
-                    Envía <strong style={{ color: "#F59E0B" }}>10 USDT (TRC20)</strong> a la dirección anterior.<br />
+                    Envía <strong style={{ color: "#F59E0B" }}>{selectedPlan.price} USDT (TRC20)</strong> a la dirección anterior.<br />
                     Luego presiona <strong style={{ color: "#00FFC6" }}>"Ya pagué"</strong> para activar tu plan.
                   </p>
                 </div>
