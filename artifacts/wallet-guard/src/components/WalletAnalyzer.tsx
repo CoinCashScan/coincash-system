@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import html2canvas from "html2canvas";
 import QRCode from "qrcode";
 import { API_BASE } from "@/lib/apiConfig";
