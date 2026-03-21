@@ -15,7 +15,7 @@ interface ReportData {
   totalTx: number;
   txIn: number;
   txOut: number;
-  dateCreated: number;
+  dateCreated: number | null;
   lastTxDate: number;
   totalInUSDT: number;
   totalOutUSDT: number;
@@ -25,6 +25,7 @@ interface ReportData {
   suspiciousInteractions: number;
   riskyCounterparties: RiskyCounterparty[];
   detectedViaTRC20?: boolean;
+  isInactiveAddress?: boolean;
 }
 
 const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
