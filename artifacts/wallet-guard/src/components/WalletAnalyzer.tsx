@@ -2245,11 +2245,39 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
       {/* ── Hidden Share Card (rendered off-screen for html2canvas capture) ── */}
       {reportData && (() => {
         const risk = evalRealRisk(reportData);
-        const { label: scLabel, color: scColor } = getRiskCardConfig(risk.level);
-        const sc = risk.score;
-
-        // Derived display values
         const freezeNivel = risk.level;
+
+        // ── Same accumulative score as main card ──────────────────────────
+        const _shareAgeDays = reportData.dateCreated
+          ? (Date.now() - reportData.dateCreated) / 86_400_000 : 0;
+        const _shareVolume = (reportData.totalInUSDT + reportData.totalOutUSDT) || 0;
+        const _shareTxPerDay = _shareAgeDays > 0 ? (reportData.totalTx || 0) / _shareAgeDays : 0;
+        const _shareHasExchange = (reportData.exchangeInteractions || 0) > 0;
+        const _shareHasRisky = (reportData.suspiciousInteractions || 0) > 0;
+        const _shareBlacklisted = reportData.isBlacklisted || false;
+        const _shareFrozen = reportData.isFrozen || false;
+
+        let sc = 0;
+        if (_shareBlacklisted)   sc += 100;
+        if (_shareFrozen)        sc += 100;
+        if (_shareHasRisky)      sc += 40;
+        if (_shareVolume > 50000) sc += 10;
+        if (_shareAgeDays < 7)   sc += 15;
+        if (!_shareHasExchange)  sc += 15;
+        if (_shareTxPerDay > 10) sc += 10;
+        if (sc > 100) sc = 100;
+        if (sc === 0) sc = 5;
+
+        const _shareCriticoExtremo = _shareHasRisky && sc >= 65;
+        const scColor = (_shareBlacklisted || _shareFrozen || _shareCriticoExtremo) ? DANGER
+                      : (sc >= 50) ? AMBER : GREEN;
+        const scLabel = (_shareBlacklisted || _shareFrozen)  ? "Riesgo máximo"
+                      : _shareCriticoExtremo                 ? "Riesgo crítico extremo"
+                      : sc >= 65                             ? "Riesgo crítico"
+                      : sc >= 40                             ? "Riesgo alto"
+                      : sc >= 20                             ? "Riesgo moderado"
+                      :                                        "Riesgo bajo";
+
         const adicionalShare = calcularAnalisisAdicional({
           walletAgeDays: reportData.dateCreated ? (Date.now() - reportData.dateCreated) / 86_400_000 : 0,
           totalVolume:         (reportData.totalInUSDT  + reportData.totalOutUSDT) || 0,
