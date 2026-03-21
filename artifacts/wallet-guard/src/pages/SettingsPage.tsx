@@ -564,17 +564,9 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
               </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                <input
-                  type="email"
-                  placeholder="Tu email (opcional, para notificarte)"
-                  value={upgradeEmail}
-                  onChange={(e) => setUpgradeEmail(e.target.value)}
-                  style={{
-                    background: "rgba(255,255,255,0.05)", border: `1px solid ${BORDER}`,
-                    borderRadius: 8, padding: "9px 12px", fontSize: 12, color: "#fff",
-                    outline: "none", fontFamily: "inherit", width: "100%",
-                  }}
-                />
+                <p style={{ margin: 0, fontSize: 12, color: MUTED, lineHeight: 1.5 }}>
+                  📩 Envía el capture de tu pago a soporte para agilizar la activación PRO.
+                </p>
                 <button
                   disabled={upgradeSending}
                   onClick={async () => {
@@ -583,7 +575,7 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
                       await fetch(`${API_BASE}/freemium/request-upgrade`, {
                         method:  "POST",
                         headers: { "Content-Type": "application/json" },
-                        body:    JSON.stringify({ ccId, email: upgradeEmail.trim() }),
+                        body:    JSON.stringify({ ccId, email: "" }),
                       });
                       setUpgradeRequested(true);
                     } catch { /* ignore */ } finally { setUpgradeSending(false); }

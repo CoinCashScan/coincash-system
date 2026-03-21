@@ -1233,17 +1233,9 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                   </div>
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    <input
-                      type="email"
-                      placeholder="Tu email (opcional, para notificarte)"
-                      value={upgradeEmail}
-                      onChange={(e) => setUpgradeEmail(e.target.value)}
-                      style={{
-                        background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)",
-                        borderRadius: 8, padding: "8px 12px", fontSize: 12, color: "#fff",
-                        outline: "none", fontFamily: "inherit", width: "100%",
-                      }}
-                    />
+                    <p style={{ margin: 0, fontSize: 12, color: "rgba(255,255,255,0.45)", lineHeight: 1.5 }}>
+                      📩 Envía el capture de tu pago a soporte para agilizar la activación PRO.
+                    </p>
                     <button
                       disabled={upgradeSending}
                       onClick={async () => {
@@ -1252,7 +1244,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                           await fetch(`${API_BASE}/freemium/request-upgrade`, {
                             method:  "POST",
                             headers: { "Content-Type": "application/json" },
-                            body:    JSON.stringify({ ccId, email: upgradeEmail.trim() }),
+                            body:    JSON.stringify({ ccId, email: "" }),
                           });
                           setUpgradeRequested(true);
                         } catch { /* ignore */ } finally { setUpgradeSending(false); }
