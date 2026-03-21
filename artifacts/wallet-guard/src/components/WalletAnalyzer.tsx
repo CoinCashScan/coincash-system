@@ -1706,138 +1706,202 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
         let sc = isConfirmedFrozen ? 100 : freeze && freeze.score >= 60 ? Math.max(rawScore, freeze.score) : rawScore;
         const { label: scLabel, color: scColor } = getScoreCardConfig(sc, isLatente);
 
-        const cardBg = sc >= 80
-          ? "#1A0505"
-          : sc >= 60
-          ? "#1A0E05"
-          : sc >= 30
-          ? "#151000"
-          : "#001A0F";
+        // Derived display values
+        const freezeNivel   = isConfirmedFrozen ? "ALTO" : (freeze?.nivel ?? "BAJO");
+        const freezeScore   = isConfirmedFrozen ? 100    : (freeze?.score ?? 0);
+        const motivosList   = isConfirmedFrozen
+          ? ["Wallet congelada o en lista negra"]
+          : (freeze?.motivos ?? []).slice(0, 3);
+
+        const ultimaActividad = reportData.lastTxDate
+          ? new Date(reportData.lastTxDate).toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" })
+          : "Sin actividad registrada";
+
+        const confianzaRaw = (reportData.transfersAnalyzed ?? 0) > 50
+          ? "Alta" : (reportData.transfersAnalyzed ?? 0) > 10
+          ? "Media" : "Baja";
+        const confianzaColor = confianzaRaw === "Alta" ? GREEN : confianzaRaw === "Media" ? AMBER : ORANGE;
+
+        const freezeColor =
+          freezeNivel === "ALTO"    ? DANGER  :
+          freezeNivel === "MEDIO"   ? ORANGE  :
+          freezeNivel === "LATENTE" ? AMBER   : GREEN;
+
+        const cardBg = sc >= 80 ? "#130303" : sc >= 60 ? "#140b02" : sc >= 30 ? "#111000" : "#001510";
         const accentColor = scColor;
 
         return (
           <div
             ref={shareCardRef}
             style={{
-              position: "fixed",
-              left: "-9999px",
-              top: 0,
-              zIndex: -1,
-              width: 380,
-              padding: "28px 24px 24px",
-              background: cardBg,
-              borderRadius: 24,
-              border: `1.5px solid ${accentColor}40`,
+              position: "fixed", left: "-9999px", top: 0, zIndex: -1,
+              width: 380, padding: "26px 22px 22px",
+              background: cardBg, borderRadius: 24,
+              border: `1.5px solid ${accentColor}35`,
               fontFamily: "'Inter', 'Segoe UI', system-ui, sans-serif",
               overflow: "hidden",
             }}
           >
-            {/* Glow accent */}
+            {/* Corner glow */}
             <div style={{
-              position: "absolute", top: -40, right: -40,
-              width: 160, height: 160, borderRadius: "50%",
-              background: `radial-gradient(circle, ${accentColor}22 0%, transparent 70%)`,
+              position: "absolute", top: -50, right: -50,
+              width: 180, height: 180, borderRadius: "50%",
+              background: `radial-gradient(circle, ${accentColor}1E 0%, transparent 68%)`,
               pointerEvents: "none",
             }} />
 
-            {/* Header */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 22 }}>
+            {/* ── HEADER ── */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
               <div>
-                <div style={{ fontSize: 20, fontWeight: 800, color: "#FFFFFF", letterSpacing: "-0.01em" }}>
+                <div style={{ fontSize: 19, fontWeight: 800, color: "#FFFFFF", letterSpacing: "-0.01em" }}>
                   Coin<span style={{ color: "#00FFC6" }}>Cash</span>
                 </div>
-                <div style={{ fontSize: 10, color: "rgba(255,255,255,0.38)", fontWeight: 600, letterSpacing: "0.15em", marginTop: 2 }}>
+                <div style={{ fontSize: 9, color: "rgba(255,255,255,0.32)", fontWeight: 600, letterSpacing: "0.17em", marginTop: 2 }}>
                   TRON WALLET SECURITY
                 </div>
               </div>
               <div style={{
-                background: `${accentColor}18`,
-                border: `1px solid ${accentColor}50`,
-                borderRadius: 10, padding: "4px 10px",
-                fontSize: 10, fontWeight: 700, color: accentColor,
-                letterSpacing: "0.05em",
-              }}>
-                SCAN RESULT
-              </div>
+                background: `${accentColor}18`, border: `1px solid ${accentColor}48`,
+                borderRadius: 10, padding: "4px 11px",
+                fontSize: 9, fontWeight: 700, color: accentColor, letterSpacing: "0.06em",
+              }}>SCAN RESULT</div>
             </div>
 
-            {/* Score */}
-            <div style={{ textAlign: "center", marginBottom: 20 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.35)", letterSpacing: "0.2em", marginBottom: 8 }}>
+            {/* ── CRITICAL ALERT banner (score > 80) ── */}
+            {sc > 80 && (
+              <div style={{
+                background: "rgba(220,20,20,0.13)", border: "1.5px solid rgba(255,60,60,0.45)",
+                borderRadius: 12, padding: "10px 14px", marginBottom: 16,
+                display: "flex", alignItems: "center", gap: 10,
+              }}>
+                <span style={{ fontSize: 20, lineHeight: 1, flexShrink: 0 }}>🚫</span>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 900, color: "#FF4040", letterSpacing: "0.04em" }}>
+                    NO ENVÍES FONDOS
+                  </div>
+                  <div style={{ fontSize: 10, color: "rgba(255,255,255,0.55)", marginTop: 2, lineHeight: 1.4 }}>
+                    Esta wallet presenta riesgo severo confirmado
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── SCORE ── */}
+            <div style={{ textAlign: "center", marginBottom: 18 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.3)", letterSpacing: "0.22em", marginBottom: 6 }}>
                 RISK SCORE
               </div>
-              <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "center", lineHeight: 1, marginBottom: 12 }}>
-                <span style={{ fontSize: 88, fontWeight: 900, color: accentColor, lineHeight: 1 }}>
-                  {sc}
-                </span>
-                <span style={{ fontSize: 28, fontWeight: 700, color: "rgba(255,255,255,0.25)", marginBottom: 6, marginLeft: 2 }}>
-                  /100
-                </span>
+              <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "center", lineHeight: 1, marginBottom: 10 }}>
+                <span style={{ fontSize: 82, fontWeight: 900, color: accentColor, lineHeight: 1 }}>{sc}</span>
+                <span style={{ fontSize: 26, fontWeight: 700, color: "rgba(255,255,255,0.22)", marginBottom: 5, marginLeft: 2 }}>/100</span>
               </div>
               <div style={{
                 display: "inline-flex", alignItems: "center",
-                padding: "7px 18px", borderRadius: 30,
-                background: `${accentColor}1A`,
-                border: `1px solid ${accentColor}55`,
-                color: accentColor, fontSize: 14, fontWeight: 700,
-                letterSpacing: "0.02em",
-              }}>
-                {scLabel}
-              </div>
+                padding: "6px 16px", borderRadius: 28,
+                background: `${accentColor}18`, border: `1px solid ${accentColor}50`,
+                color: accentColor, fontSize: 13, fontWeight: 700, letterSpacing: "0.02em",
+              }}>{scLabel}</div>
             </div>
 
-            {/* Divider */}
-            <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", margin: "0 0 16px" }} />
+            {/* ── DIVIDER ── */}
+            <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", margin: "0 0 14px" }} />
 
-            {/* Wallet address */}
+            {/* ── WALLET ADDRESS ── */}
             <div style={{
-              background: "rgba(255,255,255,0.04)",
-              border: "1px solid rgba(255,255,255,0.09)",
-              borderRadius: 12, padding: "12px 14px",
-              marginBottom: 18,
+              background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)",
+              borderRadius: 11, padding: "10px 13px", marginBottom: 14,
             }}>
-              <div style={{ fontSize: 9, fontWeight: 700, color: "rgba(255,255,255,0.3)", letterSpacing: "0.18em", marginBottom: 5 }}>
-                WALLET ADDRESS · TRON TRC20
+              <div style={{ fontSize: 9, fontWeight: 700, color: "rgba(255,255,255,0.28)", letterSpacing: "0.18em", marginBottom: 4 }}>
+                WALLET · TRON TRC20
               </div>
-              <div style={{ fontSize: 12, fontFamily: "monospace", color: "#E5E7EB", letterSpacing: "0.05em", wordBreak: "break-all" }}>
+              <div style={{ fontSize: 11, fontFamily: "monospace", color: "#D1D5DB", letterSpacing: "0.04em", wordBreak: "break-all" }}>
                 {reportData.address}
               </div>
             </div>
 
-            {/* Stats row */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 20 }}>
+            {/* ── STATS ROW ── */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 7, marginBottom: 14 }}>
               {[
-                { label: "TX TOTAL", value: reportData.totalTx },
-                { label: "USDT IN",  value: `$${(reportData.totalInUSDT || 0).toFixed(0)}` },
-                { label: "USDT OUT", value: `$${(reportData.totalOutUSDT || 0).toFixed(0)}` },
+                { label: "TX TOTAL",  value: String(reportData.totalTx) },
+                { label: "USDT IN",   value: `$${(reportData.totalInUSDT  || 0).toFixed(0)}` },
+                { label: "USDT OUT",  value: `$${(reportData.totalOutUSDT || 0).toFixed(0)}` },
               ].map((item, i) => (
                 <div key={i} style={{
-                  background: "rgba(255,255,255,0.03)",
-                  border: "1px solid rgba(255,255,255,0.07)",
-                  borderRadius: 10, padding: "10px 0",
-                  textAlign: "center",
+                  background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)",
+                  borderRadius: 9, padding: "9px 0", textAlign: "center",
                 }}>
-                  <div style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", fontWeight: 700, letterSpacing: "0.12em", marginBottom: 4 }}>
+                  <div style={{ fontSize: 8, color: "rgba(255,255,255,0.28)", fontWeight: 700, letterSpacing: "0.13em", marginBottom: 4 }}>
                     {item.label}
                   </div>
-                  <div style={{ fontSize: 14, color: "#F9FAFB", fontWeight: 700 }}>
-                    {item.value}
-                  </div>
+                  <div style={{ fontSize: 13, color: "#F3F4F6", fontWeight: 700 }}>{item.value}</div>
                 </div>
               ))}
             </div>
 
-            {/* Footer CTA */}
+            {/* ── DIVIDER ── */}
+            <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", margin: "0 0 14px" }} />
+
+            {/* ── FREEZE RISK + MOTIVOS ── */}
             <div style={{
-              background: "rgba(0,255,198,0.07)",
-              border: "1px solid rgba(0,255,198,0.2)",
-              borderRadius: 12, padding: "11px 14px",
-              textAlign: "center",
+              background: `${freezeColor}0E`, border: `1px solid ${freezeColor}30`,
+              borderRadius: 11, padding: "11px 13px", marginBottom: 12,
             }}>
-              <div style={{ fontSize: 11, color: "#00FFC6", fontWeight: 700, marginBottom: 3 }}>
-                ⚠️ Verifica antes de enviar dinero
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                <div style={{ fontSize: 9, fontWeight: 700, color: "rgba(255,255,255,0.3)", letterSpacing: "0.15em" }}>
+                  RIESGO CONGELAMIENTO
+                </div>
+                <div style={{
+                  background: `${freezeColor}22`, border: `1px solid ${freezeColor}50`,
+                  borderRadius: 6, padding: "2px 8px",
+                  fontSize: 9, fontWeight: 800, color: freezeColor, letterSpacing: "0.06em",
+                }}>
+                  {freezeNivel} · {freezeScore}/100
+                </div>
               </div>
-              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
+              {motivosList.length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  {motivosList.map((m, i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <div style={{ width: 5, height: 5, borderRadius: "50%", background: freezeColor, flexShrink: 0 }} />
+                      <span style={{ fontSize: 10, color: "rgba(255,255,255,0.62)", lineHeight: 1.4 }}>{m}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* ── LAST ACTIVITY + CONFIDENCE ── */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7, marginBottom: 14 }}>
+              <div style={{
+                background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)",
+                borderRadius: 10, padding: "10px 12px",
+              }}>
+                <div style={{ fontSize: 9, color: "rgba(255,255,255,0.28)", fontWeight: 700, letterSpacing: "0.12em", marginBottom: 5 }}>
+                  ÚLTIMA ACTIVIDAD
+                </div>
+                <div style={{ fontSize: 11, color: "#E5E7EB", fontWeight: 600, lineHeight: 1.3 }}>{ultimaActividad}</div>
+              </div>
+              <div style={{
+                background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)",
+                borderRadius: 10, padding: "10px 12px",
+              }}>
+                <div style={{ fontSize: 9, color: "rgba(255,255,255,0.28)", fontWeight: 700, letterSpacing: "0.12em", marginBottom: 5 }}>
+                  NIVEL CONFIANZA
+                </div>
+                <div style={{ fontSize: 11, color: confianzaColor, fontWeight: 700 }}>● {confianzaRaw}</div>
+              </div>
+            </div>
+
+            {/* ── FOOTER ── */}
+            <div style={{
+              background: sc > 80 ? "rgba(220,20,20,0.08)" : "rgba(0,255,198,0.06)",
+              border: `1px solid ${sc > 80 ? "rgba(255,60,60,0.2)" : "rgba(0,255,198,0.18)"}`,
+              borderRadius: 11, padding: "10px 14px", textAlign: "center",
+            }}>
+              <div style={{ fontSize: 11, color: sc > 80 ? "#FF5555" : "#00FFC6", fontWeight: 700, marginBottom: 2 }}>
+                {sc > 80 ? "🚫 Verifica antes de interactuar con esta wallet" : "✅ Verifica siempre antes de enviar fondos"}
+              </div>
+              <div style={{ fontSize: 9, color: "rgba(255,255,255,0.32)", letterSpacing: "0.05em" }}>
                 coincash.app · Seguridad TRON en tiempo real
               </div>
             </div>
