@@ -8,6 +8,7 @@ import {
   ensureChatUsersTable, ensureChatContactsTable,
   ensureDmTables, ensureVisitsTable, ensureAccountPinsTable,
   ensureScanTable, ensureFreemiumTable, ensureDeviceTable,
+  ensureFraudSystem, decayFraudScores,
   deleteOldChatMessages, expireProUsers,
 } from "./lib/db";
 
@@ -54,6 +55,7 @@ if (existsSync(walletGuardDist)) {
     await ensureScanTable();
     await ensureFreemiumTable();
     await ensureDeviceTable();
+    await ensureFraudSystem();
 
     // ── Chat message cleanup (every hour) ────────────────────────────────────
     const runCleanup = async () => {
@@ -80,6 +82,16 @@ if (existsSync(walletGuardDist)) {
     };
     await runProExpiry(); // run once at startup to catch any already-expired users
     setInterval(runProExpiry, 60 * 60 * 1000); // then every hour
+
+    // ── Fraud score decay (every 24h) ─────────────────────────────────────────
+    setInterval(async () => {
+      try {
+        const decayed = await decayFraudScores();
+        if (decayed > 0) console.log(`[fraud-decay] Reduced score for ${decayed} user(s)`);
+      } catch (err: any) {
+        console.error("[fraud-decay] Failed:", err?.message);
+      }
+    }, 24 * 60 * 60 * 1000);
   } catch (err: any) {
     console.error("[app] DB bootstrap failed:", err?.message);
   }

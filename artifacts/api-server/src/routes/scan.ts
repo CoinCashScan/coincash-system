@@ -37,6 +37,12 @@ import {
   upsertActiveDevice,
   adminSetActiveDevice,
   adminClearActiveDevice,
+  linkDeviceHash,
+  getUserDeviceCount,
+  getDevicesInMinutes,
+  updateFraudScore,
+  logSecurityEvent,
+  countNewCcIdsInWindow,
   FREE_SCAN_LIMIT,
   PRO_DURATION_DAYS,
 } from "../lib/db";
@@ -86,10 +92,48 @@ async function geolocate(ip: string): Promise<{ country: string; countryCode: st
 // Unified endpoint: validates limit + records scan + returns freemium status.
 // Body: { wallet, ccId, deviceId }
 // Returns: { ok, plan, scansToday, remaining, canScan } or error
+// ── Fraud computation (observation mode — fire-and-forget, never blocks) ────────
+async function computeFraudEvents(
+  ccId: string, deviceHash: string, ip: string,
+  distinctDevicesForIP: number, scansToday: number,
+): Promise<void> {
+  if (!ccId) return;
+  try {
+    const [devCount24h, devCount60m] = await Promise.all([
+      getUserDeviceCount(ccId, 24),
+      getDevicesInMinutes(ccId, 60),
+    ]);
+
+    // +20: >3 unique devices in the last 24h
+    if (devCount24h > 3) {
+      await updateFraudScore(ccId, 20);
+      await logSecurityEvent(ccId, ip, deviceHash, "devices_spike", { devCount24h });
+    }
+
+    // +30: excessive scans (> limit * 2) in the current session
+    if (scansToday > FREE_SCAN_LIMIT * 2) {
+      await updateFraudScore(ccId, 30);
+      await logSecurityEvent(ccId, ip, deviceHash, "scan_spike", { scansToday });
+    }
+
+    // +40: rapid fingerprint rotation (>5 distinct devices in 60 minutes)
+    if (devCount60m > 5) {
+      await updateFraudScore(ccId, 40);
+      await logSecurityEvent(ccId, ip, deviceHash, "fingerprint_rotation", { devCount60m });
+    }
+
+    // -20: normal use (1 device, moderate scans)
+    if (devCount24h <= 1 && scansToday <= FREE_SCAN_LIMIT) {
+      await updateFraudScore(ccId, -20);
+    }
+  } catch { /* non-fatal */ }
+}
+
 router.post("/scan", async (req, res) => {
-  const wallet   = (req.body?.wallet   ?? "").trim();
-  const ccId     = (req.body?.ccId     ?? "").trim();
-  const deviceId = (req.body?.deviceId ?? "").trim();
+  const wallet     = (req.body?.wallet     ?? "").trim();
+  const ccId       = (req.body?.ccId       ?? "").trim();
+  const deviceId   = (req.body?.deviceId   ?? "").trim();
+  const deviceHash = (req.body?.deviceHash ?? "").trim();
 
   if (!wallet) return res.status(400).json({ error: "wallet required" });
 
@@ -97,6 +141,9 @@ router.post("/scan", async (req, res) => {
   if (ccId) ensureFreemiumUser(ccId).catch(() => {});
 
   const ip        = getClientIP(req);
+
+  // Link device fingerprint to this CC-ID for fraud tracking (fire-and-forget)
+  if (ccId && deviceHash) linkDeviceHash(ccId, deviceHash).catch(() => {});
   const userAgent = getUserAgent(req);
   const groupId   = ipHash(ip);
 
@@ -160,6 +207,11 @@ router.post("/scan", async (req, res) => {
       // Evasion check: more than 2 distinct devices on same IP today.
       // Bypass if THIS device is individually whitelisted OR the whole IP is whitelisted.
       if (distinctDevices > 2 && !devWhitelisted && !ipWhitelisted) {
+        // Fraud score event (observation, non-blocking)
+        if (ccId) {
+          updateFraudScore(ccId, 20).catch(() => {});
+          logSecurityEvent(ccId, ip, deviceHash, "devices_spike", { distinctDevices, groupId }).catch(() => {});
+        }
         return res.status(429).json({
           ok:         false,
           blocked:    "evasion",
@@ -168,7 +220,7 @@ router.post("/scan", async (req, res) => {
           remaining:  0,
           scansToday: groupScans,
           limit:      FREE_SCAN_LIMIT,
-          message:    "Detectamos múltiples dispositivos en esta red. Actualiza a PRO para continuar.",
+          message:    "🟡 Actividad inusual detectada (puede ser red compartida). Actualiza a PRO para continuar.",
           ipHash:     groupId,
           deviceId:   deviceId,
         });
@@ -237,6 +289,11 @@ router.post("/scan", async (req, res) => {
       // Refresh active_device timestamp after successful scan (fire-and-forget)
       if (ccId && groupId && deviceId) {
         upsertActiveDevice(ccId, groupId, deviceId).catch(() => {});
+      }
+
+      // Fraud score computation — observation mode, never blocks (fire-and-forget)
+      if (ccId) {
+        computeFraudEvents(ccId, deviceHash, ip, distinctDevices, scansToday).catch(() => {});
       }
 
       return res.json({ ok: true, plan: "free", scansToday, remaining, canScan: remaining > 0 });

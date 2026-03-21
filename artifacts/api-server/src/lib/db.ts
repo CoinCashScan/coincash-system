@@ -1829,17 +1829,18 @@ export async function requestUpgrade(
   );
 }
 
-/** Return all users + their today's scan count. */
+/** Return all users + their today's scan count + fraud data. */
 export async function getAllUsersWithPlans(): Promise<{
   ccId: string; email: string; plan: string; scansToday: number;
   upgradeRequestedAt: string | null; paidScansRemaining: number | null;
+  fraudScore: number; isTrusted: boolean;
 }[]> {
   const res = await pool.query<{
     coincash_id: string; email: string; plan: string;
     scans_today: string; upgrade_requested_at: string | null;
     paid_scans_remaining: number | null;
+    fraud_score: number | null; is_trusted: boolean | null;
   }>(`
-    -- Union: all registered users + any cc_ids from scan history not yet registered
     WITH all_ids AS (
       SELECT coincash_id AS cc_id FROM users WHERE coincash_id != 'CC-SUPPORT'
       UNION
@@ -1852,19 +1853,23 @@ export async function getAllUsersWithPlans(): Promise<{
            COALESCE(u.plan, 'free')               AS plan,
            COALESCE(sl.scan_count, 0)             AS scans_today,
            u.upgrade_requested_at,
-           u.paid_scans_remaining
+           u.paid_scans_remaining,
+           COALESCE(u.fraud_score, 0)             AS fraud_score,
+           COALESCE(u.is_trusted, false)          AS is_trusted
       FROM all_ids a
       LEFT JOIN users u        ON u.coincash_id = a.cc_id
       LEFT JOIN scan_limits sl ON sl.cc_id = a.cc_id AND sl.scan_date = CURRENT_DATE
      ORDER BY u.upgrade_requested_at DESC NULLS LAST, a.cc_id
   `);
   return res.rows.map((r) => ({
-    ccId:                r.coincash_id,
-    email:               r.email,
-    plan:                r.plan,
-    scansToday:          parseInt(r.scans_today as any, 10) || 0,
-    upgradeRequestedAt:  r.upgrade_requested_at ?? null,
-    paidScansRemaining:  r.paid_scans_remaining ?? null,
+    ccId:               r.coincash_id,
+    email:              r.email,
+    plan:               r.plan,
+    scansToday:         parseInt(r.scans_today as any, 10) || 0,
+    upgradeRequestedAt: r.upgrade_requested_at ?? null,
+    paidScansRemaining: r.paid_scans_remaining ?? null,
+    fraudScore:         r.fraud_score ?? 0,
+    isTrusted:          r.is_trusted ?? false,
   }));
 }
 
@@ -2033,4 +2038,169 @@ export async function getVisitStats(): Promise<{
   }));
 
   return { total, today, online, countries };
+}
+
+// ── Fraud Detection System ─────────────────────────────────────────────────────
+
+/** Create fraud detection tables and extend users with fraud columns. Safe to re-run. */
+export async function ensureFraudSystem(): Promise<void> {
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS fraud_score INT NOT NULL DEFAULT 0`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_trusted BOOLEAN NOT NULL DEFAULT false`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS user_devices (
+      cc_id       TEXT NOT NULL,
+      device_hash TEXT NOT NULL,
+      first_seen  TIMESTAMP NOT NULL DEFAULT NOW(),
+      last_seen   TIMESTAMP NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (cc_id, device_hash)
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS user_devices_cc_id_idx ON user_devices (cc_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS user_devices_hash_idx  ON user_devices (device_hash)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS security_log (
+      id          SERIAL PRIMARY KEY,
+      cc_id       TEXT NOT NULL DEFAULT '',
+      ip          TEXT NOT NULL DEFAULT '',
+      device_hash TEXT NOT NULL DEFAULT '',
+      action      TEXT NOT NULL,
+      details     JSONB,
+      logged_at   TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS security_log_cc_id_idx     ON security_log (cc_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS security_log_logged_at_idx ON security_log (logged_at)`);
+
+  console.log("[db] fraud system tables ready");
+}
+
+/** Register a device hash for a CC-ID (upsert). Fire-and-forget safe. */
+export async function linkDeviceHash(ccId: string, deviceHash: string): Promise<void> {
+  if (!ccId || !deviceHash) return;
+  await pool.query(
+    `INSERT INTO user_devices (cc_id, device_hash, first_seen, last_seen)
+     VALUES ($1, $2, NOW(), NOW())
+     ON CONFLICT (cc_id, device_hash) DO UPDATE SET last_seen = NOW()`,
+    [ccId, deviceHash],
+  );
+}
+
+/** Count distinct device hashes seen for a CC-ID within the last N hours. */
+export async function getUserDeviceCount(ccId: string, windowHours = 24): Promise<number> {
+  if (!ccId) return 0;
+  const res = await pool.query<{ cnt: string }>(
+    `SELECT COUNT(DISTINCT device_hash)::int AS cnt
+       FROM user_devices
+      WHERE cc_id = $1
+        AND last_seen >= NOW() - ($2::int || ' hours')::INTERVAL`,
+    [ccId, windowHours],
+  );
+  return parseInt(res.rows[0]?.cnt as any, 10) || 0;
+}
+
+/** Count distinct devices registered to a CC-ID within the last N minutes (for spike detection). */
+export async function getDevicesInMinutes(ccId: string, windowMinutes = 60): Promise<number> {
+  if (!ccId) return 0;
+  const res = await pool.query<{ cnt: string }>(
+    `SELECT COUNT(DISTINCT device_hash)::int AS cnt
+       FROM user_devices
+      WHERE cc_id = $1
+        AND first_seen >= NOW() - ($2::int || ' minutes')::INTERVAL`,
+    [ccId, windowMinutes],
+  );
+  return parseInt(res.rows[0]?.cnt as any, 10) || 0;
+}
+
+/** Update fraud score for a CC-ID (clamped 0–100). Returns new score. */
+export async function updateFraudScore(ccId: string, delta: number): Promise<number> {
+  if (!ccId) return 0;
+  const res = await pool.query<{ fraud_score: number }>(
+    `UPDATE users
+        SET fraud_score = GREATEST(0, LEAST(100, COALESCE(fraud_score, 0) + $2))
+      WHERE coincash_id = $1
+      RETURNING fraud_score`,
+    [ccId, delta],
+  );
+  return res.rows[0]?.fraud_score ?? 0;
+}
+
+/** Mark user as trusted: is_trusted=true + fraud_score=0. */
+export async function markUserTrusted(ccId: string): Promise<void> {
+  if (!ccId) return;
+  await pool.query(
+    `UPDATE users SET is_trusted = true, fraud_score = 0 WHERE coincash_id = $1`,
+    [ccId],
+  );
+}
+
+/** Append an entry to the security audit log. Fire-and-forget safe. */
+export async function logSecurityEvent(
+  ccId: string,
+  ip: string,
+  deviceHash: string,
+  action: string,
+  details?: Record<string, unknown>,
+): Promise<void> {
+  try {
+    await pool.query(
+      `INSERT INTO security_log (cc_id, ip, device_hash, action, details)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [ccId, ip, deviceHash, action, details ? JSON.stringify(details) : null],
+    );
+  } catch { /* non-fatal */ }
+}
+
+/**
+ * Decay fraud scores every 24h: subtract 20 from users with
+ * no suspicious events logged in the last 24h. Returns count decayed.
+ */
+export async function decayFraudScores(): Promise<number> {
+  const res = await pool.query(
+    `UPDATE users
+        SET fraud_score = GREATEST(0, fraud_score - 20)
+      WHERE fraud_score > 0
+        AND is_trusted = false
+        AND coincash_id NOT IN (
+          SELECT DISTINCT cc_id FROM security_log
+           WHERE logged_at >= NOW() - INTERVAL '24 hours'
+             AND action IN ('devices_spike','scan_spike','fingerprint_rotation','real_fraud')
+        )
+      RETURNING coincash_id`,
+  );
+  return res.rowCount ?? 0;
+}
+
+/** Count distinct new CC-IDs created in the past N minutes (global fraud farm detection). */
+export async function countNewCcIdsInWindow(windowMinutes: number): Promise<number> {
+  const res = await pool.query<{ cnt: string }>(
+    `SELECT COUNT(*)::int AS cnt FROM users
+      WHERE created_at >= NOW() - ($1::int || ' minutes')::INTERVAL
+        AND coincash_id != 'CC-SUPPORT'`,
+    [windowMinutes],
+  );
+  return parseInt(res.rows[0]?.cnt as any, 10) || 0;
+}
+
+/** Fetch recent security log entries (admin). */
+export async function getSecurityLog(ccId?: string, limit = 50): Promise<{
+  id: number; ccId: string; ip: string; deviceHash: string;
+  action: string; details: any; loggedAt: string;
+}[]> {
+  const res = ccId
+    ? await pool.query(
+        `SELECT id, cc_id, ip, device_hash, action, details, logged_at
+           FROM security_log WHERE cc_id = $1 ORDER BY logged_at DESC LIMIT $2`,
+        [ccId, limit],
+      )
+    : await pool.query(
+        `SELECT id, cc_id, ip, device_hash, action, details, logged_at
+           FROM security_log ORDER BY logged_at DESC LIMIT $1`,
+        [limit],
+      );
+  return res.rows.map((r) => ({
+    id: r.id, ccId: r.cc_id, ip: r.ip, deviceHash: r.device_hash,
+    action: r.action, details: r.details, loggedAt: r.logged_at,
+  }));
 }

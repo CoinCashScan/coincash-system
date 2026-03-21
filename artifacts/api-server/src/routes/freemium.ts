@@ -43,6 +43,8 @@ import {
   getDeviceBySyncCode,
   recordScanFull,
   fullSystemReset,
+  markUserTrusted,
+  getSecurityLog,
   pool,
   FREE_SCAN_LIMIT,
   PRO_DURATION_DAYS,
@@ -563,6 +565,53 @@ router.post("/admin/full-reset", async (req, res) => {
   } catch (err: any) {
     console.error("[admin] full-reset error:", err?.message);
     return res.status(500).json({ error: "Error durante el reset: " + err?.message });
+  }
+});
+
+// ── POST /api/freemium/trust-user ─────────────────────────────────────────────
+// Admin: mark a user as trusted (is_trusted=true, fraud_score=0).
+router.post("/freemium/trust-user", async (req, res) => {
+  if (!adminGuard(req, res)) return;
+  const ccId = ((req.body?.ccId) ?? "").trim();
+  if (!ccId) return res.status(400).json({ error: "ccId required" });
+  try {
+    await markUserTrusted(ccId);
+    console.log(`[admin] trust-user → ${ccId} marked as trusted`);
+    return res.json({ ok: true, ccId, trusted: true });
+  } catch (err: any) {
+    console.error("[admin] trust-user error:", err?.message);
+    return res.status(500).json({ error: "Error al marcar usuario como legítimo" });
+  }
+});
+
+// ── POST /api/freemium/merge-devices ──────────────────────────────────────────
+// Admin: accept all devices for a CC-ID as legitimate (marks user trusted).
+router.post("/freemium/merge-devices", async (req, res) => {
+  if (!adminGuard(req, res)) return;
+  const ccId = ((req.body?.ccId) ?? "").trim();
+  if (!ccId) return res.status(400).json({ error: "ccId required" });
+  try {
+    await markUserTrusted(ccId);
+    console.log(`[admin] merge-devices → ${ccId} devices accepted, marked trusted`);
+    return res.json({ ok: true, ccId, merged: true });
+  } catch (err: any) {
+    console.error("[admin] merge-devices error:", err?.message);
+    return res.status(500).json({ error: "Error al unificar dispositivos" });
+  }
+});
+
+// ── GET /api/freemium/security-log ────────────────────────────────────────────
+// Admin: fetch recent security audit log entries.
+router.get("/freemium/security-log", async (req, res) => {
+  if (!adminGuard(req, res)) return;
+  const ccId  = ((req.query?.ccId as string)  ?? "").trim() || undefined;
+  const limit = parseInt((req.query?.limit as string) ?? "50", 10);
+  try {
+    const entries = await getSecurityLog(ccId, Math.min(limit, 200));
+    return res.json({ ok: true, entries });
+  } catch (err: any) {
+    console.error("[admin] security-log error:", err?.message);
+    return res.status(500).json({ error: "Error al obtener log de seguridad" });
   }
 });
 

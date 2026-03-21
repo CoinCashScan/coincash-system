@@ -334,13 +334,36 @@ async function fetchFreemiumStatus(ccId: string): Promise<FreemiumStatus> {
 }
 
 // Unified scan call: validates limit backend-side + records tracking + returns updated status.
+/** Generate a stable browser fingerprint hash for fraud detection. */
+async function getDeviceHash(): Promise<string> {
+  try {
+    const fp = [
+      navigator.userAgent,
+      navigator.language,
+      `${screen.width}x${screen.height}`,
+      Intl.DateTimeFormat().resolvedOptions().timeZone,
+      String(navigator.hardwareConcurrency ?? ""),
+    ].join("|");
+    if (crypto?.subtle) {
+      const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(fp));
+      return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 16);
+    }
+    let h = 0;
+    for (let i = 0; i < fp.length; i++) { h = (Math.imul(31, h) + fp.charCodeAt(i)) | 0; }
+    return Math.abs(h).toString(16).padStart(8, "0");
+  } catch {
+    return "";
+  }
+}
+
 async function recordScanUnified(ccId: string, wallet: string): Promise<FreemiumStatus> {
   try {
-    const deviceId = getDeviceId();
+    const deviceId   = getDeviceId();
+    const deviceHash = await getDeviceHash();
     const res = await fetch(`${API_BASE}/scan`, {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ wallet, ccId, ...(deviceId ? { deviceId } : {}) }),
+      body:    JSON.stringify({ wallet, ccId, ...(deviceId ? { deviceId } : {}), ...(deviceHash ? { deviceHash } : {}) }),
     });
     const data = await res.json();
     if (data.blocked === "evasion") {

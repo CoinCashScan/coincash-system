@@ -1,0 +1,177 @@
+OBJETIVO:
+Reestructurar completamente el sistema de detección de evasión para evitar falsos positivos y detectar fraude real.
+
+--------------------------------------------------
+
+1. CREAR DEVICE FINGERPRINT (IDENTIDAD REAL DEL USUARIO)
+
+Actualmente se usa IP → esto NO es confiable.
+
+Implementar fingerprint único por dispositivo:
+
+Frontend:
+
+const fingerprint = {
+  userAgent: navigator.userAgent,
+  language: navigator.language,
+  screen: `${screen.width}x${screen.height}`,
+  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+};
+
+Enviar este fingerprint al backend en cada scan.
+
+Backend:
+
+Generar hash único:
+
+deviceHash = hash(fingerprint)
+
+--------------------------------------------------
+
+2. RESTRUCTURAR BASE DE DATOS DE USUARIO
+
+Crear estructura:
+
+user = {
+  ccId: "CC-XXXXX",
+  devices: [deviceHash1, deviceHash2],
+  ips: [ip1, ip2],
+  scansToday: number,
+  isTrusted: false,
+  fraudScore: number
+}
+
+IMPORTANTE:
+- NO crear un nuevo usuario por cada device
+- Unificar dispositivos bajo un mismo usuario
+
+--------------------------------------------------
+
+3. CAMBIAR LÓGICA DE EVASIÓN (CRÍTICO)
+
+ELIMINAR lógica actual:
+❌ "IP compartida = evasión"
+
+IMPLEMENTAR lógica inteligente:
+
+if (
+  user.devices.length > 3 &&
+  user.scansToday > limite * 2
+) {
+  flag = "evasión real"
+} else {
+  flag = "uso normal"
+}
+
+--------------------------------------------------
+
+4. SISTEMA DE FRAUD SCORE (NIVEL PRO)
+
+Crear puntuación de riesgo:
+
+fraudScore +=
+
++20 → muchos dispositivos en poco tiempo
++30 → scans excesivos en minutos
++40 → cambio constante de fingerprint
+-30 → usuario marcado como legítimo
+-20 → uso normal sostenido
+
+Clasificación:
+
+0 - 30 → Normal
+31 - 70 → Sospechoso
+71+ → Evasión real
+
+--------------------------------------------------
+
+5. BOTÓN ADMIN MEJORADO
+
+Reemplazar:
+
+"Marcar como legítimo"
+
+Por lógica real:
+
+if (adminClick) {
+  user.isTrusted = true
+  user.fraudScore = 0
+  eliminar flags
+}
+
+--------------------------------------------------
+
+6. NUEVO BOTÓN 🔥 “UNIFICAR DISPOSITIVOS”
+
+Función:
+
+mergeDevices(ccId)
+
+Acción:
+- Une todos los deviceHash en un solo usuario
+- Elimina duplicados
+- Limpia flags de evasión
+
+--------------------------------------------------
+
+7. RESET AUTOMÁTICO DE ALERTAS
+
+Cada 24 horas:
+
+if (user.sinActividadSospechosa) {
+  user.fraudScore -= 20
+}
+
+Si baja a 0:
+→ eliminar alerta de evasión
+
+--------------------------------------------------
+
+8. MEJORAR MENSAJE EN UI
+
+Reemplazar mensaje rojo:
+
+❌ "Posible evasión de límite"
+
+Por:
+
+🟡 "Actividad inusual detectada (puede ser red compartida)"
+
+--------------------------------------------------
+
+9. DETECCIÓN DE FRAUDE REAL (ANTI-HACKER)
+
+SI bloquear automáticamente cuando:
+
+if (
+  nuevosIDs > 5 en 10 minutos ||
+  scans > 50 en 5 minutos
+) {
+  bloquear usuario temporalmente
+}
+
+--------------------------------------------------
+
+10. LOG DE SEGURIDAD
+
+Guardar:
+
+- IP
+- deviceHash
+- timestamp
+- acción
+
+Para auditoría
+
+--------------------------------------------------
+
+RESULTADO ESPERADO:
+
+✔ No más falsos positivos  
+✔ Usuarios normales no se marcan como fraude  
+✔ Detección real de evasión  
+✔ Sistema tipo Binance / Bitrace  
+✔ Mejora confianza del usuario  
+✔ Mejora conversión a PRO  
+
+--------------------------------------------------

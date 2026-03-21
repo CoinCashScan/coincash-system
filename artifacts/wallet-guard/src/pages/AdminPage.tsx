@@ -297,7 +297,7 @@ function AdminPanelInner() {
   const [whitelistBusy,   setWhitelistBusy]   = useState<string | null>(null);
 
   // ── Planes state ─────────────────────────────────────────────────────────
-  interface PlanUser { ccId: string; email: string; plan: string; scansToday: number; upgradeRequestedAt: string | null; paidScansRemaining: number | null; }
+  interface PlanUser { ccId: string; email: string; plan: string; scansToday: number; upgradeRequestedAt: string | null; paidScansRemaining: number | null; fraudScore: number; isTrusted: boolean; }
   interface PlanesStats { totalUsers: number; proUsers: number; freeUsers: number; scansToday: number; }
   interface PendingUser {
     ccId:          string;
@@ -1313,6 +1313,9 @@ function AdminPanelInner() {
                           const planBadgeBorder= isPro ? "1px solid rgba(245,158,11,0.45)" : isBasico ? "1px solid rgba(96,165,250,0.35)" : "1px solid rgba(107,114,128,0.3)";
                           const leftBorder     = isPending ? "3px solid #F59E0B" : isPaid ? "3px solid #A78BFA" : isActiveUser ? "3px solid #00DCA0" : "3px solid transparent";
 
+                          const hasFraud   = u.fraudScore > 0;
+                          const fraudColor = u.fraudScore >= 60 ? "#FF4D4F" : u.fraudScore >= 30 ? "#F59E0B" : "#D97706";
+
                           return (
                             <div key={u.ccId} style={{
                               padding: "12px 14px",
@@ -1345,6 +1348,18 @@ function AdminPanelInner() {
                                 {isPending && (
                                   <span style={{ fontSize: 10, color: "#F59E0B", background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: 6, padding: "2px 6px", fontWeight: 700 }}>
                                     PENDIENTE
+                                  </span>
+                                )}
+                                {/* Trusted badge */}
+                                {u.isTrusted && (
+                                  <span style={{ fontSize: 10, fontWeight: 700, borderRadius: 6, padding: "2px 6px", background: "rgba(0,255,198,0.1)", color: "#00FFC6", border: "1px solid rgba(0,255,198,0.3)" }}>
+                                    ✓ LEGÍTIMO
+                                  </span>
+                                )}
+                                {/* Fraud score badge */}
+                                {hasFraud && !u.isTrusted && (
+                                  <span style={{ fontSize: 10, fontWeight: 700, borderRadius: 6, padding: "2px 6px", background: `${fraudColor}18`, color: fraudColor, border: `1px solid ${fraudColor}50` }}>
+                                    ⚠ Riesgo {u.fraudScore}
                                   </span>
                                 )}
                               </div>
@@ -1404,6 +1419,40 @@ function AdminPanelInner() {
                                   {isBusy ? "…" : "↺ Reset scans"}
                                 </button>
                               </div>
+                              {/* Row 4: antifraude buttons (solo si hay fraud score o es usuario de riesgo) */}
+                              {(hasFraud || u.isTrusted) && (
+                                <div style={{ display: "flex", gap: 6, marginTop: 5 }}>
+                                  <button
+                                    disabled={isBusy || u.isTrusted}
+                                    onClick={() => planAction("trust-user", u.ccId)}
+                                    title="Marcar usuario como legítimo: resetea fraud score y activa bypass"
+                                    style={{
+                                      flex: 1, background: u.isTrusted ? "rgba(0,255,198,0.06)" : "rgba(0,255,198,0.1)",
+                                      border: `1px solid ${u.isTrusted ? "rgba(0,255,198,0.2)" : "rgba(0,255,198,0.4)"}`,
+                                      borderRadius: 8, color: u.isTrusted ? "#4B5563" : "#00FFC6",
+                                      fontSize: 11, fontWeight: 700, padding: "5px 0",
+                                      cursor: (isBusy || u.isTrusted) ? "not-allowed" : "pointer",
+                                    }}
+                                  >
+                                    {isBusy ? "…" : u.isTrusted ? "✓ Ya marcado legítimo" : "✅ Marcar como legítimo"}
+                                  </button>
+                                  {!u.isTrusted && (
+                                    <button
+                                      disabled={isBusy}
+                                      onClick={() => planAction("merge-devices", u.ccId)}
+                                      title="Aceptar todos los dispositivos de este usuario como legítimos"
+                                      style={{
+                                        flex: 1, background: "rgba(99,102,241,0.1)",
+                                        border: "1px solid rgba(99,102,241,0.4)", borderRadius: 8,
+                                        color: "#818CF8", fontSize: 11, fontWeight: 700, padding: "5px 0",
+                                        cursor: isBusy ? "not-allowed" : "pointer",
+                                      }}
+                                    >
+                                      {isBusy ? "…" : "🔗 Unificar dispositivos"}
+                                    </button>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           );
                         })
