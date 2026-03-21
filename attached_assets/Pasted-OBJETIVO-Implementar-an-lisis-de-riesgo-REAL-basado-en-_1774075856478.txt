@@ -1,0 +1,117 @@
+OBJETIVO:
+Implementar análisis de riesgo REAL basado en datos blockchain y lógica AML (tipo Bitrace / Tether).
+
+--------------------------------------------------
+
+1. SEPARAR TIPOS DE RIESGO (CRÍTICO)
+
+Crear 3 módulos independientes:
+
+A) riesgoBlockchainReal
+B) riesgoContrapartes
+C) alertasComportamiento (NO crítico)
+
+--------------------------------------------------
+
+2. RIESGO REAL (SOLO DATOS VERIFICABLES)
+
+riskReal = 0
+
+if (blacklisted == true) riskReal = 100
+if (frozen == true) riskReal = 100
+
+if (interaccionesRiesgo > 0) {
+  riskReal = min(70, interaccionesRiesgo * 10)
+}
+
+--------------------------------------------------
+
+3. DETECCIÓN DE CONTAMINACIÓN (CLAVE)
+
+Analizar últimas transacciones:
+
+for each tx in lastTransactions:
+
+  if (tx.from in blacklist || tx.to in blacklist):
+      contamination += 1
+
+  if (tx.fromRiskScore > 70):
+      contamination += 1
+
+contaminationScore = contamination * 15
+
+if (contaminationScore > 0):
+   marcar "Fondos con posible origen de riesgo"
+
+--------------------------------------------------
+
+4. ALERTAS (NO MEZCLAR CON RIESGO REAL)
+
+alertScore = 0
+
+if (walletAge < 7 días) alertScore += 20
+if (volumen > 50k USDT) alertScore += 20
+if (txPorDia > 10) alertScore += 20
+if (sinExchange == true) alertScore += 20
+
+--------------------------------------------------
+
+5. RESULTADO FINAL (CLARO Y HONESTO)
+
+if (riskReal == 0):
+  mostrar:
+  "Sin riesgo en blockchain"
+
+if (riskReal > 0):
+  mostrar:
+  "Interacción con direcciones de riesgo"
+
+if (blacklisted || frozen):
+  mostrar:
+  "RIESGO CRÍTICO CONFIRMADO"
+
+--------------------------------------------------
+
+6. MOSTRAR ALERTAS APARTE
+
+Sección separada:
+
+"⚠️ Señales de comportamiento"
+
+NO decir:
+❌ "riesgo alto"
+SÍ decir:
+✔ "Actividad inusual detectada"
+
+--------------------------------------------------
+
+7. ELIMINAR SCORE FALSO
+
+❌ eliminar:
+- "65/100 general"
+- "predicción mezclada"
+
+✔ mantener:
+- riesgo real
+- alertas separadas
+
+--------------------------------------------------
+
+8. UI TIPO BITRACE
+
+Secciones:
+
+1. Estado real (verde / rojo)
+2. Contrapartes de riesgo
+3. Actividad
+4. Alertas (opcional)
+
+--------------------------------------------------
+
+RESULTADO:
+
+✔ Datos confiables  
+✔ Sin confusión  
+✔ Nivel profesional  
+✔ Igual lógica que AML real  
+✔ Aumenta confianza y ventas  

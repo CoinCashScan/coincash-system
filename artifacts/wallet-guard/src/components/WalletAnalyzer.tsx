@@ -32,8 +32,9 @@ interface RealRiskResult {
   reason: string;
 }
 
-/** Evalúa riesgo con datos on-chain reales. Regla única, sin heurísticas. */
+/** Evalúa riesgo con datos on-chain reales. Regla única AML — sin heurísticas. */
 function evalRealRisk(d: ReportData): RealRiskResult {
+  // A) Crítico: confirmado en blockchain
   if (d.isFrozen || d.isInBlacklistDB) {
     return {
       level: "ALTO",
@@ -43,45 +44,47 @@ function evalRealRisk(d: ReportData): RealRiskResult {
         : "Wallet en lista negra USDT (Tether)",
     };
   }
-  if ((d.suspiciousInteractions ?? 0) > 0) {
-    const n = d.suspiciousInteractions;
+  // B) Medio: interacción con contrapartes de riesgo
+  const n = d.suspiciousInteractions ?? 0;
+  if (n > 0) {
     return {
       level: "MEDIO",
-      score: Math.min(50, 20 + n * 8),
+      score: Math.min(70, n * 10),
       reason: `${n} interacción${n > 1 ? "es" : ""} con dirección${n > 1 ? "es" : ""} de riesgo en historial`,
     };
   }
-  return { level: "BAJO", score: 5, reason: "Sin coincidencias en datos públicos" };
+  // C) Limpio: sin riesgo verificado
+  return { level: "BAJO", score: 0, reason: "Sin riesgo confirmado en blockchain" };
 }
 
 function getRiskCardConfig(level: RiskLevel): { label: string; color: string; bg: string } {
-  if (level === "ALTO")  return { label: "Riesgo alto confirmado",  color: DANGER,  bg: "linear-gradient(135deg,#200808 0%,#120404 100%)" };
-  if (level === "MEDIO") return { label: "Riesgo medio detectado",  color: ORANGE,  bg: "linear-gradient(135deg,#1E0E04 0%,#120804 100%)" };
-  return                        { label: "Sin riesgos detectados",  color: GREEN,   bg: "linear-gradient(135deg,#001A0E 0%,#000F08 100%)" };
+  if (level === "ALTO")  return { label: "RIESGO CRÍTICO CONFIRMADO",          color: DANGER,  bg: "linear-gradient(135deg,#200808 0%,#120404 100%)" };
+  if (level === "MEDIO") return { label: "Interacción con direcciones de riesgo", color: ORANGE, bg: "linear-gradient(135deg,#1E0E04 0%,#120804 100%)" };
+  return                        { label: "Sin riesgo en blockchain",            color: GREEN,   bg: "linear-gradient(135deg,#001A0E 0%,#000F08 100%)" };
 }
 
 function getRiskCardMessage(level: RiskLevel): { mensaje: string; color: string; icono: string } {
   if (level === "ALTO") return {
-    mensaje: "Esta wallet está confirmada en listas negras o fue congelada en la red TRON. Evita cualquier interacción con ella.",
+    mensaje: "RIESGO CRÍTICO CONFIRMADO. Esta wallet está en lista negra USDT o fue congelada en la red TRON. Evita cualquier interacción.",
     color: DANGER,
     icono: "⛔",
   };
   if (level === "MEDIO") return {
-    mensaje: "Se detectaron interacciones con direcciones de riesgo en el historial de transacciones on-chain. Procede con precaución.",
+    mensaje: "Se detectaron interacciones con direcciones de riesgo en el historial on-chain. Procede con precaución.",
     color: ORANGE,
     icono: "⚠️",
   };
   return {
-    mensaje: "No se detectaron riesgos en datos públicos de blockchain. Esta wallet no aparece en listas negras ni tiene interacciones con direcciones de riesgo conocidas.",
+    mensaje: "Sin riesgo en blockchain. Esta wallet no aparece en listas negras ni tiene interacciones con direcciones de riesgo conocidas.",
     color: GREEN,
     icono: "✅",
   };
 }
 
 function getRiskStatusConfig(level: RiskLevel): { msg: string; color: string; Icon: React.ElementType } {
-  if (level === "ALTO")  return { msg: "Riesgo confirmado en blockchain", color: DANGER,  Icon: ShieldAlert  };
-  if (level === "MEDIO") return { msg: "Riesgo detectado en historial",   color: ORANGE,  Icon: AlertTriangle };
-  return                        { msg: "Sin riesgos detectados",          color: GREEN,   Icon: CheckCircle2 };
+  if (level === "ALTO")  return { msg: "Riesgo crítico confirmado en blockchain", color: DANGER,  Icon: ShieldAlert  };
+  if (level === "MEDIO") return { msg: "Interacción con direcciones de riesgo",   color: ORANGE,  Icon: AlertTriangle };
+  return                        { msg: "Sin riesgo detectado en blockchain",       color: GREEN,   Icon: CheckCircle2 };
 }
 
 // ── Predicción de congelamiento — basada en criterios reales Tether/TRON ──────
