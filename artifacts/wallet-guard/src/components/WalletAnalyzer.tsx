@@ -185,6 +185,54 @@ function calcularAnalisisAdicional(data: Partial<CongelamientoInput>): Congelami
   return { score, nivel, factores, hasSignals: factores.length > 0 };
 }
 
+// ── Alertas de comportamiento — separadas del riesgo real ────────────────────
+// No confundir con riesgo real. Son señales estadísticas, no flags on-chain.
+// Muestran patrones inusuales sin implicar riesgo confirmado.
+
+interface AlertaComportamiento {
+  texto: string;
+  score: number;
+}
+interface AlertasComportamientoResult {
+  totalScore: number;
+  alertas: AlertaComportamiento[];
+  nivel: "ALTO" | "MEDIO" | "NINGUNO";
+}
+
+function calcularAlertasComportamiento(data: {
+  walletAgeDays:       number;
+  totalVolume:         number;
+  txCount:             number;
+  exchangeInteractions: number;
+}): AlertasComportamientoResult {
+  const alertas: AlertaComportamiento[] = [];
+  let totalScore = 0;
+
+  const txPerDay = data.txCount / Math.max(data.walletAgeDays, 1);
+
+  if (data.walletAgeDays > 0 && data.walletAgeDays < 7) {
+    alertas.push({ texto: `Wallet muy reciente (${Math.floor(data.walletAgeDays)} días de antigüedad)`, score: 20 });
+    totalScore += 20;
+  }
+  if (data.totalVolume > 50_000) {
+    alertas.push({ texto: `Volumen elevado detectado: $${(data.totalVolume / 1000).toFixed(0)}K USDT`, score: 20 });
+    totalScore += 20;
+  }
+  if (txPerDay > 10) {
+    alertas.push({ texto: `Alta frecuencia de actividad: ${txPerDay.toFixed(1)} transacciones por día`, score: 20 });
+    totalScore += 20;
+  }
+  if (data.exchangeInteractions === 0 && data.totalVolume > 1_000) {
+    alertas.push({ texto: "Sin interacción con exchanges registrados — flujo directo entre wallets", score: 20 });
+    totalScore += 20;
+  }
+
+  const nivel: AlertasComportamientoResult["nivel"] =
+    totalScore >= 40 ? "ALTO" : totalScore > 0 ? "MEDIO" : "NINGUNO";
+
+  return { totalScore, alertas, nivel };
+}
+
 // Daily stats helpers (localStorage)
 interface DailyStats { date: string; analyzed: number; highRisk: number; }
 function getDailyStats(): DailyStats {
@@ -1505,11 +1553,22 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                 const isBlacklisted = !!(reportData.isInBlacklistDB);
                 const isFrozenWallet = !!(reportData.isFrozen);
 
-                // ── Predicción de congelamiento ───────────────────────────────
+                // ── Módulos independientes ──────────────────────────────────
                 const walletAgeDays = reportData.dateCreated ? (Date.now() - reportData.dateCreated) / 86_400_000 : 0;
+                const totalVolume = (reportData.totalInUSDT + reportData.totalOutUSDT) || 0;
+
+                // C) alertasComportamiento — señales estadísticas (nunca definen riesgo)
+                const alertasCmpt = calcularAlertasComportamiento({
+                  walletAgeDays,
+                  totalVolume,
+                  txCount:              reportData.totalTx              || 0,
+                  exchangeInteractions: reportData.exchangeInteractions || 0,
+                });
+
+                // B) analisis adicional — predicción de congelamiento (informativo)
                 const adicional = calcularAnalisisAdicional({
                   walletAgeDays,
-                  totalVolume:         (reportData.totalInUSDT + reportData.totalOutUSDT) || 0,
+                  totalVolume,
                   txCount:              reportData.totalTx              || 0,
                   exchangeInteraction:  reportData.exchangeInteractions || 0,
                   isLinkedToRiskWallet: riskyCount > 0,
@@ -1535,22 +1594,26 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                   <div className="rounded-3xl p-6 mb-4"
                     style={{ background: bg, border: `1px solid ${color}30`, boxShadow: `0 8px 40px ${color}18` }}>
 
-                    {/* ── Shield + resultado único ─────────────────────────────── */}
+                    {/* ── Shield + estado real — sin score numérico falso ─────── */}
                     <div className="flex flex-col items-center text-center mb-5">
-                      <div className="flex h-14 w-14 items-center justify-center rounded-2xl mb-4"
-                        style={{ background: `${color}18`, border: `1px solid ${color}40`, boxShadow: `0 0 24px ${color}22` }}>
-                        <Shield style={{ color, width: 26, height: 26 }} />
+                      <div className="flex h-16 w-16 items-center justify-center rounded-2xl mb-4"
+                        style={{ background: `${color}18`, border: `2px solid ${color}50`, boxShadow: `0 0 32px ${color}28` }}>
+                        <Shield style={{ color, width: 30, height: 30 }} />
                       </div>
-                      <p className="text-[10px] font-bold uppercase tracking-[0.2em] mb-2.5"
-                        style={{ color: "rgba(255,255,255,0.38)" }}>
+                      <p className="text-[10px] font-bold uppercase tracking-[0.2em] mb-3"
+                        style={{ color: "rgba(255,255,255,0.35)" }}>
                         RESULTADO DEL ANÁLISIS
                       </p>
-                      <div className="flex items-end leading-none mb-4">
-                        <span className="font-black" style={{ fontSize: 72, color, lineHeight: 1 }}>{risk.score}</span>
-                        <span className="font-bold mb-1 ml-0.5" style={{ fontSize: 24, color: "rgba(255,255,255,0.28)" }}>/100</span>
-                      </div>
-                      <span className="inline-flex items-center px-4 py-1.5 rounded-full text-sm font-bold"
-                        style={{ background: `${color}1A`, border: `1px solid ${color}50`, color, letterSpacing: "0.01em" }}>
+                      {/* Estado primario — texto claro, sin número confuso */}
+                      <span className="inline-flex items-center px-5 py-2.5 rounded-2xl font-black"
+                        style={{
+                          background: `${color}18`,
+                          border: `2px solid ${color}55`,
+                          color,
+                          fontSize: risk.level === "ALTO" ? 15 : 17,
+                          letterSpacing: "0.02em",
+                          boxShadow: `0 0 20px ${color}18`,
+                        }}>
                         {label}
                       </span>
                     </div>
@@ -1623,6 +1686,45 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                             +{riskyCount - 5} más en el historial completo
                           </p>
                         )}
+                      </div>
+                    )}
+
+                    {/* ── Señales de comportamiento (separadas del riesgo real) ── */}
+                    {alertasCmpt.alertas.length > 0 && (
+                      <div style={{
+                        borderRadius: 14, border: "1px solid rgba(245,158,11,0.22)",
+                        background: "rgba(245,158,11,0.04)", marginBottom: 16, overflow: "hidden",
+                      }}>
+                        <div style={{
+                          padding: "10px 14px",
+                          borderBottom: "1px solid rgba(245,158,11,0.12)",
+                          display: "flex", alignItems: "center", justifyContent: "space-between",
+                        }}>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.8)" }}>
+                            ⚠️ Señales de comportamiento
+                          </span>
+                          <span style={{
+                            padding: "2px 9px", borderRadius: 20,
+                            background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.28)",
+                            color: AMBER, fontSize: 9, fontWeight: 700, letterSpacing: "0.06em",
+                          }}>
+                            ACTIVIDAD INUSUAL
+                          </span>
+                        </div>
+                        <div style={{ padding: "10px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
+                          {alertasCmpt.alertas.map((a, i) => (
+                            <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                              <span style={{ width: 5, height: 5, borderRadius: "50%", background: AMBER,
+                                flexShrink: 0, marginTop: 5, opacity: 0.7 }} />
+                              <span style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", lineHeight: 1.45 }}>
+                                {a.texto}
+                              </span>
+                            </div>
+                          ))}
+                          <p style={{ margin: "4px 0 0", fontSize: 9, color: "rgba(255,255,255,0.28)", lineHeight: 1.5 }}>
+                            Estas señales son estadísticas y no representan un riesgo confirmado en blockchain.
+                          </p>
+                        </div>
                       </div>
                     )}
 
