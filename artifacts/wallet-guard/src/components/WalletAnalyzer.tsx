@@ -859,7 +859,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
           if (navigator.canShare({ files: [file] })) {
             await navigator.share({
               title: "CoinCash — Análisis TRON",
-              text: "Verifiqué esta wallet antes de enviar dinero 🔍",
+              text: "🔐 Esta wallet ha sido verificada en www.hardsoftcomputer.com ✔️",
               files: [file],
             });
             return;
