@@ -20,8 +20,20 @@ const BLUE   = "#3B82F6";
 const CARD   = "#121821";
 const BORDER = "rgba(255,255,255,0.07)";
 
-// ── Compute risk score from report data (mirrors TronAnalysisReport logic) ──────
-function computeRiskScore(d: ReportData): number {
+// ── Riesgo blockchain: solo datos on-chain confirmados ───────────────────────────
+// Fuentes: estado frozen, lista negra oficial, interacciones con wallets sancionadas.
+function computeBlockchainRisk(d: ReportData): number {
+  if (d.isFrozen || d.isInBlacklistDB) return 100;
+  let score = 0;
+  if (d.suspiciousInteractions >= 5)      score += 70;
+  else if (d.suspiciousInteractions >= 2) score += 50;
+  else if (d.suspiciousInteractions >= 1) score += 30;
+  return Math.max(0, Math.min(100, score));
+}
+
+// ── Riesgo predictivo: modelo CoinCash basado en comportamiento ──────────────────
+// Fuentes: edad de la wallet, volumen, nº de tx, contrapartes únicas, patrón de exchanges.
+function computePredictiveRisk(d: ReportData): number {
   const daysSinceCreation = (Date.now() - d.dateCreated) / 86_400_000;
   let score = 0;
   if (daysSinceCreation < 30)        score += 20;
@@ -32,14 +44,14 @@ function computeRiskScore(d: ReportData): number {
   if (d.uniqueWalletsCount > 200)       score += 20;
   else if (d.uniqueWalletsCount > 50)   score += 10;
   if (d.totalTx > 500)                  score += 20;
-  else if (d.totalTx > 100)            score += 10;
+  else if (d.totalTx > 100)             score += 10;
   if (d.transfersAnalyzed > 0 && d.exchangeInteractions > d.transfersAnalyzed * 0.5) score -= 10;
-  if (d.suspiciousInteractions >= 5)    score += 40;
-  else if (d.suspiciousInteractions >= 2) score += 25;
-  else if (d.suspiciousInteractions >= 1) score += 15;
-  score = Math.max(0, Math.min(100, score));
-  if (d.isFrozen) score = 100;
-  return score;
+  return Math.max(0, Math.min(100, score));
+}
+
+// ── Riesgo general = max(blockchain, predictivo) ─────────────────────────────────
+function computeRiskScore(d: ReportData): number {
+  return Math.max(computeBlockchainRisk(d), computePredictiveRisk(d));
 }
 
 function getScoreCardConfig(score: number, isLatente = false): { label: string; color: string; bg: string } {
@@ -144,7 +156,7 @@ function getRiskMessage(score: number, isLatente = false): { nivel: string; mens
   };
   return {
     nivel:   "Bajo",
-    mensaje: "Patrones de riesgo potencial detectados. Posible congelamiento futuro si el perfil evoluciona.",
+    mensaje: "No se detectaron riesgos conocidos en datos públicos de blockchain. Bajo riesgo según el análisis actual.",
     color:   GREEN,
     icono:   "✅",
   };
@@ -1447,11 +1459,12 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
             >
               {/* ── Premium Risk Score Card ── */}
               {(() => {
-                // ── Priority: BLACKLIST/FROZEN > FREEZE PREDICTION >= 60 > RAW
+                // ── Separar fuentes: datos reales vs. modelo predictivo ────────
                 const isConfirmedFrozen = !!(reportData.isFrozen || reportData.isInBlacklistDB);
-                const rawScore = computeRiskScore(reportData);
+                const riesgoBlockchain  = computeBlockchainRisk(reportData);
+                const riesgoPredBase    = computePredictiveRisk(reportData);
 
-                // Compute freeze prediction only when not confirmed frozen
+                // Freeze prediction (solo cuando no está confirmado frozen)
                 let freeze: CongelamientoResult | null = null;
                 if (!isConfirmedFrozen) {
                   const dateCreated = reportData.dateCreated ?? Date.now();
@@ -1465,19 +1478,31 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                   });
                 }
 
+                // Predictivo = max(modelo base, modelo congelamiento)
+                const riesgoPredictivo  = isConfirmedFrozen ? 100
+                  : freeze ? Math.max(riesgoPredBase, freeze.score)
+                  : riesgoPredBase;
+
                 const isLatente = !isConfirmedFrozen && freeze?.nivel === "LATENTE";
 
-                // Unified final score
-                let score: number;
-                if (isConfirmedFrozen) {
-                  score = 100;
-                } else if (freeze && freeze.score >= 60) {
-                  score = Math.max(rawScore, freeze.score);
-                } else {
-                  score = rawScore;
-                }
+                // Riesgo General = max(blockchain, predictivo) — siempre 100 si frozen
+                const score: number = isConfirmedFrozen ? 100
+                  : Math.max(riesgoBlockchain, riesgoPredictivo);
 
                 const { label, color, bg } = getScoreCardConfig(score, isLatente);
+
+                // Sub-score bar helper
+                const SubScoreBar = ({ value, accentColor }: { value: number; accentColor: string }) => (
+                  <div style={{ height: 5, borderRadius: 4, background: "rgba(255,255,255,0.08)", overflow: "hidden" }}>
+                    <div style={{
+                      height: "100%", borderRadius: 4,
+                      width: `${value}%`,
+                      background: `linear-gradient(90deg, ${accentColor}BB, ${accentColor})`,
+                      transition: "width 0.6s ease",
+                    }} />
+                  </div>
+                );
+
                 return (
                   <div className="rounded-3xl p-6 mb-4"
                     style={{
@@ -1501,7 +1526,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                       {/* Label */}
                       <p className="text-[10px] font-bold uppercase tracking-[0.2em] mb-2.5"
                         style={{ color: "rgba(255,255,255,0.38)" }}>
-                        RISK SCORE
+                        RIESGO GENERAL
                       </p>
 
                       {/* Big number */}
@@ -1524,6 +1549,50 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                         }}>
                         {label}
                       </span>
+                    </div>
+
+                    {/* ── Desglose de fuentes ─────────────────────────────────── */}
+                    <div style={{
+                      borderRadius: 14,
+                      background: "rgba(255,255,255,0.03)",
+                      border: "1px solid rgba(255,255,255,0.07)",
+                      padding: "12px 14px",
+                      marginBottom: 16,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 10,
+                    }}>
+                      {/* Blockchain */}
+                      <div>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 5 }}>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.7)" }}>
+                            🔍 Riesgo en blockchain
+                          </span>
+                          <span style={{ fontFamily: "monospace", fontSize: 13, fontWeight: 800, color: riesgoBlockchain >= 60 ? DANGER : riesgoBlockchain >= 30 ? ORANGE : GREEN }}>
+                            {riesgoBlockchain}<span style={{ fontSize: 9, color: "rgba(255,255,255,0.3)" }}>/100</span>
+                          </span>
+                        </div>
+                        <SubScoreBar value={riesgoBlockchain} accentColor={riesgoBlockchain >= 60 ? DANGER : riesgoBlockchain >= 30 ? ORANGE : GREEN} />
+                        <p style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", marginTop: 4, letterSpacing: "0.03em" }}>
+                          Datos reales on-chain · frozen status · lista negra · contrapartes verificadas
+                        </p>
+                      </div>
+
+                      {/* Predictivo */}
+                      <div>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 5 }}>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.7)" }}>
+                            🧠 Análisis predictivo CoinCash
+                          </span>
+                          <span style={{ fontFamily: "monospace", fontSize: 13, fontWeight: 800, color: riesgoPredictivo >= 60 ? DANGER : riesgoPredictivo >= 30 ? ORANGE : AMBER }}>
+                            {riesgoPredictivo}<span style={{ fontSize: 9, color: "rgba(255,255,255,0.3)" }}>/100</span>
+                          </span>
+                        </div>
+                        <SubScoreBar value={riesgoPredictivo} accentColor={riesgoPredictivo >= 60 ? DANGER : riesgoPredictivo >= 30 ? ORANGE : AMBER} />
+                        <p style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", marginTop: 4, letterSpacing: "0.03em" }}>
+                          Edad · volumen · patrones · comportamiento transaccional
+                        </p>
+                      </div>
                     </div>
 
                     {/* ── Risk recommendation inline ── */}
@@ -1583,6 +1652,18 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                           : <Copy style={{ width: 14, height: 14, color: "rgba(255,255,255,0.5)" }} />}
                       </button>
                     </div>
+
+                    {/* ── Disclaimer metodología ── */}
+                    <p style={{
+                      fontSize: 10,
+                      color: "rgba(255,255,255,0.3)",
+                      textAlign: "center",
+                      lineHeight: 1.6,
+                      margin: "0 0 14px",
+                      padding: "0 4px",
+                    }}>
+                      Este análisis combina datos públicos de blockchain con modelos predictivos para identificar posibles riesgos.
+                    </p>
 
                     {/* ── Share button ── */}
                     <button
