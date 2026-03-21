@@ -34,26 +34,35 @@ interface RealRiskResult {
 
 /** Evalúa riesgo con datos on-chain reales. Regla única AML — sin heurísticas. */
 function evalRealRisk(d: ReportData): RealRiskResult {
-  // A) CRÍTICO: confirmado en blockchain — única fuente de color rojo
-  if (d.isFrozen || d.isInBlacklistDB) {
+  const isBlacklisted       = d.isInBlacklistDB === true;
+  const isFrozen            = d.isFrozen === true;
+  const n                   = d.suspiciousInteractions ?? 0;
+  const hasRiskyInteractions = n > 0;
+
+  const isBlockchainSafe = !isBlacklisted && !isFrozen && !hasRiskyInteractions;
+
+  // A) CRÍTICO: confirmado en blockchain — única fuente de alerta roja
+  if (isBlacklisted || isFrozen) {
     return {
       level: "ALTO",
       score: 100,
-      reason: d.isFrozen
+      reason: isFrozen
         ? "Wallet congelada en la red TRON"
         : "Wallet en lista negra USDT (Tether)",
     };
   }
-  // B) MEDIO: interacciones con contrapartes marcadas (40-80)
-  const n = d.suspiciousInteractions ?? 0;
-  if (n > 0) {
+
+  // B) MEDIO: interacciones verificadas con contrapartes marcadas (40-80)
+  if (hasRiskyInteractions) {
     return {
       level: "MEDIO",
       score: Math.min(80, 40 + n * 8),   // n=1→48  n=2→56  n=5+→80
       reason: `${n} interacción${n > 1 ? "es" : ""} con dirección${n > 1 ? "es" : ""} de riesgo verificada${n > 1 ? "s" : ""} on-chain`,
     };
   }
-  // C) BAJO: sin flags reales (0-20 — señales estadísticas NO cuentan aquí)
+
+  // C) BAJO: blockchain segura — señales estadísticas no cuentan aquí
+  void isBlockchainSafe; // siempre true en este punto
   return { level: "BAJO", score: 5, reason: "Sin riesgo en blockchain" };
 }
 
