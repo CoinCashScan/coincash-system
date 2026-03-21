@@ -28,13 +28,13 @@ type RiskLevel = "ALTO" | "MEDIO" | "BAJO";
 
 interface RealRiskResult {
   level:  RiskLevel;
-  score:  number;   // BAJO: 5 | MEDIO: 20-50 | ALTO: 70-100
+  score:  number;   // BAJO: 5 | MEDIO: 48-80 | ALTO: 100
   reason: string;
 }
 
 /** Evalúa riesgo con datos on-chain reales. Regla única AML — sin heurísticas. */
 function evalRealRisk(d: ReportData): RealRiskResult {
-  // A) Crítico: confirmado en blockchain
+  // A) CRÍTICO: confirmado en blockchain — única fuente de color rojo
   if (d.isFrozen || d.isInBlacklistDB) {
     return {
       level: "ALTO",
@@ -44,23 +44,23 @@ function evalRealRisk(d: ReportData): RealRiskResult {
         : "Wallet en lista negra USDT (Tether)",
     };
   }
-  // B) Medio: interacción con contrapartes de riesgo
+  // B) MEDIO: interacciones con contrapartes marcadas (40-80)
   const n = d.suspiciousInteractions ?? 0;
   if (n > 0) {
     return {
       level: "MEDIO",
-      score: Math.min(70, n * 10),
-      reason: `${n} interacción${n > 1 ? "es" : ""} con dirección${n > 1 ? "es" : ""} de riesgo en historial`,
+      score: Math.min(80, 40 + n * 8),   // n=1→48  n=2→56  n=5+→80
+      reason: `${n} interacción${n > 1 ? "es" : ""} con dirección${n > 1 ? "es" : ""} de riesgo verificada${n > 1 ? "s" : ""} on-chain`,
     };
   }
-  // C) Limpio: sin riesgo verificado
-  return { level: "BAJO", score: 0, reason: "Sin riesgo confirmado en blockchain" };
+  // C) BAJO: sin flags reales (0-20 — señales estadísticas NO cuentan aquí)
+  return { level: "BAJO", score: 5, reason: "Sin riesgo en blockchain" };
 }
 
 function getRiskCardConfig(level: RiskLevel): { label: string; color: string; bg: string } {
-  if (level === "ALTO")  return { label: "RIESGO CRÍTICO CONFIRMADO",          color: DANGER,  bg: "linear-gradient(135deg,#200808 0%,#120404 100%)" };
-  if (level === "MEDIO") return { label: "Interacción con direcciones de riesgo", color: ORANGE, bg: "linear-gradient(135deg,#1E0E04 0%,#120804 100%)" };
-  return                        { label: "Sin riesgo en blockchain",            color: GREEN,   bg: "linear-gradient(135deg,#001A0E 0%,#000F08 100%)" };
+  if (level === "ALTO")  return { label: "RIESGO CRÍTICO CONFIRMADO",          color: DANGER, bg: "linear-gradient(135deg,#200808 0%,#120404 100%)" };
+  if (level === "MEDIO") return { label: "Interacción con direcciones de riesgo", color: ORANGE, bg: "linear-gradient(135deg,#1A1000 0%,#0F0900 100%)" };
+  return                        { label: "Sin riesgo en blockchain",            color: GREEN,  bg: "linear-gradient(135deg,#001A0E 0%,#000F08 100%)" };
 }
 
 function getRiskCardMessage(level: RiskLevel): { mensaje: string; color: string; icono: string } {
@@ -70,12 +70,12 @@ function getRiskCardMessage(level: RiskLevel): { mensaje: string; color: string;
     icono: "⛔",
   };
   if (level === "MEDIO") return {
-    mensaje: "Se detectaron interacciones con direcciones de riesgo en el historial on-chain. Procede con precaución.",
+    mensaje: "Se detectaron interacciones verificadas con direcciones marcadas en blockchain. Esto no implica que la wallet esté bloqueada, pero se recomienda precaución.",
     color: ORANGE,
     icono: "⚠️",
   };
   return {
-    mensaje: "Sin riesgo en blockchain. Esta wallet no aparece en listas negras ni tiene interacciones con direcciones de riesgo conocidas.",
+    mensaje: "Wallet sin riesgo en blockchain. No aparece en listas negras ni tiene interacciones con direcciones de riesgo confirmadas.",
     color: GREEN,
     icono: "✅",
   };
