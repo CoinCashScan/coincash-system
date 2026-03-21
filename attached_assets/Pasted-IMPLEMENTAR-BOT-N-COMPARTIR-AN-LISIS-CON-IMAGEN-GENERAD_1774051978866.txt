@@ -1,0 +1,128 @@
+IMPLEMENTAR BOTÓN "COMPARTIR ANÁLISIS" CON IMAGEN GENERADA
+
+OBJETIVO:
+Permitir al usuario compartir una imagen visual del análisis (viralidad)
+
+---
+
+1. AGREGAR BOTÓN EN RESULTADO
+
+Ubicación: debajo del score
+
+<button className="btn-share" onClick={generarImagen}>
+  📤 Compartir análisis
+</button>
+
+---
+
+2. USAR HTML2CANVAS
+
+Instalar:
+
+npm install html2canvas
+
+Importar:
+
+import html2canvas from "html2canvas";
+
+---
+
+3. CREAR CONTENEDOR PARA CAPTURA
+
+<div id="share-card" className="share-card">
+  <h2>CoinCash</h2>
+  <p>Seguridad TRON en tiempo real</p>
+
+  <div className="score">{score}/100</div>
+  <div className="risk">{nivelRiesgo}</div>
+
+  <div className="wallet">{wallet}</div>
+
+  <p className="footer">Verifica antes de enviar dinero ⚠️</p>
+</div>
+
+---
+
+4. FUNCIÓN GENERAR IMAGEN
+
+const generarImagen = async () => {
+const element = document.getElementById("share-card");
+
+const canvas = await html2canvas(element);
+const image = canvas.toDataURL("image/png");
+
+const link = document.createElement("a");
+link.href = image;
+link.download = "coincash-analisis.png";
+link.click();
+};
+
+---
+
+5. DISEÑO VISUAL (IMPORTANTE PARA VIRALIDAD)
+
+.share-card {
+width: 350px;
+padding: 20px;
+background: #0b0f1a;
+color: #fff;
+border-radius: 20px;
+text-align: center;
+box-shadow: 0 0 30px rgba(0,0,0,0.5);
+}
+
+.score {
+font-size: 50px;
+font-weight: bold;
+margin: 10px 0;
+}
+
+.risk {
+font-size: 18px;
+margin-bottom: 10px;
+}
+
+.wallet {
+font-size: 12px;
+opacity: 0.7;
+}
+
+.footer {
+margin-top: 15px;
+font-size: 12px;
+color: #00ffcc;
+}
+
+---
+
+6. COLORES SEGÚN RIESGO
+
+Si riesgo alto:
+→ rojo
+
+Si medio:
+→ naranja
+
+Si bajo:
+→ verde
+
+---
+
+7. OPCIONAL (MEJOR AÚN)
+
+Agregar botón:
+
+navigator.share({
+title: "CoinCash",
+text: "Revisa esta wallet antes de enviar dinero",
+url: "https://tusitio.com"
+});
+
+---
+
+RESULTADO:
+
+✔ Imagen lista para Instagram / WhatsApp
+✔ Usuarios comparten resultados
+✔ Publicidad gratis
+✔ Más tráfico automático

@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import html2canvas from "html2canvas";
 import QRCode from "qrcode";
 import { API_BASE } from "@/lib/apiConfig";
 import { resolveIdentity, getDeviceId } from "@/lib/identity";
@@ -376,9 +377,11 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
   const [copiedAddr,       setCopiedAddr]       = useState(false);
   // ccId starts empty — always resolved from the API/fingerprint, never trusted blindly from localStorage
   const [ccId, setCcId] = useState<string>("");
-  const resolvedRef = useRef(false);
-  const pollRef     = useRef<ReturnType<typeof setInterval> | null>(null);
-  const resultRef   = useRef<HTMLDivElement>(null);
+  const resolvedRef  = useRef(false);
+  const pollRef      = useRef<ReturnType<typeof setInterval> | null>(null);
+  const resultRef    = useRef<HTMLDivElement>(null);
+  const shareCardRef = useRef<HTMLDivElement>(null);
+  const [sharingImage, setSharingImage] = useState(false);
 
   const PRO_ADDRESS = "TM2cRRegda1gQAQY9hGbg6DMscN7okNVA1";
 
@@ -832,6 +835,51 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
       setTimeout(() => setCopiedAddress(false), 2000);
     });
   };
+
+  // ── Share analysis as image ───────────────────────────────────────────────
+  const generarImagen = useCallback(async () => {
+    const el = shareCardRef.current;
+    if (!el || !reportData) return;
+    setSharingImage(true);
+    try {
+      const canvas = await html2canvas(el, {
+        backgroundColor: null,
+        scale: 2,
+        useCORS: true,
+        logging: false,
+      });
+      const dataUrl = canvas.toDataURL("image/png");
+
+      // Try Web Share API first (mobile native sheet)
+      if (navigator.share && navigator.canShare) {
+        try {
+          const res = await fetch(dataUrl);
+          const blob = await res.blob();
+          const file = new File([blob], "coincash-analisis.png", { type: "image/png" });
+          if (navigator.canShare({ files: [file] })) {
+            await navigator.share({
+              title: "CoinCash — Análisis TRON",
+              text: "Verifiqué esta wallet antes de enviar dinero 🔍",
+              files: [file],
+            });
+            return;
+          }
+        } catch {
+          // Fall through to download
+        }
+      }
+
+      // Fallback: download PNG
+      const link = document.createElement("a");
+      link.href = dataUrl;
+      link.download = `coincash-${reportData.address.slice(0, 8)}.png`;
+      link.click();
+    } catch (err) {
+      console.error("Share error:", err);
+    } finally {
+      setSharingImage(false);
+    }
+  }, [reportData]);
 
   const isPro = freemiumLoaded && freemium.plan === "pro";
 
@@ -1366,6 +1414,35 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                           : <Copy style={{ width: 14, height: 14, color: "rgba(255,255,255,0.5)" }} />}
                       </button>
                     </div>
+
+                    {/* ── Share button ── */}
+                    <button
+                      type="button"
+                      onClick={generarImagen}
+                      disabled={sharingImage}
+                      className="flex items-center justify-center gap-2 w-full rounded-xl mt-3 font-bold transition-opacity active:opacity-70"
+                      style={{
+                        padding: "11px 0",
+                        background: sharingImage
+                          ? "rgba(0,255,198,0.06)"
+                          : "linear-gradient(135deg,rgba(0,255,198,0.14) 0%,rgba(0,184,169,0.08) 100%)",
+                        border: "1px solid rgba(0,255,198,0.3)",
+                        color: "#00FFC6",
+                        fontSize: 13,
+                        letterSpacing: "0.03em",
+                        cursor: sharingImage ? "not-allowed" : "pointer",
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      {sharingImage ? (
+                        <>
+                          <Loader2 style={{ width: 15, height: 15, animation: "spin 1s linear infinite" }} />
+                          Generando imagen…
+                        </>
+                      ) : (
+                        <>📤 Compartir análisis</>
+                      )}
+                    </button>
                   </div>
                 );
               })()}
@@ -1608,6 +1685,165 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
         onOpenChange={setIsScannerOpen}
         onScanSuccess={handleScanSuccess}
       />
+
+      {/* ── Hidden Share Card (rendered off-screen for html2canvas capture) ── */}
+      {reportData && (() => {
+        const isConfirmedFrozen = !!(reportData.isFrozen || reportData.isInBlacklistDB);
+        const rawScore = computeRiskScore(reportData);
+        let freeze: CongelamientoResult | null = null;
+        if (!isConfirmedFrozen) {
+          const dateCreated = reportData.dateCreated ?? Date.now();
+          const walletAgeDays = (Date.now() - dateCreated) / 86_400_000;
+          freeze = calcularRiesgoCongelamiento({
+            walletAgeDays,
+            totalVolume:         (reportData.totalInUSDT  + reportData.totalOutUSDT) || 0,
+            txCount:              reportData.totalTx              || 0,
+            exchangeInteraction:  reportData.exchangeInteractions || 0,
+            isLinkedToRiskWallet: (reportData.suspiciousInteractions || 0) > 0,
+          });
+        }
+        const isLatente = !isConfirmedFrozen && freeze?.nivel === "LATENTE";
+        let sc = isConfirmedFrozen ? 100 : freeze && freeze.score >= 60 ? Math.max(rawScore, freeze.score) : rawScore;
+        const { label: scLabel, color: scColor } = getScoreCardConfig(sc, isLatente);
+
+        const cardBg = sc >= 80
+          ? "#1A0505"
+          : sc >= 60
+          ? "#1A0E05"
+          : sc >= 30
+          ? "#151000"
+          : "#001A0F";
+        const accentColor = scColor;
+
+        return (
+          <div
+            ref={shareCardRef}
+            style={{
+              position: "fixed",
+              left: "-9999px",
+              top: 0,
+              zIndex: -1,
+              width: 380,
+              padding: "28px 24px 24px",
+              background: cardBg,
+              borderRadius: 24,
+              border: `1.5px solid ${accentColor}40`,
+              fontFamily: "'Inter', 'Segoe UI', system-ui, sans-serif",
+              overflow: "hidden",
+            }}
+          >
+            {/* Glow accent */}
+            <div style={{
+              position: "absolute", top: -40, right: -40,
+              width: 160, height: 160, borderRadius: "50%",
+              background: `radial-gradient(circle, ${accentColor}22 0%, transparent 70%)`,
+              pointerEvents: "none",
+            }} />
+
+            {/* Header */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 22 }}>
+              <div>
+                <div style={{ fontSize: 20, fontWeight: 800, color: "#FFFFFF", letterSpacing: "-0.01em" }}>
+                  Coin<span style={{ color: "#00FFC6" }}>Cash</span>
+                </div>
+                <div style={{ fontSize: 10, color: "rgba(255,255,255,0.38)", fontWeight: 600, letterSpacing: "0.15em", marginTop: 2 }}>
+                  TRON WALLET SECURITY
+                </div>
+              </div>
+              <div style={{
+                background: `${accentColor}18`,
+                border: `1px solid ${accentColor}50`,
+                borderRadius: 10, padding: "4px 10px",
+                fontSize: 10, fontWeight: 700, color: accentColor,
+                letterSpacing: "0.05em",
+              }}>
+                SCAN RESULT
+              </div>
+            </div>
+
+            {/* Score */}
+            <div style={{ textAlign: "center", marginBottom: 20 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.35)", letterSpacing: "0.2em", marginBottom: 8 }}>
+                RISK SCORE
+              </div>
+              <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "center", lineHeight: 1, marginBottom: 12 }}>
+                <span style={{ fontSize: 88, fontWeight: 900, color: accentColor, lineHeight: 1 }}>
+                  {sc}
+                </span>
+                <span style={{ fontSize: 28, fontWeight: 700, color: "rgba(255,255,255,0.25)", marginBottom: 6, marginLeft: 2 }}>
+                  /100
+                </span>
+              </div>
+              <div style={{
+                display: "inline-flex", alignItems: "center",
+                padding: "7px 18px", borderRadius: 30,
+                background: `${accentColor}1A`,
+                border: `1px solid ${accentColor}55`,
+                color: accentColor, fontSize: 14, fontWeight: 700,
+                letterSpacing: "0.02em",
+              }}>
+                {scLabel}
+              </div>
+            </div>
+
+            {/* Divider */}
+            <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", margin: "0 0 16px" }} />
+
+            {/* Wallet address */}
+            <div style={{
+              background: "rgba(255,255,255,0.04)",
+              border: "1px solid rgba(255,255,255,0.09)",
+              borderRadius: 12, padding: "12px 14px",
+              marginBottom: 18,
+            }}>
+              <div style={{ fontSize: 9, fontWeight: 700, color: "rgba(255,255,255,0.3)", letterSpacing: "0.18em", marginBottom: 5 }}>
+                WALLET ADDRESS · TRON TRC20
+              </div>
+              <div style={{ fontSize: 12, fontFamily: "monospace", color: "#E5E7EB", letterSpacing: "0.05em", wordBreak: "break-all" }}>
+                {reportData.address}
+              </div>
+            </div>
+
+            {/* Stats row */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 20 }}>
+              {[
+                { label: "TX TOTAL", value: reportData.totalTx },
+                { label: "USDT IN",  value: `$${(reportData.totalInUSDT || 0).toFixed(0)}` },
+                { label: "USDT OUT", value: `$${(reportData.totalOutUSDT || 0).toFixed(0)}` },
+              ].map((item, i) => (
+                <div key={i} style={{
+                  background: "rgba(255,255,255,0.03)",
+                  border: "1px solid rgba(255,255,255,0.07)",
+                  borderRadius: 10, padding: "10px 0",
+                  textAlign: "center",
+                }}>
+                  <div style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", fontWeight: 700, letterSpacing: "0.12em", marginBottom: 4 }}>
+                    {item.label}
+                  </div>
+                  <div style={{ fontSize: 14, color: "#F9FAFB", fontWeight: 700 }}>
+                    {item.value}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Footer CTA */}
+            <div style={{
+              background: "rgba(0,255,198,0.07)",
+              border: "1px solid rgba(0,255,198,0.2)",
+              borderRadius: 12, padding: "11px 14px",
+              textAlign: "center",
+            }}>
+              <div style={{ fontSize: 11, color: "#00FFC6", fontWeight: 700, marginBottom: 3 }}>
+                ⚠️ Verifica antes de enviar dinero
+              </div>
+              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
+                coincash.app · Seguridad TRON en tiempo real
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };
