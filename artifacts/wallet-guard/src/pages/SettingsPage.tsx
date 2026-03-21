@@ -550,14 +550,16 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
 
-              {/* Plan Básico */}
+              {/* Plan Básico — VERDE */}
               <div style={{
-                background: selectedPlan.name === "Básico" ? "rgba(0,255,198,0.07)" : "rgba(255,255,255,0.03)",
-                border: selectedPlan.name === "Básico" ? "2px solid rgba(0,255,198,0.7)" : "1px solid rgba(255,255,255,0.09)",
+                background: selectedPlan.name === "Básico"
+                  ? "linear-gradient(155deg,rgba(0,230,118,0.12),rgba(0,180,80,0.06))"
+                  : "rgba(255,255,255,0.03)",
+                border: selectedPlan.name === "Básico" ? "2px solid #00E676" : "1px solid rgba(0,230,118,0.2)",
                 borderRadius: 14, padding: "14px 12px",
                 display: "flex", flexDirection: "column", gap: 7,
                 position: "relative",
-                boxShadow: selectedPlan.name === "Básico" ? "0 0 18px rgba(0,255,198,0.22)" : "none",
+                boxShadow: selectedPlan.name === "Básico" ? "0 0 22px rgba(0,230,118,0.28)" : "none",
                 transform: selectedPlan.name === "Básico" ? "scale(1.02)" : "scale(1)",
                 transformOrigin: "center",
                 transition: "all 0.22s ease",
@@ -566,7 +568,7 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
                 {selectedPlan.name === "Básico" && (
                   <div style={{
                     position: "absolute", top: -10, left: "50%", transform: "translateX(-50%)",
-                    background: "linear-gradient(90deg,#00C896,#00FFC6)",
+                    background: "linear-gradient(90deg,#00B359,#00E676)",
                     borderRadius: 20, padding: "2px 10px",
                     fontSize: 8, fontWeight: 800, color: "#0B0F14",
                     letterSpacing: "0.04em", whiteSpace: "nowrap",
@@ -589,26 +591,29 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
                     el?.scrollIntoView({ behavior: "smooth" });
                   }}
                   style={{
-                    padding: "7px 0", border: selectedPlan.name === "Básico" ? "none" : "1px solid rgba(0,255,198,0.3)",
+                    padding: "7px 0",
+                    border: selectedPlan.name === "Básico" ? "none" : "1px solid rgba(0,230,118,0.3)",
                     borderRadius: 9,
                     background: selectedPlan.name === "Básico"
-                      ? "linear-gradient(135deg,rgba(0,200,150,0.85),rgba(0,255,198,0.75))"
-                      : "rgba(0,255,198,0.06)",
-                    color: selectedPlan.name === "Básico" ? "#0B1220" : "#00FFC6",
+                      ? "linear-gradient(135deg,#00B359,#00E676)"
+                      : "rgba(0,230,118,0.07)",
+                    color: selectedPlan.name === "Básico" ? "#0B1220" : "#00E676",
                     fontSize: 11, fontWeight: 700,
                     cursor: "pointer", fontFamily: "inherit",
                   }}
                 >{selectedPlan.name === "Básico" ? "✓ Seleccionado" : "Seleccionar plan"}</button>
               </div>
 
-              {/* Plan Pro */}
+              {/* Plan Pro — DORADO PREMIUM */}
               <div style={{
-                background: selectedPlan.name === "Pro" ? "rgba(245,158,11,0.09)" : "rgba(255,255,255,0.03)",
-                border: selectedPlan.name === "Pro" ? "2px solid #F59E0B" : "1.5px solid rgba(245,158,11,0.4)",
+                background: selectedPlan.name === "Pro"
+                  ? "linear-gradient(155deg,rgba(255,215,0,0.11),rgba(200,150,0,0.06))"
+                  : "linear-gradient(155deg,rgba(255,215,0,0.07),rgba(180,120,0,0.03))",
+                border: selectedPlan.name === "Pro" ? "2px solid #FFD700" : "1.5px solid rgba(255,215,0,0.45)",
                 borderRadius: 14, padding: "14px 12px",
                 display: "flex", flexDirection: "column", gap: 7,
                 position: "relative",
-                boxShadow: selectedPlan.name === "Pro" ? "0 0 22px rgba(245,158,11,0.35)" : "0 0 10px rgba(245,158,11,0.08)",
+                boxShadow: selectedPlan.name === "Pro" ? "0 0 26px rgba(255,215,0,0.35)" : "0 0 10px rgba(255,215,0,0.10)",
                 transform: "scale(1.02)", transformOrigin: "center",
                 transition: "all 0.22s ease",
               }}>
@@ -616,14 +621,14 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
                 <div style={{
                   position: "absolute", top: -10, left: "50%", transform: "translateX(-50%)",
                   background: selectedPlan.name === "Pro"
-                    ? "linear-gradient(90deg,#F59E0B,#FBBF24)"
-                    : "linear-gradient(90deg,#d97706,#F59E0B)",
+                    ? "linear-gradient(90deg,#D4A017,#FFD700)"
+                    : "linear-gradient(90deg,#C8960C,#FFD700)",
                   borderRadius: 20, padding: "2px 9px",
                   fontSize: 8, fontWeight: 800, color: "#0B0F14",
                   letterSpacing: "0.05em", whiteSpace: "nowrap",
                 }}>{selectedPlan.name === "Pro" ? "✔ Seleccionado" : "⭐ MÁS VENDIDO"}</div>
                 <div style={{ fontSize: 13, fontWeight: 700, color: "#E5E7EB", marginTop: 4 }}>🔥 PRO</div>
-                <div style={{ fontSize: 22, fontWeight: 900, color: "#F59E0B", lineHeight: 1 }}>$19.99</div>
+                <div style={{ fontSize: 22, fontWeight: 900, color: "#FFD700", lineHeight: 1 }}>$19.99</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                   {["250 análisis", "✔ $0.079 por análisis", "✔ Análisis avanzado"].map((f, i) => (
                     <div key={i} style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", lineHeight: 1.4 }}>{f}</div>
@@ -641,9 +646,9 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
                   style={{
                     padding: "7px 0", border: "none", borderRadius: 9,
                     background: selectedPlan.name === "Pro"
-                      ? "linear-gradient(135deg,#F59E0B,#FBBF24)"
-                      : "rgba(245,158,11,0.15)",
-                    color: selectedPlan.name === "Pro" ? "#0B0F14" : "#F59E0B",
+                      ? "linear-gradient(135deg,#C8960C,#FFD700)"
+                      : "rgba(255,215,0,0.15)",
+                    color: selectedPlan.name === "Pro" ? "#0B0F14" : "#FFD700",
                     fontSize: 11, fontWeight: 800,
                     cursor: "pointer", fontFamily: "inherit",
                   }}

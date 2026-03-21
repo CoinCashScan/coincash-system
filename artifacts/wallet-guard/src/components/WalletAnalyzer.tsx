@@ -1171,14 +1171,16 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                 {/* ── Plan cards ── */}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
 
-                  {/* Plan Básico */}
+                  {/* Plan Básico — VERDE */}
                   <div style={{
-                    background: selectedPlan.name === "Básico" ? "rgba(0,255,198,0.07)" : "rgba(255,255,255,0.04)",
-                    border: selectedPlan.name === "Básico" ? "2px solid rgba(0,255,198,0.7)" : "1px solid rgba(255,255,255,0.1)",
+                    background: selectedPlan.name === "Básico"
+                      ? "linear-gradient(155deg,rgba(0,230,118,0.12),rgba(0,180,80,0.06))"
+                      : "rgba(255,255,255,0.04)",
+                    border: selectedPlan.name === "Básico" ? "2px solid #00E676" : "1px solid rgba(0,230,118,0.2)",
                     borderRadius: 14, padding: "14px 12px",
                     display: "flex", flexDirection: "column", gap: 8,
                     position: "relative",
-                    boxShadow: selectedPlan.name === "Básico" ? "0 0 18px rgba(0,255,198,0.22)" : "none",
+                    boxShadow: selectedPlan.name === "Básico" ? "0 0 22px rgba(0,230,118,0.28)" : "none",
                     transform: selectedPlan.name === "Básico" ? "scale(1.02)" : "scale(1)",
                     transformOrigin: "center",
                     transition: "all 0.22s ease",
@@ -1187,7 +1189,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                     {selectedPlan.name === "Básico" && (
                       <div style={{
                         position: "absolute", top: -10, left: "50%", transform: "translateX(-50%)",
-                        background: "linear-gradient(90deg,#00C896,#00FFC6)",
+                        background: "linear-gradient(90deg,#00B359,#00E676)",
                         borderRadius: 20, padding: "2px 10px",
                         fontSize: 9, fontWeight: 800, color: "#0B0F14",
                         letterSpacing: "0.04em", whiteSpace: "nowrap",
@@ -1200,7 +1202,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                       {["100 análisis", "$0.099 por análisis", "🔍 Verifica wallets antes de enviar USDT"].map((f, i) => (
                         <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 5 }}>
-                          <span style={{ color: "#00FFC6", fontSize: 10, flexShrink: 0, marginTop: 1 }}>✓</span>
+                          <span style={{ color: "#00E676", fontSize: 10, flexShrink: 0, marginTop: 1 }}>✓</span>
                           <span style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", lineHeight: 1.4 }}>{f}</span>
                         </div>
                       ))}
@@ -1216,30 +1218,30 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                       }}
                       style={{
                         marginTop: 2, padding: "8px 0",
-                        border: selectedPlan.name === "Básico" ? "none" : "1px solid rgba(0,255,198,0.3)",
+                        border: selectedPlan.name === "Básico" ? "none" : "1px solid rgba(0,230,118,0.3)",
                         borderRadius: 9,
                         background: selectedPlan.name === "Básico"
-                          ? "linear-gradient(135deg,rgba(0,200,150,0.9),rgba(0,255,198,0.8))"
-                          : "rgba(0,255,198,0.07)",
-                        color: selectedPlan.name === "Básico" ? "#0B1220" : "#00FFC6",
+                          ? "linear-gradient(135deg,#00B359,#00E676)"
+                          : "rgba(0,230,118,0.07)",
+                        color: selectedPlan.name === "Básico" ? "#0B1220" : "#00E676",
                         fontSize: 11, fontWeight: 700,
                         cursor: "pointer", fontFamily: "inherit",
                       }}
                     >{selectedPlan.name === "Básico" ? "✓ Seleccionado" : "Seleccionar plan"}</button>
                   </div>
 
-                  {/* Plan Pro — MÁS POPULAR */}
+                  {/* Plan Pro — DORADO PREMIUM */}
                   <div style={{
                     background: selectedPlan.name === "Pro"
-                      ? "rgba(245,158,11,0.09)"
-                      : "linear-gradient(155deg,rgba(0,255,198,0.06),rgba(0,128,255,0.04))",
-                    border: selectedPlan.name === "Pro" ? "2px solid #F59E0B" : "1.5px solid rgba(245,158,11,0.4)",
+                      ? "linear-gradient(155deg,rgba(255,215,0,0.11),rgba(200,150,0,0.06))"
+                      : "linear-gradient(155deg,rgba(255,215,0,0.07),rgba(180,120,0,0.03))",
+                    border: selectedPlan.name === "Pro" ? "2px solid #FFD700" : "1.5px solid rgba(255,215,0,0.45)",
                     borderRadius: 14, padding: "14px 12px",
                     display: "flex", flexDirection: "column", gap: 8,
                     transform: "scale(1.03)", transformOrigin: "center",
                     boxShadow: selectedPlan.name === "Pro"
-                      ? "0 0 22px rgba(245,158,11,0.35)"
-                      : "0 0 12px rgba(245,158,11,0.08)",
+                      ? "0 0 26px rgba(255,215,0,0.35)"
+                      : "0 0 12px rgba(255,215,0,0.10)",
                     position: "relative",
                     transition: "all 0.22s ease",
                   }}>
@@ -1247,20 +1249,20 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                     <div style={{
                       position: "absolute", top: -10, left: "50%", transform: "translateX(-50%)",
                       background: selectedPlan.name === "Pro"
-                        ? "linear-gradient(90deg,#F59E0B,#FBBF24)"
-                        : "linear-gradient(90deg,#d97706,#F59E0B)",
+                        ? "linear-gradient(90deg,#D4A017,#FFD700)"
+                        : "linear-gradient(90deg,#C8960C,#FFD700)",
                       borderRadius: 20, padding: "2px 10px",
                       fontSize: 9, fontWeight: 800, color: "#0B0F14",
                       letterSpacing: "0.04em", whiteSpace: "nowrap",
                     }}>{selectedPlan.name === "Pro" ? "✔ Seleccionado" : "🔥 MÁS POPULAR"}</div>
                     <div style={{ fontSize: 13, fontWeight: 700, color: "#E5E7EB", marginTop: 6 }}>⚡ Pro</div>
                     <div style={{ display: "flex", alignItems: "flex-end", gap: 2, lineHeight: 1 }}>
-                      <span style={{ fontSize: 24, fontWeight: 900, color: "#F59E0B" }}>$19.99</span>
+                      <span style={{ fontSize: 24, fontWeight: 900, color: "#FFD700" }}>$19.99</span>
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                       {["250 análisis", "$0.079 por análisis", "🚀 Análisis avanzado + detección de congelamiento"].map((f, i) => (
                         <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 5 }}>
-                          <span style={{ color: "#F59E0B", fontSize: 10, flexShrink: 0, marginTop: 1 }}>✓</span>
+                          <span style={{ color: "#FFD700", fontSize: 10, flexShrink: 0, marginTop: 1 }}>✓</span>
                           <span style={{ fontSize: 10, color: "rgba(255,255,255,0.65)", lineHeight: 1.4 }}>{f}</span>
                         </div>
                       ))}
@@ -1278,9 +1280,9 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                         marginTop: 2, padding: "8px 0", border: "none",
                         borderRadius: 9,
                         background: selectedPlan.name === "Pro"
-                          ? "linear-gradient(135deg,#F59E0B,#FBBF24)"
-                          : "rgba(245,158,11,0.18)",
-                        color: selectedPlan.name === "Pro" ? "#0B0F14" : "#F59E0B",
+                          ? "linear-gradient(135deg,#C8960C,#FFD700)"
+                          : "rgba(255,215,0,0.18)",
+                        color: selectedPlan.name === "Pro" ? "#0B0F14" : "#FFD700",
                         fontSize: 11, fontWeight: 800,
                         cursor: "pointer", fontFamily: "inherit",
                       }}
