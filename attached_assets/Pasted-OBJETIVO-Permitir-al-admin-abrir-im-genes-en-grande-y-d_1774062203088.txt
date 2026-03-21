@@ -1,0 +1,118 @@
+OBJETIVO:
+Permitir al admin abrir imágenes en grande y descargarlas desde el chat.
+
+--------------------------------------------------
+
+1. DETECTAR MENSAJES CON IMAGEN:
+
+Si el mensaje tiene:
+
+message.type === "image"
+
+renderizar como imagen:
+
+<img src={message.url} className="chat-image" />
+
+--------------------------------------------------
+
+2. CLICK PARA VER EN GRANDE:
+
+Agregar evento:
+
+<img 
+  src={message.url}
+  className="chat-image"
+  onClick={() => openImageModal(message.url)}
+/>
+
+--------------------------------------------------
+
+3. MODAL DE VISUALIZACIÓN:
+
+Crear modal tipo fullscreen:
+
+function openImageModal(url) {
+  setSelectedImage(url);
+  setShowModal(true);
+}
+
+--------------------------------------------------
+
+4. UI DEL MODAL:
+
+<div className="image-modal">
+  <img src={selectedImage} />
+  
+  <button onClick={downloadImage}>
+    ⬇ Descargar
+  </button>
+
+  <button onClick={closeModal}>
+    ✖ Cerrar
+  </button>
+</div>
+
+--------------------------------------------------
+
+5. DESCARGAR IMAGEN:
+
+function downloadImage() {
+  const link = document.createElement("a");
+  link.href = selectedImage;
+  link.download = "comprobante.jpg";
+  link.click();
+}
+
+--------------------------------------------------
+
+6. CSS (IMPORTANTE):
+
+.chat-image {
+  max-width: 150px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.image-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+}
+
+.image-modal img {
+  max-width: 90%;
+  max-height: 80%;
+  border-radius: 12px;
+}
+
+--------------------------------------------------
+
+7. EXTRA PRO (RECOMENDADO):
+
+👉 Zoom con scroll
+👉 Pinch zoom en móvil
+👉 Mostrar nombre del usuario
+
+--------------------------------------------------
+
+8. IMPORTANTE:
+
+- No romper diseño actual
+- Solo mejorar imágenes
+- Compatible con móvil
+
+--------------------------------------------------
+
+RESULTADO:
+
+✔ Click → imagen grande
+✔ Descargar comprobante
+✔ Ver detalles claros
+✔ Mejor soporte

@@ -11,14 +11,16 @@ function isMediaMsg(text: string) {
   return text.startsWith(IMG_PREFIX) || text.startsWith(FILE_PREFIX);
 }
 
-function AdminMediaBubble({ message }: { message: string }) {
+function AdminMediaBubble({ message, onImageClick }: { message: string; onImageClick: (url: string) => void }) {
   if (message.startsWith(IMG_PREFIX)) {
     const objectPath = message.slice(IMG_PREFIX.length, -1);
+    const url = `${API_STATIC}/storage${objectPath}`;
     return (
       <img
-        src={`${API_STATIC}/storage${objectPath}`}
+        src={url}
         alt="imagen"
-        style={{ maxWidth: 220, maxHeight: 200, borderRadius: 10, display: "block" }}
+        onClick={() => onImageClick(url)}
+        style={{ maxWidth: 220, maxHeight: 200, borderRadius: 10, display: "block", cursor: "zoom-in" }}
         onError={(e) => { (e.target as HTMLImageElement).alt = "No se pudo cargar"; }}
       />
     );
@@ -262,7 +264,8 @@ export default function AdminPage() {
 
 function AdminPanelInner() {
   const [conversations, setConversations] = useState<ConvSummary[]>([]);
-  const [selectedUser, setSelectedUser]   = useState<string | null>(null);
+  const [selectedUser,  setSelectedUser]  = useState<string | null>(null);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [convMessages, setConvMessages]   = useState<ChatMessage[]>([]);
   const [input, setInput]                 = useState("");
   const [loadingConv, setLoadingConv]     = useState(false);
@@ -1702,7 +1705,7 @@ function AdminPanelInner() {
                 overflow: "hidden",
                 boxShadow: isMedia ? "none" : isSupport ? "none" : "0 2px 12px rgba(0,255,198,0.2)",
               }}>
-                {isMedia ? <AdminMediaBubble message={msg.message} /> : msg.message}
+                {isMedia ? <AdminMediaBubble message={msg.message} onImageClick={setSelectedImage} /> : msg.message}
                 {!isMedia && (
                   <div style={{ fontSize: 10, marginTop: 4, opacity: 0.65, textAlign: isSupport ? "right" : "left" }}>
                     {timeStr(msg.timestamp)}
@@ -1747,6 +1750,63 @@ function AdminPanelInner() {
           }}
         >➤</button>
       </div>
+
+      {/* ── Image lightbox modal ── */}
+      {selectedImage && (
+        <div
+          onClick={() => setSelectedImage(null)}
+          style={{
+            position: "fixed", inset: 0, zIndex: 9999,
+            background: "rgba(0,0,0,0.92)",
+            display: "flex", flexDirection: "column",
+            alignItems: "center", justifyContent: "center", gap: 20,
+            padding: 20,
+          }}
+        >
+          {/* Stop propagation so clicks on image/buttons don't close modal */}
+          <img
+            src={selectedImage}
+            alt="comprobante"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxWidth: "90vw", maxHeight: "72vh",
+              borderRadius: 14,
+              boxShadow: "0 0 40px rgba(0,0,0,0.8)",
+              objectFit: "contain",
+            }}
+          />
+          <div style={{ display: "flex", gap: 12 }} onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={() => {
+                const link = document.createElement("a");
+                link.href = selectedImage!;
+                link.download = "comprobante.jpg";
+                link.target = "_blank";
+                link.click();
+              }}
+              style={{
+                padding: "10px 22px", borderRadius: 10, border: "none",
+                background: "linear-gradient(135deg,#00FFC6,#00B8A9)",
+                color: "#0B1220", fontWeight: 700, fontSize: 14,
+                cursor: "pointer", display: "flex", alignItems: "center", gap: 6,
+              }}
+            >⬇ Descargar</button>
+            <button
+              onClick={() => setSelectedImage(null)}
+              style={{
+                padding: "10px 22px", borderRadius: 10,
+                border: "1px solid rgba(255,255,255,0.15)",
+                background: "rgba(255,255,255,0.06)",
+                color: "#E5E7EB", fontWeight: 600, fontSize: 14,
+                cursor: "pointer",
+              }}
+            >✖ Cerrar</button>
+          </div>
+          <p style={{ margin: 0, fontSize: 11, color: "rgba(255,255,255,0.3)" }}>
+            Toca fuera de la imagen para cerrar
+          </p>
+        </div>
+      )}
     </div>
   );
 }
