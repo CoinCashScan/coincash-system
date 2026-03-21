@@ -1,0 +1,179 @@
+OBJETIVO:
+Crear un video publicitario dinámico, moderno y profesional para CoinCash que explique:
+
+1. Cómo usar el scanner
+2. Qué servicios ofrece la app
+3. Planes de pago
+4. Cómo realizar el pago paso a paso
+5. Llamado a la acción final (CTA)
+
+--------------------------------------------------
+
+FORMATO:
+
+- Video vertical (9:16)
+- Duración: 30 a 45 segundos
+- Resolución: 1080x1920
+- Formato MP4
+- Incluir link de vista previa al finalizar
+
+--------------------------------------------------
+
+DISEÑO:
+
+- Usar el mismo diseño visual de la app CoinCash
+- Fondo oscuro (modo fintech)
+- Color principal: verde CoinCash
+- Logo: CoinCash blanco con verde
+- Estilo moderno tipo Binance / apps crypto
+- Animaciones suaves y profesionales
+
+--------------------------------------------------
+
+ESTRUCTURA DEL VIDEO:
+
+--------------------------------------------------
+
+ESCENA 1 (HOOK)
+
+Texto:
+"🚨 ¿Tu wallet es segura?"
+
+Animación:
+Fondo oscuro + efecto alerta/glitch
+
+--------------------------------------------------
+
+ESCENA 2 (PROBLEMA)
+
+Texto:
+"Puedes perder tu dinero enviando a wallets en riesgo"
+
+Animación:
+Transición rápida + efecto advertencia
+
+--------------------------------------------------
+
+ESCENA 3 (USO DEL SCANNER)
+
+Mostrar interfaz real:
+
+- Ingreso de wallet
+- Botón "Analizar"
+- Animación de escaneo
+
+Texto:
+"Analiza cualquier wallet en segundos"
+
+--------------------------------------------------
+
+ESCENA 4 (RESULTADO)
+
+Mostrar:
+
+- Score
+- Nivel de riesgo
+- Alerta visual
+
+Texto:
+"Detecta wallets en lista negra y evita pérdidas"
+
+--------------------------------------------------
+
+ESCENA 5 (SERVICIOS)
+
+Mostrar visualmente:
+
+- Escaneo de seguridad
+- Predicción de congelamiento
+- Sistema antifraude
+
+Texto:
+"Protege tu dinero antes de enviar"
+
+--------------------------------------------------
+
+ESCENA 6 (PLANES DE PAGO 💰)
+
+Mostrar tarjetas:
+
+💳 $9.99 → 100 análisis  
+🔥 $19.99 → 250 análisis (Más popular)
+
+Animación:
+- Resaltar plan de $19.99
+- Glow dorado o verde
+
+--------------------------------------------------
+
+ESCENA 7 (CÓMO PAGAR PASO A PASO)
+
+Mostrar flujo:
+
+1. Selecciona tu plan  
+2. Envía USDT (TRC20)  
+3. Presiona "Ya pagué"  
+4. Verificación automática  
+
+Texto:
+"Activa tu plan en minutos"
+
+--------------------------------------------------
+
+ESCENA 8 (CTA FINAL 🔥)
+
+Texto principal:
+"🛡️ Verifica antes de enviar dinero"
+
+Subtexto:
+"🚀 Evita perder USDT en segundos"
+
+Llamado a acción:
+"👇 Da clic en el link de la descripción"
+
+Mostrar grande y claro:
+www.hardsoftcomputer.com
+
+Animación:
+- Logo CoinCash aparece
+- Glow verde
+- Fade + zoom suave
+
+Duración:
+3 a 4 segundos
+
+--------------------------------------------------
+
+EXTRAS:
+
+- Música tipo fintech / suspense
+- Transiciones modernas
+- Efectos glow en verde
+- Zoom en puntos clave (riesgo, score, planes)
+- Animaciones fluidas
+
+--------------------------------------------------
+
+IMPORTANTE:
+
+- NO incluir enlaces clicables dentro del video
+- Mantener coherencia total con la app real
+- Diseño limpio, profesional, sin saturar
+
+--------------------------------------------------
+
+ENTREGA:
+
+- Video en formato MP4
+- Link de visualización (preview)
+- Archivo listo para TikTok e Instagram
+
+--------------------------------------------------
+
+RESULTADO ESPERADO:
+
+✔ Video que explica el producto
+✔ Muestra cómo pagar
+✔ Genera confianza
+✔ Aumenta conversiones
+✔ Listo para publicidad
