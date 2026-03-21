@@ -434,7 +434,7 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
             borderRadius: 8, padding: "4px 10px",
             fontSize: 13, fontWeight: 800, color: TEAL,
           }}>
-            {userPlan === "pro" ? "✓ Activo" : "10 USDT / mes"}
+            {userPlan === "pro" ? "✓ Activo" : "Pago único"}
           </div>
         </div>
 
@@ -483,7 +483,7 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
                   <p style={{ margin: "8px 0 0", fontSize: 11, color: MUTED, lineHeight: 1.4 }}>
                     {urgent
                       ? `Renueva antes de que expire para no perder el acceso PRO.`
-                      : `Tu plan se renueva en ${daysRemaining} días. Envía 10 USDT/mes (TRC20) para continuar.`}
+                      : `Acceso PRO activo · ${daysRemaining} días restantes.`}
                   </p>
 
                   {/* Renewal reminder */}
@@ -551,7 +551,7 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
             {/* Instructions */}
             <div style={{ background: "rgba(245,158,11,0.07)", border: "1px solid rgba(245,158,11,0.22)", borderRadius: 10, padding: "10px 12px" }}>
               <p style={{ margin: 0, fontSize: 12, color: "rgba(255,255,255,0.7)", lineHeight: 1.6 }}>
-                Envía <strong style={{ color: "#F59E0B" }}>10 USDT/mes (TRC20)</strong> a la dirección anterior.<br />
+                Envía <strong style={{ color: "#F59E0B" }}>el monto de tu plan (TRC20)</strong> a la dirección anterior.<br />
                 Luego presiona <strong style={{ color: TEAL }}>"Ya pagué"</strong> para activar tu plan.
               </p>
             </div>
