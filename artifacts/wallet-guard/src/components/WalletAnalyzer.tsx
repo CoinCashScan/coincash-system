@@ -1711,6 +1711,16 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                 const displayScore = (isBlockchainSafe && alertasCmpt.totalScore >= 50) ? 30 : risk.score;
                 void displayScore;
 
+                // ── Score numérico — SOLO datos reales de blockchain ──────────
+                const riskScore = (isBlacklisted || isFrozenWallet) ? 100
+                                : hasRiskyInteractions               ? 60
+                                :                                       5;
+
+                const riskScoreLabel = riskScore >= 90 ? "Riesgo crítico"
+                                     : riskScore >= 60 ? "Riesgo alto"
+                                     : riskScore >= 30 ? "Riesgo moderado"
+                                     :                   "Riesgo bajo";
+
                 // ── Color, fondo y mensaje según estado ───────────────────────
                 const color = showRedAlert        ? DANGER
                             : showBehaviorWarning ? AMBER
@@ -1759,11 +1769,39 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                         style={{ background: `${color}18`, border: `2px solid ${color}50`, boxShadow: `0 0 32px ${color}28` }}>
                         <Shield style={{ color, width: 30, height: 30 }} />
                       </div>
-                      <p className="text-[10px] font-bold uppercase tracking-[0.2em] mb-3"
+                      <p className="text-[10px] font-bold uppercase tracking-[0.2em] mb-2"
                         style={{ color: "rgba(255,255,255,0.35)" }}>
-                        RESULTADO DEL ANÁLISIS
+                        PUNTUACIÓN DE RIESGO
                       </p>
-                      {/* Estado primario — texto claro, sin número confuso */}
+
+                      {/* ── Score numérico — basado 100% en blockchain ── */}
+                      <div style={{ marginBottom: 6 }}>
+                        <span style={{
+                          display: "block",
+                          fontSize: 52,
+                          fontWeight: 900,
+                          lineHeight: 1,
+                          color,
+                          fontVariantNumeric: "tabular-nums",
+                          letterSpacing: "-0.02em",
+                          textShadow: `0 0 40px ${color}40`,
+                        }}>
+                          {riskScore}
+                        </span>
+                        <span style={{
+                          display: "block",
+                          fontSize: 10,
+                          fontWeight: 700,
+                          letterSpacing: "0.14em",
+                          color: `${color}90`,
+                          marginTop: 2,
+                          textTransform: "uppercase",
+                        }}>
+                          /100 · {riskScoreLabel}
+                        </span>
+                      </div>
+
+                      {/* Estado primario — texto claro */}
                       <span className="inline-flex items-center px-5 py-2.5 rounded-2xl font-black"
                         style={{
                           background: `${color}18`,
