@@ -1,0 +1,136 @@
+OBJETIVO:
+Detectar automáticamente pagos en USDT (TRC20) en la wallet principal y activar el plan del usuario sin intervención manual.
+
+--------------------------------------------------
+
+1. WALLET A MONITOREAR:
+
+TM2cRRegda1gQAQY9hGbg6DMscN7okNVA1
+
+--------------------------------------------------
+
+2. CREAR SERVICIO DE ESCUCHA (BACKEND)
+
+Crear función que consulte cada 10 segundos:
+
+async function checkPayments() {
+  const WALLET = "TM2cRRegda1gQAQY9hGbg6DMscN7okNVA1";
+
+  const res = await fetch(`https://apilist.tronscan.org/api/token_trc20/transfers?toAddress=${WALLET}&limit=20`);
+  const data = await res.json();
+
+  const transactions = data.token_transfers || [];
+
+  for (const tx of transactions) {
+
+    // SOLO USDT
+    if (tx.tokenAbbr !== "USDT") continue;
+
+    const txId = tx.transaction_id;
+
+    // evitar duplicados
+    if (await isTxProcessed(txId)) continue;
+
+    const amount = parseFloat(tx.quant) / 1_000_000;
+
+    console.log("Nueva TX:", txId);
+    console.log("Monto:", amount);
+
+    //--------------------------------------------------
+    // BUSCAR USUARIO EN PENDIENTE
+    //--------------------------------------------------
+
+    const pendingUser = await getPendingUser(); 
+    // (último que presionó "Ya pagué")
+
+    if (!pendingUser) continue;
+
+    //--------------------------------------------------
+    // VALIDAR MONTO Y ACTIVAR PLAN
+    //--------------------------------------------------
+
+    if (amount >= 19.99) {
+      await activatePlan(pendingUser.id, "pro", 250);
+    } 
+    else if (amount >= 9.99) {
+      await activatePlan(pendingUser.id, "basic", 100);
+    } 
+    else {
+      console.log("Monto insuficiente");
+      continue;
+    }
+
+    //--------------------------------------------------
+    // MARCAR TX COMO PROCESADA
+    //--------------------------------------------------
+
+    await saveProcessedTx(txId);
+
+    //--------------------------------------------------
+    // ACTUALIZAR ESTADO
+    //--------------------------------------------------
+
+    await updatePaymentStatus(pendingUser.id, "confirmed");
+
+    console.log("Pago activado para:", pendingUser.id);
+  }
+}
+
+--------------------------------------------------
+
+3. EJECUTAR AUTOMÁTICO
+
+setInterval(checkPayments, 10000);
+
+--------------------------------------------------
+
+4. FUNCIONES NECESARIAS (CREAR SI NO EXISTEN)
+
+- isTxProcessed(txId)
+- saveProcessedTx(txId)
+- getPendingUser()
+- activatePlan(userId, plan, scans)
+- updatePaymentStatus(userId, status)
+
+--------------------------------------------------
+
+5. CUANDO USUARIO PRESIONE "YA PAGUÉ"
+
+Guardar:
+
+{
+  userId: "CC-XXXXX",
+  plan: "pro",
+  amountExpected: 19.99,
+  status: "pending",
+  createdAt: Date.now()
+}
+
+--------------------------------------------------
+
+6. FRONTEND (IMPORTANTE)
+
+Cuando el backend active el plan:
+
+- cambiar user.plan → "pro"
+- quitar "Pago en verificación"
+- mostrar beneficios PRO
+- opcional: toast "Pago confirmado"
+
+--------------------------------------------------
+
+7. ERRORES A EVITAR
+
+❌ No dividir entre 1,000,000  
+❌ No filtrar USDT  
+❌ No evitar duplicados  
+❌ Monitorear wallet incorrecta  
+
+--------------------------------------------------
+
+8. RESULTADO FINAL
+
+✔ Pago automático real  
+✔ Sin botón manual  
+✔ Activación en segundos  
+✔ Experiencia tipo fintech  

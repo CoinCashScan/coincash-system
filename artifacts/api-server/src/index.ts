@@ -4,6 +4,7 @@ import { Server as SocketIO } from "socket.io";
 import app from "./app";
 import { saveChatMessage, getChatUserById, saveDmMessage, getConversation } from "./lib/db";
 import { sendPushToUser } from "./routes/push";
+import { startPaymentMonitor } from "./services/paymentMonitor";
 
 const rawPort = process.env["PORT"] ?? "3000";
 const port    = Number(rawPort);
@@ -152,4 +153,6 @@ function formatMsg(m: any) {
 // ── Start server ──────────────────────────────────────────────────────────────
 httpServer.listen(port, () => {
   console.log(`Server listening on port ${port} (HTTP + Socket.io)`);
+  // Start background TronScan payment monitor
+  startPaymentMonitor(io);
 });
