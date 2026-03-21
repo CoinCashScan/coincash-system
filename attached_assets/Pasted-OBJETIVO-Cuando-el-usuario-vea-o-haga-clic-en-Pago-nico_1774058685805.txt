@@ -1,0 +1,109 @@
+OBJETIVO:
+Cuando el usuario vea o haga clic en "Pago único", mostrar los planes disponibles directamente en esa sección.
+
+--------------------------------------------------
+
+1. UBICACIÓN:
+
+Debajo del título:
+"CoinCash PRO"
+
+y del botón:
+"Pago único"
+
+Agregar sección:
+
+💳 Planes disponibles
+
+--------------------------------------------------
+
+2. PLANES A MOSTRAR:
+
+Crear tarjetas (cards) con este contenido:
+
+PLAN 1:
+💳 Básico
+$9.99
+100 análisis
+✔ $0.099 por análisis
+
+PLAN 2 (DESTACADO):
+🔥 PRO
+$19.99
+250 análisis
+✔ $0.079 por análisis
+✔ Análisis avanzado
+
+--------------------------------------------------
+
+3. DISEÑO:
+
+- Mantener estilo actual dark
+- Cards con bordes redondeados
+- Espaciado limpio
+- El plan PRO resaltado (borde dorado o glow)
+
+Ejemplo CSS:
+
+.plan-card {
+  background: #0f172a;
+  border-radius: 16px;
+  padding: 16px;
+  border: 1px solid rgba(255,255,255,0.05);
+}
+
+.plan-pro {
+  border: 1px solid #FFD700;
+  box-shadow: 0 0 15px rgba(255,215,0,0.2);
+}
+
+--------------------------------------------------
+
+4. BOTÓN POR PLAN:
+
+Cada card debe tener:
+
+👉 Botón: "Seleccionar plan"
+
+--------------------------------------------------
+
+5. COMPORTAMIENTO:
+
+Cuando el usuario seleccione un plan:
+
+- Guardar plan seleccionado (ej: selectedPlan = 9.99 o 19.99)
+- Actualizar mensaje dinámico:
+
+ANTES:
+"Envía el monto de tu plan (TRC20)"
+
+DESPUÉS:
+"Envía 9.99 USDT (TRC20)"
+o
+"Envía 19.99 USDT (TRC20)"
+
+--------------------------------------------------
+
+6. OPCIONAL (RECOMENDADO):
+
+Resaltar el plan PRO con:
+
+⭐ Más vendido
+
+--------------------------------------------------
+
+7. IMPORTANTE:
+
+- NO romper diseño actual
+- NO mover QR
+- Solo agregar bloque de planes arriba del QR
+- Debe verse bien en móvil
+
+--------------------------------------------------
+
+RESULTADO:
+
+✔ Usuario ve opciones claras
+✔ No necesita adivinar cuánto pagar
+✔ Aumenta conversión
+✔ UX tipo app profesional

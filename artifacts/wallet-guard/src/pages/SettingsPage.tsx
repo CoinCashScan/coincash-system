@@ -62,6 +62,7 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
   const [upgradeEmail,     setUpgradeEmail]     = useState("");
   const [upgradeSending,   setUpgradeSending]   = useState(false);
   const [upgradeRequested, setUpgradeRequested] = useState(false);
+  const [selectedPlan,     setSelectedPlan]     = useState<{ name: string; price: string }>({ name: "Pro", price: "19.99" });
 
   const [visitStats, setVisitStats] = useState<{ total: number; today: number; online: number; countries: { name: string; code: string; count: number }[] } | null>(null);
   const [deviceReset, setDeviceReset] = useState(false);
@@ -499,14 +500,129 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
         ) : (
           <div style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 12 }}>
 
+            {/* ── Plans section ── */}
+            <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#F9FAFB", textAlign: "center" }}>
+              💳 Planes disponibles
+            </p>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+
+              {/* Plan Básico */}
+              <div style={{
+                background: selectedPlan.name === "Básico" ? "rgba(0,255,198,0.07)" : "rgba(255,255,255,0.03)",
+                border: selectedPlan.name === "Básico" ? "1.5px solid rgba(0,255,198,0.45)" : "1px solid rgba(255,255,255,0.09)",
+                borderRadius: 14, padding: "14px 12px",
+                display: "flex", flexDirection: "column", gap: 7,
+                transition: "border-color 0.2s",
+              }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#E5E7EB" }}>💳 Básico</div>
+                <div style={{ fontSize: 22, fontWeight: 900, color: "#fff", lineHeight: 1 }}>$9.99</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                  {["100 análisis", "✔ $0.099 por análisis"].map((f, i) => (
+                    <div key={i} style={{ fontSize: 10, color: "rgba(255,255,255,0.55)", lineHeight: 1.4 }}>{f}</div>
+                  ))}
+                </div>
+                <div style={{ fontSize: 9, color: "rgba(255,255,255,0.28)", textAlign: "center" }}>
+                  Pago único · sin suscripción
+                </div>
+                <button
+                  onClick={() => {
+                    setSelectedPlan({ name: "Básico", price: "9.99" });
+                    const el = document.getElementById("settings-payment-section");
+                    el?.scrollIntoView({ behavior: "smooth" });
+                  }}
+                  style={{
+                    padding: "7px 0", border: selectedPlan.name === "Básico" ? "none" : "1px solid rgba(0,255,198,0.3)",
+                    borderRadius: 9,
+                    background: selectedPlan.name === "Básico"
+                      ? "linear-gradient(135deg,rgba(0,200,150,0.85),rgba(0,255,198,0.75))"
+                      : "rgba(0,255,198,0.06)",
+                    color: selectedPlan.name === "Básico" ? "#0B1220" : "#00FFC6",
+                    fontSize: 11, fontWeight: 700,
+                    cursor: "pointer", fontFamily: "inherit",
+                  }}
+                >{selectedPlan.name === "Básico" ? "✓ Seleccionado" : "Seleccionar plan"}</button>
+              </div>
+
+              {/* Plan Pro */}
+              <div style={{
+                background: selectedPlan.name === "Pro" ? "rgba(245,158,11,0.07)" : "rgba(255,255,255,0.03)",
+                border: selectedPlan.name === "Pro" ? "1.5px solid rgba(245,158,11,0.55)" : "1px solid rgba(255,255,255,0.09)",
+                borderRadius: 14, padding: "14px 12px",
+                display: "flex", flexDirection: "column", gap: 7,
+                position: "relative",
+                boxShadow: selectedPlan.name === "Pro" ? "0 0 16px rgba(245,158,11,0.12)" : "none",
+                transform: "scale(1.02)", transformOrigin: "center",
+                transition: "all 0.2s",
+              }}>
+                {/* Badge */}
+                <div style={{
+                  position: "absolute", top: -10, left: "50%", transform: "translateX(-50%)",
+                  background: "linear-gradient(90deg,#F59E0B,#FBBF24)",
+                  borderRadius: 20, padding: "2px 9px",
+                  fontSize: 8, fontWeight: 800, color: "#0B0F14",
+                  letterSpacing: "0.05em", whiteSpace: "nowrap",
+                }}>⭐ MÁS VENDIDO</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#E5E7EB", marginTop: 4 }}>🔥 PRO</div>
+                <div style={{ fontSize: 22, fontWeight: 900, color: "#F59E0B", lineHeight: 1 }}>$19.99</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                  {["250 análisis", "✔ $0.079 por análisis", "✔ Análisis avanzado"].map((f, i) => (
+                    <div key={i} style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", lineHeight: 1.4 }}>{f}</div>
+                  ))}
+                </div>
+                <div style={{ fontSize: 9, color: "rgba(255,255,255,0.28)", textAlign: "center" }}>
+                  Pago único · sin suscripción
+                </div>
+                <button
+                  onClick={() => {
+                    setSelectedPlan({ name: "Pro", price: "19.99" });
+                    const el = document.getElementById("settings-payment-section");
+                    el?.scrollIntoView({ behavior: "smooth" });
+                  }}
+                  style={{
+                    padding: "7px 0", border: "none", borderRadius: 9,
+                    background: selectedPlan.name === "Pro"
+                      ? "linear-gradient(135deg,#F59E0B,#FBBF24)"
+                      : "rgba(245,158,11,0.15)",
+                    color: selectedPlan.name === "Pro" ? "#0B0F14" : "#F59E0B",
+                    fontSize: 11, fontWeight: 800,
+                    cursor: "pointer", fontFamily: "inherit",
+                  }}
+                >{selectedPlan.name === "Pro" ? "✓ Seleccionado" : "Seleccionar plan"}</button>
+              </div>
+
+            </div>
+
+            {/* Divider */}
+            <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)" }} />
+
             {/* Network badge */}
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }} id="settings-payment-section">
               <span style={{
                 fontSize: 10, fontWeight: 700, letterSpacing: "0.08em",
                 background: "rgba(255,50,50,0.12)", border: "1px solid rgba(255,50,50,0.3)",
                 color: "#FF6B6B", borderRadius: 6, padding: "3px 8px",
               }}>TRC20</span>
               <span style={{ fontSize: 11, color: MUTED }}>Red TRON · USDT</span>
+            </div>
+
+            {/* Plan seleccionado indicator */}
+            <div style={{
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+              background: "rgba(0,255,198,0.06)", border: "1px solid rgba(0,255,198,0.2)",
+              borderRadius: 10, padding: "8px 14px",
+            }}>
+              <span style={{ fontSize: 11, color: "rgba(255,255,255,0.45)" }}>Plan seleccionado:</span>
+              <span style={{ fontSize: 12, fontWeight: 800, color: selectedPlan.name === "Pro" ? "#F59E0B" : "#00FFC6" }}>
+                {selectedPlan.name === "Pro" ? "⚡" : "💳"} {selectedPlan.name}
+              </span>
+              <span style={{
+                fontSize: 11, fontWeight: 700,
+                color: selectedPlan.name === "Pro" ? "#F59E0B" : "#00FFC6",
+                background: selectedPlan.name === "Pro" ? "rgba(245,158,11,0.12)" : "rgba(0,255,198,0.12)",
+                border: `1px solid ${selectedPlan.name === "Pro" ? "rgba(245,158,11,0.35)" : "rgba(0,255,198,0.3)"}`,
+                borderRadius: 6, padding: "1px 7px",
+              }}>${selectedPlan.price}</span>
             </div>
 
             {/* QR code */}
@@ -551,7 +667,7 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
             {/* Instructions */}
             <div style={{ background: "rgba(245,158,11,0.07)", border: "1px solid rgba(245,158,11,0.22)", borderRadius: 10, padding: "10px 12px" }}>
               <p style={{ margin: 0, fontSize: 12, color: "rgba(255,255,255,0.7)", lineHeight: 1.6 }}>
-                Envía <strong style={{ color: "#F59E0B" }}>el monto de tu plan (TRC20)</strong> a la dirección anterior.<br />
+                Envía <strong style={{ color: "#F59E0B" }}>{selectedPlan.price} USDT (TRC20)</strong> a la dirección anterior.<br />
                 Luego presiona <strong style={{ color: TEAL }}>"Ya pagué"</strong> para activar tu plan.
               </p>
             </div>
