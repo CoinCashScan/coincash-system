@@ -1,0 +1,122 @@
+OBJETIVO:
+Cuando el usuario presione "Ya pagué", el sistema debe verificar el pago durante 3 minutos.
+Si no se detecta en la blockchain, revertir el estado y mostrar mensaje.
+
+--------------------------------------------------
+
+1. CUANDO USUARIO PRESIONA "YA PAGUÉ"
+
+Guardar estado:
+
+{
+  userId: "CC-XXXXX",
+  amount: selectedPlan.price,
+  status: "verifying",
+  startTime: Date.now()
+}
+
+--------------------------------------------------
+
+2. INICIAR VERIFICACIÓN AUTOMÁTICA
+
+Crear función:
+
+async function verificarPago(userId) {
+
+  const tiempoLimite = 3 minutos (180000 ms)
+
+  while (tiempo actual - startTime < tiempoLimite) {
+
+    consultar blockchain (TRON API)
+
+    if (pago detectado correctamente) {
+      
+      activarPlan(userId)
+      actualizar estado = "confirmed"
+      salir
+
+    }
+
+    esperar 10 segundos
+  }
+
+  // ⛔ SI NO SE DETECTA PAGO
+
+  revertirEstado(userId)
+
+}
+
+--------------------------------------------------
+
+3. FUNCIÓN REVERTIR
+
+function revertirEstado(userId) {
+
+  actualizar user.plan = "free"
+
+  actualizar estadoPago = "failed"
+
+}
+
+--------------------------------------------------
+
+4. MENSAJE AL USUARIO (IMPORTANTE)
+
+Mostrar:
+
+"❌ No se detectó el pago en la red.
+Verifica la transacción e intenta nuevamente."
+
+--------------------------------------------------
+
+5. UI DURANTE VERIFICACIÓN
+
+Mostrar:
+
+"🔍 Verificando pago en la blockchain..."
+"Esto puede tardar hasta 3 minutos"
+
+Desactivar botón "Ya pagué"
+
+--------------------------------------------------
+
+6. CUANDO FALLA
+
+- ocultar estado "verificando"
+- volver a mostrar botón "Ya pagué"
+
+--------------------------------------------------
+
+7. CUANDO SE CONFIRMA
+
+Mostrar:
+
+"✅ Pago confirmado correctamente"
+
+Activar PRO automáticamente
+
+--------------------------------------------------
+
+8. SEGURIDAD
+
+- evitar múltiples verificaciones simultáneas
+- bloquear botón mientras verifica
+
+--------------------------------------------------
+
+9. INTERVALO DE CONSULTA
+
+Cada 10 segundos:
+
+check blockchain
+
+--------------------------------------------------
+
+RESULTADO FINAL:
+
+✔ Usuario presiona "Ya pagué"
+✔ Sistema verifica solo
+✔ Espera hasta 3 minutos
+✔ Si paga → se activa
+✔ Si no paga → se revierte automáticamente
+✔ Flujo limpio y profesional

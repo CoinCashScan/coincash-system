@@ -220,20 +220,20 @@ export function FreemiumProvider({ children }: { children: ReactNode }) {
   }, [ccId]);
 
   /**
-   * Start polling blockchain every 20 s until payment confirmed or 10 min elapsed.
+   * Start polling blockchain every 10 s until payment confirmed or 3 min elapsed.
    * Stops automatically on success or timeout.
    */
   function startVerifyPolling(id: string) {
     if (verifyPollRef.current) clearInterval(verifyPollRef.current);
 
     const startTime = Date.now();
-    const MAX_POLL_MS = 10 * 60 * 1_000; // 10 min
+    const MAX_POLL_MS = 3 * 60 * 1_000; // 3 min
 
     async function attempt() {
       if (Date.now() - startTime > MAX_POLL_MS) {
         clearInterval(verifyPollRef.current!);
         verifyPollRef.current = null;
-        // Stop silently — backend will clean up via its own 12-min timeout
+        // Stop silently — backend will clean up via its own 3.5-min timeout
         return;
       }
       const result = await callVerifyPayment(id);
@@ -266,9 +266,9 @@ export function FreemiumProvider({ children }: { children: ReactNode }) {
       setPaymentStatus("confirmed");
     }
 
-    // First check immediately
+    // First check immediately, then every 10 seconds
     attempt();
-    verifyPollRef.current = setInterval(attempt, 20_000);
+    verifyPollRef.current = setInterval(attempt, 10_000);
   }
 
   const requestPayment = useCallback(async (

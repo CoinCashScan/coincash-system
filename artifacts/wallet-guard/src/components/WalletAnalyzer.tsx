@@ -412,13 +412,13 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
     prevPaymentStatusRef.current = paymentStatus;
     if (prev === paymentStatus) return;
     if (paymentStatus === "confirmed") {
-      toast.success("🎉 ¡Plan PRO activado! Ya puedes usar análisis ilimitados.", {
+      toast.success("✅ Pago confirmado correctamente. ¡Plan activado!", {
         duration: 6000,
         style: { background: "#0D2D1F", border: "1px solid rgba(0,255,198,0.35)", color: "#00FFC6" },
       });
     } else if (paymentStatus === "none" && (prev === "pending" || prev === "confirmed")) {
-      toast.error("⚠️ No pudimos verificar tu pago. Si ya lo realizaste, puedes intentarlo nuevamente con 'Ya pagué'.", {
-        duration: 8000,
+      toast.error("❌ No se detectó el pago en la red. Verifica la transacción e intenta nuevamente.", {
+        duration: 9000,
         style: { background: "#1A0D0D", border: "1px solid rgba(255,80,80,0.35)", color: "#FF6B6B" },
       });
     }
@@ -1237,14 +1237,22 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                 {/* "Ya pagué" button / verification message — driven by shared paymentStatus */}
                 {paymentStatus === "pending" ? (
                   <div style={{
-                    background: "rgba(0,255,198,0.07)", border: "1px solid rgba(0,255,198,0.3)",
-                    borderRadius: 10, padding: "12px 14px", textAlign: "center",
+                    background: "rgba(0,255,198,0.06)", border: "1px solid rgba(0,255,198,0.25)",
+                    borderRadius: 10, padding: "14px 16px", textAlign: "center",
                   }}>
-                    <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#00FFC6" }}>
-                      ✓ Pago en verificación.
-                    </p>
-                    <p style={{ margin: "4px 0 0", fontSize: 12, color: "rgba(255,255,255,0.5)" }}>
-                      Activación en pocos minutos.
+                    {/* Spinner */}
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginBottom: 6 }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                        style={{ animation: "spin 1s linear infinite", flexShrink: 0 }}>
+                        <circle cx="12" cy="12" r="10" stroke="rgba(0,255,198,0.25)" strokeWidth="3"/>
+                        <path d="M12 2a10 10 0 0 1 10 10" stroke="#00FFC6" strokeWidth="3" strokeLinecap="round"/>
+                      </svg>
+                      <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#00FFC6" }}>
+                        🔍 Verificando pago en la blockchain...
+                      </p>
+                    </div>
+                    <p style={{ margin: 0, fontSize: 11, color: "rgba(255,255,255,0.45)" }}>
+                      Esto puede tardar hasta 3 minutos
                     </p>
                   </div>
                 ) : freemium.plan === "free" ? (
