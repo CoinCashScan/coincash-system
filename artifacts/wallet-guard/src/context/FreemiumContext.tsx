@@ -34,7 +34,12 @@ interface FreemiumContextValue {
   /** Re-fetch freemium status from the API */
   refreshFreemium: () => Promise<void>;
   /** Call when user presses "Ya pagué". Sends upgrade request + triggers blockchain verification */
-  requestPayment:  (email: string) => Promise<void>;
+  requestPayment: (
+    email:  string,
+    plan:   "basico" | "pro",
+    amount: number,
+    scans:  number,
+  ) => Promise<void>;
   /** Update freemium state after a scan (called by WalletAnalyzer) */
   applyFreemiumUpdate: (updated: FreemiumStatus) => void;
 }
@@ -255,14 +260,19 @@ export function FreemiumProvider({ children }: { children: ReactNode }) {
     verifyPollRef.current = setInterval(attempt, 20_000);
   }
 
-  const requestPayment = useCallback(async (email: string) => {
+  const requestPayment = useCallback(async (
+    email:  string,
+    plan:   "basico" | "pro",
+    amount: number,
+    scans:  number,
+  ) => {
     const id = ccIdRef.current;
     if (!id) return;
     try {
       await fetch(`${API_BASE}/freemium/request-upgrade`, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ ccId: id, email }),
+        body:    JSON.stringify({ ccId: id, email, plan, amount, scans }),
       });
       setPaymentStatus("pending");
       // Immediately kick off blockchain verification polling

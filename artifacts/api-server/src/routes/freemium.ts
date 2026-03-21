@@ -33,6 +33,7 @@ import {
   markTxUsed,
   resetScanCount,
   requestUpgrade,
+  getUpgradeIntent,
   getAllUsersWithPlans,
   getPendingUpgrades,
   getFreemiumStats,
@@ -270,15 +271,21 @@ router.post("/freemium/record", async (req, res) => {
 });
 
 // ── POST /api/freemium/request-upgrade ───────────────────────────────────────
-// User clicked "Ya pagué" — stores a pending upgrade request.
+// User clicked "Ya pagué" — stores a pending upgrade request with plan intent.
+// Body: { ccId, email?, plan: "basico"|"pro", amount: number, scans: number }
 router.post("/freemium/request-upgrade", async (req, res) => {
-  const ccId  = ((req.body?.ccId)  ?? "").trim();
-  const email = ((req.body?.email) ?? "").trim();
+  const ccId   = ((req.body?.ccId)   ?? "").trim();
+  const email  = ((req.body?.email)  ?? "").trim();
+  const plan   = ((req.body?.plan)   ?? "pro").trim() as "basico" | "pro";
+  const amount = parseFloat(req.body?.amount ?? (plan === "basico" ? 9.99 : 19.99));
+  const scans  = parseInt(req.body?.scans ?? (plan === "basico" ? 100 : 250), 10);
+
   if (!ccId) return res.status(400).json({ error: "ccId required" });
+  if (!["basico", "pro"].includes(plan)) return res.status(400).json({ error: "plan must be basico|pro" });
 
   try {
-    await requestUpgrade(ccId, email);
-    return res.json({ ok: true, message: "Solicitud registrada. El admin verificará tu pago." });
+    await requestUpgrade(ccId, email, plan, amount, scans);
+    return res.json({ ok: true, message: "Solicitud registrada. Verificando pago en blockchain." });
   } catch (err: any) {
     console.error("[freemium] request-upgrade error:", err?.message);
     return res.status(500).json({ error: "Error al registrar solicitud" });
@@ -353,18 +360,24 @@ router.post("/freemium/reset-scans", async (req, res) => {
 });
 
 // ── POST /api/freemium/confirm-upgrade ────────────────────────────────────────
-// Admin-side manual confirmation. plan defaults to "pro" (250 scans) if not specified.
+// Admin-side manual confirmation.
+// Uses the plan stored when the user clicked "Ya pagué" (upgrade_plan / upgrade_scans).
+// Falls back to "pro"/250 if no intent was recorded (legacy admin grants).
 router.post("/freemium/confirm-upgrade", async (req, res) => {
   if (!adminGuard(req, res)) return;
   const ccId = ((req.body?.ccId) ?? "").trim();
-  const plan = (((req.body?.plan) ?? "pro") as string).trim() as "basico" | "pro";
   if (!ccId) return res.status(400).json({ error: "ccId required" });
   try {
-    const scans = plan === "basico" ? 100 : 250;
+    // Try to use the user's recorded intent; fall back to override from body, then to "pro"/250
+    const intent = await getUpgradeIntent(ccId);
+    const plan  = (intent?.plan  ?? req.body?.plan  ?? "pro") as "basico" | "pro";
+    const scans = intent?.scans  ?? (plan === "basico" ? 100 : 250);
+
     await setPaidPlan(ccId, plan, scans);
     const io = req.app.get("io");
     if (io) io.to(ccId).emit("plan-updated", { ccId, plan, paidScansRemaining: scans });
-    return res.json({ ok: true, ccId, plan });
+    console.log(`[confirm-upgrade] ✅ ${ccId} → ${plan} (${scans} scans) [intent: ${intent ? "stored" : "fallback"}]`);
+    return res.json({ ok: true, ccId, plan, scans });
   } catch (err: any) {
     console.error("[freemium] confirm-upgrade error:", err?.message);
     return res.status(500).json({ error: "Error al confirmar upgrade" });

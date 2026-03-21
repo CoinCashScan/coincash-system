@@ -1183,6 +1183,12 @@ export async function ensureFreemiumTable(): Promise<void> {
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS pro_activated_at TIMESTAMP`);
   // Remaining scans for paid plans (basico=100, pro=250; NULL = unlimited legacy pro or free)
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS paid_scans_remaining INT`);
+  // Plan the user selected when they clicked "Ya pagué" (basico | pro)
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS upgrade_plan TEXT`);
+  // Amount in USDT they intend to pay
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS upgrade_amount NUMERIC(10,2)`);
+  // Number of scans in their chosen plan (100 | 250)
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS upgrade_scans INT`);
   // Table to prevent double-spending of the same TronGrid transaction ID
   await pool.query(`
     CREATE TABLE IF NOT EXISTS payment_txids (
@@ -1785,14 +1791,25 @@ export async function resetScanCount(ccId: string): Promise<void> {
   console.log(`[resetScanCount] Reset scans for ${ccId}: ${deviceIds.size} devices, ${groupDevicePairs.length} group entries`);
 }
 
-/** Ensure a user row exists, then record an upgrade request. */
-export async function requestUpgrade(ccId: string, email: string): Promise<void> {
+/** Ensure a user row exists, then record an upgrade request with plan intent. */
+export async function requestUpgrade(
+  ccId:          string,
+  email:         string,
+  upgradePlan:   "basico" | "pro",
+  upgradeAmount: number,
+  upgradeScans:  number,
+): Promise<void> {
   await pool.query(
-    `INSERT INTO users (coincash_id, wallet_address, plan, email, upgrade_requested_at)
-     VALUES ($1, '', 'free', $2, NOW())
+    `INSERT INTO users (coincash_id, wallet_address, plan, email, upgrade_requested_at,
+                        upgrade_plan, upgrade_amount, upgrade_scans)
+     VALUES ($1, '', 'free', $2, NOW(), $3, $4, $5)
      ON CONFLICT (coincash_id) DO UPDATE
-       SET email = EXCLUDED.email, upgrade_requested_at = NOW()`,
-    [ccId, email],
+       SET email                = EXCLUDED.email,
+           upgrade_requested_at = NOW(),
+           upgrade_plan         = EXCLUDED.upgrade_plan,
+           upgrade_amount       = EXCLUDED.upgrade_amount,
+           upgrade_scans        = EXCLUDED.upgrade_scans`,
+    [ccId, email, upgradePlan, upgradeAmount, upgradeScans],
   );
 }
 
@@ -1831,21 +1848,49 @@ export async function getAllUsersWithPlans(): Promise<{
   }));
 }
 
-/** Return users with a pending upgrade request. */
+/** Return users with a pending upgrade request, including plan intent. */
 export async function getPendingUpgrades(): Promise<{
   ccId: string; email: string; requestedAt: string;
+  upgradePlan: "basico" | "pro" | null;
+  upgradeAmount: number | null;
+  upgradeScans: number | null;
 }[]> {
-  const res = await pool.query<{ coincash_id: string; email: string; upgrade_requested_at: string }>(`
-    SELECT coincash_id, email, upgrade_requested_at
+  const res = await pool.query<{
+    coincash_id: string; email: string; upgrade_requested_at: string;
+    upgrade_plan: string | null; upgrade_amount: string | null; upgrade_scans: number | null;
+  }>(`
+    SELECT coincash_id, email, upgrade_requested_at, upgrade_plan, upgrade_amount, upgrade_scans
       FROM users
      WHERE upgrade_requested_at IS NOT NULL AND plan = 'free'
      ORDER BY upgrade_requested_at ASC
   `);
   return res.rows.map((r) => ({
-    ccId:        r.coincash_id,
-    email:       r.email,
-    requestedAt: r.upgrade_requested_at,
+    ccId:          r.coincash_id,
+    email:         r.email,
+    requestedAt:   r.upgrade_requested_at,
+    upgradePlan:   (r.upgrade_plan as "basico" | "pro") ?? null,
+    upgradeAmount: r.upgrade_amount !== null ? parseFloat(r.upgrade_amount) : null,
+    upgradeScans:  r.upgrade_scans ?? null,
   }));
+}
+
+/** Return the stored upgrade intent for a user (used by confirm-upgrade). */
+export async function getUpgradeIntent(ccId: string): Promise<{
+  plan: "basico" | "pro"; amount: number; scans: number;
+} | null> {
+  const res = await pool.query<{
+    upgrade_plan: string | null; upgrade_amount: string | null; upgrade_scans: number | null;
+  }>(
+    `SELECT upgrade_plan, upgrade_amount, upgrade_scans FROM users WHERE coincash_id = $1 LIMIT 1`,
+    [ccId],
+  );
+  const row = res.rows[0];
+  if (!row?.upgrade_plan || !row.upgrade_scans) return null;
+  return {
+    plan:   row.upgrade_plan as "basico" | "pro",
+    amount: row.upgrade_amount !== null ? parseFloat(row.upgrade_amount) : 0,
+    scans:  row.upgrade_scans,
+  };
 }
 
 /** Total users, PRO count, FREE count, scans today across all users. */

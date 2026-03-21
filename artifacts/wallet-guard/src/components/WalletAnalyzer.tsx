@@ -1257,7 +1257,10 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                       onClick={async () => {
                         setUpgradeSending(true);
                         try {
-                          await requestPayment(upgradeEmail);
+                          const planKey    = selectedPlan.name === "Básico" ? "basico" : "pro";
+                          const planAmount = parseFloat(selectedPlan.price);
+                          const planScans  = planKey === "basico" ? 100 : 250;
+                          await requestPayment(upgradeEmail, planKey, planAmount, planScans);
                         } catch { /* ignore */ } finally { setUpgradeSending(false); }
                       }}
                       style={{

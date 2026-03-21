@@ -299,7 +299,14 @@ function AdminPanelInner() {
   // ── Planes state ─────────────────────────────────────────────────────────
   interface PlanUser { ccId: string; email: string; plan: string; scansToday: number; upgradeRequestedAt: string | null; }
   interface PlanesStats { totalUsers: number; proUsers: number; freeUsers: number; scansToday: number; }
-  interface PendingUser { ccId: string; email: string; requestedAt: string; }
+  interface PendingUser {
+    ccId:          string;
+    email:         string;
+    requestedAt:   string;
+    upgradePlan:   "basico" | "pro" | null;
+    upgradeAmount: number | null;
+    upgradeScans:  number | null;
+  }
   const [planesUsers,   setPlanesUsers]   = useState<PlanUser[]>([]);
   const [planesStats,   setPlanesStats]   = useState<PlanesStats | null>(null);
   const [pendingUsers,  setPendingUsers]  = useState<PendingUser[]>([]);
@@ -1166,24 +1173,61 @@ function AdminPanelInner() {
                         Pagos pendientes ({pendingUsers.length})
                       </span>
                     </div>
-                    {pendingUsers.map((u) => (
-                      <div key={u.ccId} style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 12, fontFamily: "monospace", color: "#E5E7EB", marginBottom: 2 }}>{u.ccId}</div>
-                          {u.email && <div style={{ fontSize: 11, color: "#6B7280" }}>{u.email}</div>}
-                          <div style={{ fontSize: 10, color: "#4B5563", marginTop: 1 }}>{timeAgo(u.requestedAt)}</div>
+                    {pendingUsers.map((u) => {
+                      const isPro    = !u.upgradePlan || u.upgradePlan === "pro";
+                      const planIcon = isPro ? "🔥" : "💳";
+                      const planName = isPro ? "PRO" : "Básico";
+                      const planColor = isPro ? "#F59E0B" : "#60A5FA";
+                      const amount   = u.upgradeAmount !== null ? `$${u.upgradeAmount.toFixed(2)}` : (isPro ? "$19.99" : "$9.99");
+                      const scans    = u.upgradeScans ?? (isPro ? 250 : 100);
+
+                      return (
+                      <div key={u.ccId} style={{ padding: "12px 14px", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                        {/* Top row: CC-ID + time */}
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                          <div style={{ fontSize: 12, fontFamily: "monospace", color: "#E5E7EB", fontWeight: 600 }}>{u.ccId}</div>
+                          <div style={{ fontSize: 10, color: "#4B5563" }}>⏱ {timeAgo(u.requestedAt)}</div>
                         </div>
+
+                        {/* Plan badge row */}
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                          <span style={{
+                            display: "inline-flex", alignItems: "center", gap: 4,
+                            fontSize: 11, fontWeight: 800, color: planColor,
+                            background: isPro ? "rgba(245,158,11,0.1)" : "rgba(96,165,250,0.1)",
+                            border: `1px solid ${isPro ? "rgba(245,158,11,0.3)" : "rgba(96,165,250,0.3)"}`,
+                            borderRadius: 6, padding: "3px 8px",
+                          }}>
+                            {planIcon} {planName}
+                          </span>
+                          <span style={{ fontSize: 11, color: "#9CA3AF" }}>
+                            {amount} • {scans} análisis
+                          </span>
+                          {u.email && (
+                            <span style={{ fontSize: 10, color: "#4B5563", marginLeft: "auto", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 120 }}>
+                              {u.email}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Action buttons */}
                         <div style={{ display: "flex", gap: 7 }}>
                           <button
                             disabled={actionBusy === u.ccId}
-                            onClick={() => planAction("confirm-upgrade", u.ccId)}
+                            onClick={() => planAction("confirm-upgrade", u.ccId, { plan: u.upgradePlan ?? "pro" })}
                             style={{
-                              background: actionBusy === u.ccId ? "rgba(167,139,250,0.2)" : "linear-gradient(135deg,#7C3AED,#A78BFA)",
-                              border: "none", borderRadius: 8, color: "#fff", fontSize: 11, fontWeight: 700,
-                              padding: "6px 12px", cursor: actionBusy === u.ccId ? "not-allowed" : "pointer", whiteSpace: "nowrap",
+                              flex: 1,
+                              background: actionBusy === u.ccId
+                                ? "rgba(167,139,250,0.2)"
+                                : isPro
+                                  ? "linear-gradient(135deg,#92400E,#F59E0B)"
+                                  : "linear-gradient(135deg,#1E3A5F,#60A5FA)",
+                              border: "none", borderRadius: 8, color: "#fff",
+                              fontSize: 11, fontWeight: 700,
+                              padding: "7px 0", cursor: actionBusy === u.ccId ? "not-allowed" : "pointer",
                             }}
                           >
-                            {actionBusy === u.ccId ? "…" : "✓ Confirmar pago"}
+                            {actionBusy === u.ccId ? "…" : `✔ Confirmar ${planName}`}
                           </button>
                           <button
                             disabled={actionBusy === u.ccId}
@@ -1191,14 +1235,15 @@ function AdminPanelInner() {
                             style={{
                               background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.3)",
                               borderRadius: 8, color: "#FF6B6B", fontSize: 11, fontWeight: 700,
-                              padding: "6px 12px", cursor: actionBusy === u.ccId ? "not-allowed" : "pointer", whiteSpace: "nowrap",
+                              padding: "7px 12px", cursor: actionBusy === u.ccId ? "not-allowed" : "pointer", whiteSpace: "nowrap",
                             }}
                           >
                             🔄 Revertir
                           </button>
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
 
