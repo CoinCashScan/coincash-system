@@ -70,8 +70,14 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
   const handlePlanUpdated = useCallback(({ plan }: { plan: "free" | "pro" }) => {
     setUserPlan(plan);
     if (plan === "pro") {
+      // Clear pending state — user is now PRO
+      setUpgradeRequested(false);
+      setUpgradeSending(false);
       setPlanToast({ msg: "🎉 ¡Plan PRO activado! Ya tienes acceso completo.", type: "pro" });
     } else {
+      // Full reset — "Ya pagué" button must reappear
+      setUpgradeRequested(false);
+      setUpgradeSending(false);
       setPlanToast({ msg: "⚠️ Tu plan PRO ha sido desactivado. Si ya pagaste, presiona \"Ya pagué\" nuevamente.", type: "free" });
     }
     setTimeout(() => setPlanToast(null), 7000);
@@ -710,12 +716,13 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
             </div>
 
             {/* Ya pagué / Pending message */}
-            {upgradeRequested ? (
+            {/* Show "Pago en verificación" only if user clicked the button AND plan is still free */}
+            {upgradeRequested && userPlan !== "pro" ? (
               <div style={{ background: "rgba(0,255,198,0.07)", border: "1px solid rgba(0,255,198,0.28)", borderRadius: 10, padding: "12px 14px", textAlign: "center" }}>
                 <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: TEAL }}>✓ Pago en verificación.</p>
                 <p style={{ margin: "4px 0 0", fontSize: 12, color: MUTED }}>Activación en pocos minutos.</p>
               </div>
-            ) : (
+            ) : userPlan !== "pro" ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <p style={{ margin: 0, fontSize: 12, color: MUTED, lineHeight: 1.5 }}>
                   📩 Envía el capture de tu pago a soporte para agilizar la activación PRO.
@@ -746,7 +753,7 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
                   {upgradeSending ? "Enviando…" : "💳 Ya pagué — Activar PRO"}
                 </button>
               </div>
-            )}
+            ) : null}
           </div>
         )}
       </div>

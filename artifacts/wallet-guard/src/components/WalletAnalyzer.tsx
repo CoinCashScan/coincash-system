@@ -395,11 +395,15 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
     });
     if (plan === "pro") {
       setUpgradeRequested(false);
+      setUpgradeSending(false);
       toast.success("🎉 ¡Plan PRO activado! Ya puedes usar análisis ilimitados.", {
         duration: 6000,
         style: { background: "#0D2D1F", border: "1px solid rgba(0,255,198,0.35)", color: "#00FFC6" },
       });
     } else {
+      // Full reset so "Ya pagué" button appears again
+      setUpgradeRequested(false);
+      setUpgradeSending(false);
       toast.error("⚠️ Tu plan PRO ha sido desactivado. Si ya realizaste el pago, presiona \"Ya pagué\" nuevamente.", {
         duration: 8000,
         style: { background: "#1A0D0D", border: "1px solid rgba(255,80,80,0.35)", color: "#FF6B6B" },
@@ -1240,7 +1244,8 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                 </div>
 
                 {/* Email + Ya pagué / Pending message */}
-                {upgradeRequested ? (
+                {/* Only show "Pago en verificación" if user clicked "Ya pagué" AND plan is still free */}
+                {upgradeRequested && freemium.plan !== "pro" ? (
                   <div style={{
                     background: "rgba(0,255,198,0.07)", border: "1px solid rgba(0,255,198,0.3)",
                     borderRadius: 10, padding: "12px 14px", textAlign: "center",
@@ -1252,7 +1257,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                       Activación en pocos minutos.
                     </p>
                   </div>
-                ) : (
+                ) : freemium.plan !== "pro" ? (
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                     <p style={{ margin: 0, fontSize: 12, color: "rgba(255,255,255,0.45)", lineHeight: 1.5 }}>
                       📩 Envía el capture de tu pago a soporte para agilizar la activación PRO.
@@ -1283,7 +1288,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                       {upgradeSending ? "Enviando…" : "💳 Ya pagué — Activar PRO"}
                     </button>
                   </div>
-                )}
+                ) : null}
               </div>
             </div>
           )}
