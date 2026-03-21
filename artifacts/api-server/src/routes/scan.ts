@@ -14,6 +14,8 @@ import {
   getDeviceStats,
   resetScanStats,
   getUserPlan,
+  decrementPaidScans,
+  getPaidScansRemaining,
   getScanCountToday,
   getGroupScanCount,
   getDeviceScanCount,
@@ -119,7 +121,32 @@ router.post("/scan", async (req, res) => {
       plan = await getUserPlan(ccId);
     }
 
-    if (plan !== "pro") {
+    if (plan === "basico") {
+      // ── BÁSICO plan: decrement scan budget, record, return ─────────────────
+      const newRemaining = await decrementPaidScans(ccId);
+      // newRemaining === null means no budget row (should not happen, but treat as depleted)
+      if (newRemaining !== null && newRemaining < 0) {
+        return res.status(429).json({
+          ok: false, error: "limit_reached", plan: "basico",
+          canScan: false, remaining: 0, paidScansRemaining: 0,
+          message: "Has agotado tus scans del plan Básico.",
+        });
+      }
+      const geo = await geolocate(ip);
+      recordScanFull({
+        wallet, country: geo.country, countryCode: geo.countryCode,
+        deviceId: deviceId || "", ccId: ccId || "",
+        ipHash: groupId, planType: "basico",
+      }).catch(() => {});
+      const remaining = newRemaining ?? (await getPaidScansRemaining(ccId)) ?? 0;
+      return res.json({
+        ok: true, plan: "basico", scansToday: null,
+        remaining, canScan: remaining > 0,
+        paidScansRemaining: remaining,
+      });
+
+    } else if (plan !== "pro") {
+      // ── FREE plan: normal daily limit check ────────────────────────────────
       // Read all counters + evasion signals in parallel
       const [ccScans, groupScans, deviceScans, distinctDevices, devWhitelisted, ipWhitelisted] = await Promise.all([
         ccId     ? getScanCountToday(ccId)          : Promise.resolve(0),
