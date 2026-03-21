@@ -20,57 +20,72 @@ const BLUE   = "#3B82F6";
 const CARD   = "#121821";
 const BORDER = "rgba(255,255,255,0.07)";
 
-// ── Riesgo blockchain: solo datos on-chain confirmados ───────────────────────────
-// Fuentes: estado frozen, lista negra oficial, interacciones con wallets sancionadas.
-function computeBlockchainRisk(d: ReportData): number {
-  if (d.isFrozen || d.isInBlacklistDB) return 100;
-  let score = 0;
-  if (d.suspiciousInteractions >= 5)      score += 70;
-  else if (d.suspiciousInteractions >= 2) score += 50;
-  else if (d.suspiciousInteractions >= 1) score += 30;
-  return Math.max(0, Math.min(100, score));
+// ── Sistema de riesgo basado en datos reales on-chain ────────────────────────
+// Fuentes verificables: TronScan, TronGrid, listas negras públicas USDT.
+// No se usan heurísticas como score principal — solo flags reales.
+
+type RiskLevel = "ALTO" | "MEDIO" | "BAJO";
+
+interface RealRiskResult {
+  level:  RiskLevel;
+  score:  number;   // BAJO: 5 | MEDIO: 20-50 | ALTO: 70-100
+  reason: string;
 }
 
-// ── Riesgo predictivo: modelo CoinCash basado en comportamiento ──────────────────
-// Fuentes: edad de la wallet, volumen, nº de tx, contrapartes únicas, patrón de exchanges.
-function computePredictiveRisk(d: ReportData): number {
-  const daysSinceCreation = (Date.now() - d.dateCreated) / 86_400_000;
-  let score = 0;
-  if (daysSinceCreation < 30)        score += 20;
-  else if (daysSinceCreation <= 180) score += 10;
-  const totalVolumeUSDT = d.totalInUSDT + d.totalOutUSDT;
-  if (totalVolumeUSDT > 1_000_000)      score += 25;
-  else if (totalVolumeUSDT > 100_000)   score += 15;
-  if (d.uniqueWalletsCount > 200)       score += 20;
-  else if (d.uniqueWalletsCount > 50)   score += 10;
-  if (d.totalTx > 500)                  score += 20;
-  else if (d.totalTx > 100)             score += 10;
-  if (d.transfersAnalyzed > 0 && d.exchangeInteractions > d.transfersAnalyzed * 0.5) score -= 10;
-  return Math.max(0, Math.min(100, score));
+/** Evalúa riesgo con datos on-chain reales. Regla única, sin heurísticas. */
+function evalRealRisk(d: ReportData): RealRiskResult {
+  if (d.isFrozen || d.isInBlacklistDB) {
+    return {
+      level: "ALTO",
+      score: 100,
+      reason: d.isFrozen
+        ? "Wallet congelada en la red TRON"
+        : "Wallet en lista negra USDT (Tether)",
+    };
+  }
+  if ((d.suspiciousInteractions ?? 0) > 0) {
+    const n = d.suspiciousInteractions;
+    return {
+      level: "MEDIO",
+      score: Math.min(50, 20 + n * 8),
+      reason: `${n} interacción${n > 1 ? "es" : ""} con dirección${n > 1 ? "es" : ""} de riesgo en historial`,
+    };
+  }
+  return { level: "BAJO", score: 5, reason: "Sin coincidencias en datos públicos" };
 }
 
-// ── Riesgo general = max(blockchain, predictivo) ─────────────────────────────────
-function computeRiskScore(d: ReportData): number {
-  return Math.max(computeBlockchainRisk(d), computePredictiveRisk(d));
+function getRiskCardConfig(level: RiskLevel): { label: string; color: string; bg: string } {
+  if (level === "ALTO")  return { label: "Riesgo alto confirmado",  color: DANGER,  bg: "linear-gradient(135deg,#200808 0%,#120404 100%)" };
+  if (level === "MEDIO") return { label: "Riesgo medio detectado",  color: ORANGE,  bg: "linear-gradient(135deg,#1E0E04 0%,#120804 100%)" };
+  return                        { label: "Sin riesgos detectados",  color: GREEN,   bg: "linear-gradient(135deg,#001A0E 0%,#000F08 100%)" };
 }
 
-function getScoreCardConfig(score: number, isLatente = false): { label: string; color: string; bg: string } {
-  if (score >= 80) return { label: "Riesgo severo",    color: DANGER,  bg: "linear-gradient(135deg,#200808 0%,#120404 100%)" };
-  if (score >= 60) return { label: "Riesgo detectado", color: ORANGE,  bg: "linear-gradient(135deg,#1E0E04 0%,#120804 100%)" };
-  if (isLatente)   return { label: "Riesgo latente",   color: AMBER,   bg: "linear-gradient(135deg,#1A1000 0%,#0F0A00 100%)" };
-  if (score >= 30) return { label: "Riesgo moderado",  color: AMBER,   bg: "linear-gradient(135deg,#1A1000 0%,#0F0A00 100%)" };
-  return             { label: "Bajo riesgo",           color: GREEN,   bg: "linear-gradient(135deg,#001A0E 0%,#000F08 100%)" };
+function getRiskCardMessage(level: RiskLevel): { mensaje: string; color: string; icono: string } {
+  if (level === "ALTO") return {
+    mensaje: "Esta wallet está confirmada en listas negras o fue congelada en la red TRON. Evita cualquier interacción con ella.",
+    color: DANGER,
+    icono: "⛔",
+  };
+  if (level === "MEDIO") return {
+    mensaje: "Se detectaron interacciones con direcciones de riesgo en el historial de transacciones on-chain. Procede con precaución.",
+    color: ORANGE,
+    icono: "⚠️",
+  };
+  return {
+    mensaje: "No se detectaron riesgos en datos públicos de blockchain. Esta wallet no aparece en listas negras ni tiene interacciones con direcciones de riesgo conocidas.",
+    color: GREEN,
+    icono: "✅",
+  };
 }
 
-function getRiskStatusConfig(score: number, isLatente = false): { msg: string; color: string; Icon: React.ElementType } {
-  if (score >= 80) return { msg: "Riesgo severo detectado",           color: DANGER,  Icon: ShieldAlert  };
-  if (score >= 60) return { msg: "Riesgos detectados",                color: ORANGE,  Icon: ShieldAlert  };
-  if (isLatente)   return { msg: "Riesgo latente detectado",          color: AMBER,   Icon: AlertTriangle };
-  if (score >= 30) return { msg: "Actividad moderada detectada",      color: AMBER,   Icon: AlertTriangle };
-  return             { msg: "Patrones de riesgo potencial detectados", color: GREEN,   Icon: CheckCircle2 };
+function getRiskStatusConfig(level: RiskLevel): { msg: string; color: string; Icon: React.ElementType } {
+  if (level === "ALTO")  return { msg: "Riesgo confirmado en blockchain", color: DANGER,  Icon: ShieldAlert  };
+  if (level === "MEDIO") return { msg: "Riesgo detectado en historial",   color: ORANGE,  Icon: AlertTriangle };
+  return                        { msg: "Sin riesgos detectados",          color: GREEN,   Icon: CheckCircle2 };
 }
 
-// ── Predicción de riesgo de congelamiento ────────────────────────────────────
+// ── Análisis adicional (informativo) — NO define el riesgo principal ──────────
+// Patrones de comportamiento on-chain. Solo informativo, sin score en UI principal.
 interface CongelamientoInput {
   walletAgeDays: number;
   totalVolume: number;
@@ -79,87 +94,23 @@ interface CongelamientoInput {
   isLinkedToRiskWallet: boolean;
 }
 interface CongelamientoResult {
-  score: number;
-  nivel: "ALTO" | "MEDIO" | "LATENTE" | "BAJO";
   motivos: string[];
+  hasSignals: boolean;
 }
-function calcularRiesgoCongelamiento(data: Partial<CongelamientoInput>): CongelamientoResult {
-  const walletAgeDays        = data.walletAgeDays        ?? 0;
-  const totalVolume          = data.totalVolume          ?? 0;
-  const txCount              = data.txCount              ?? 0;
-  const exchangeInteraction  = data.exchangeInteraction  ?? 0;
-  const isLinkedToRiskWallet = data.isLinkedToRiskWallet ?? false;
-
-  let score = 0;
+function calcularAnalisisAdicional(data: Partial<CongelamientoInput>): CongelamientoResult {
+  const walletAgeDays       = data.walletAgeDays       ?? 0;
+  const totalVolume         = data.totalVolume         ?? 0;
+  const txCount             = data.txCount             ?? 0;
+  const exchangeInteraction = data.exchangeInteraction ?? 0;
   const motivos: string[] = [];
 
-  const esReciente      = walletAgeDays > 0 && walletAgeDays < 30;
-  const esAltoVolumen   = totalVolume > 50_000;
-  const sinExchanges    = exchangeInteraction === 0;
+  if (walletAgeDays > 0 && walletAgeDays < 30)  motivos.push("Wallet creada hace menos de 30 días");
+  if (totalVolume > 50_000)                       motivos.push(`Volumen alto: ${(totalVolume / 1000).toFixed(0)}K USDT`);
+  if (txCount > 100)                              motivos.push(`Alta actividad: ${txCount} transacciones`);
+  if (exchangeInteraction === 0 && txCount > 10)  motivos.push("Sin interacción con exchanges conocidos");
+  if (data.isLinkedToRiskWallet)                  motivos.push("Historial incluye wallets de riesgo");
 
-  if (esReciente) {
-    score += 25;
-    motivos.push("Wallet reciente (menos de 30 días)");
-  }
-  if (esAltoVolumen) {
-    score += 25;
-    motivos.push("Alto volumen de USDT");
-  }
-  if (txCount > 50) {
-    score += 15;
-    motivos.push("Alta actividad transaccional");
-  }
-  if (sinExchanges) {
-    score += 15;
-    motivos.push("Sin interacción con exchanges");
-  }
-  if (isLinkedToRiskWallet) {
-    score += 20;
-    motivos.push("Conexión con wallets riesgosas");
-  }
-
-  // ── Categoría "Riesgo latente": combinación de perfil sospechoso sin señales directas
-  const esLatente = esReciente && esAltoVolumen && sinExchanges && !isLinkedToRiskWallet;
-
-  let nivel: CongelamientoResult["nivel"] = "BAJO";
-  if (score >= 80)      nivel = "ALTO";
-  else if (score >= 50) nivel = esLatente ? "LATENTE" : "MEDIO";
-  else if (esLatente)   nivel = "LATENTE";
-
-  return { score, nivel, motivos };
-}
-
-function getRiskMessage(score: number, isLatente = false): { nivel: string; mensaje: string; color: string; icono: string } {
-  if (score >= 81) return {
-    nivel:   "Severo",
-    mensaje: "Patrones asociados a riesgo detectados. Se recomienda evitar interactuar con esta dirección.",
-    color:   DANGER,
-    icono:   "⛔",
-  };
-  if (score >= 61) return {
-    nivel:   "Alto",
-    mensaje: "Interacción con direcciones de riesgo detectada. Podría existir exposición a actividad no verificada.",
-    color:   ORANGE,
-    icono:   "🚨",
-  };
-  if (isLatente) return {
-    nivel:   "Latente",
-    mensaje: "Perfil de riesgo latente detectado. Combinación de wallet reciente, alto volumen y ausencia de exchanges aumenta el riesgo de congelamiento futuro.",
-    color:   AMBER,
-    icono:   "🔆",
-  };
-  if (score >= 31) return {
-    nivel:   "Moderado",
-    mensaje: "Actividad inusual detectada. Se recomienda precaución antes de interactuar con esta dirección.",
-    color:   AMBER,
-    icono:   "⚠️",
-  };
-  return {
-    nivel:   "Bajo",
-    mensaje: "No se detectaron riesgos conocidos en datos públicos de blockchain. Bajo riesgo según el análisis actual.",
-    color:   GREEN,
-    icono:   "✅",
-  };
+  return { motivos, hasSignals: motivos.length > 0 };
 }
 
 // Daily stats helpers (localStorage)
@@ -1457,209 +1408,155 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, ease: "easeOut" }}
             >
-              {/* ── Premium Risk Score Card ── */}
+              {/* ── Risk Score Card — basado en datos reales on-chain ── */}
               {(() => {
-                // ── 1. Datos reales on-chain (fuente primaria) ─────────────────
-                const isBlacklisted     = !!(reportData.isInBlacklistDB);
-                const isFrozen          = !!(reportData.isFrozen);
-                const isConfirmedFrozen = isBlacklisted || isFrozen;
-                const riskyCount        = reportData.suspiciousInteractions ?? 0;
-                const riesgoBlockchain  = computeBlockchainRisk(reportData);
+                // ── Única fuente de verdad: datos reales on-chain ─────────────
+                const risk       = evalRealRisk(reportData);
+                const { label, color, bg } = getRiskCardConfig(risk.level);
+                const rm         = getRiskCardMessage(risk.level);
+                const riskyCount = reportData.suspiciousInteractions ?? 0;
+                const isBlacklisted = !!(reportData.isInBlacklistDB);
+                const isFrozenWallet = !!(reportData.isFrozen);
 
-                // ── 2. Señales adicionales (modelo predictivo — secundario) ────
-                const riesgoPredBase   = computePredictiveRisk(reportData);
-                let freeze: CongelamientoResult | null = null;
-                if (!isConfirmedFrozen) {
-                  const walletAgeDays = (Date.now() - (reportData.dateCreated ?? Date.now())) / 86_400_000;
-                  freeze = calcularRiesgoCongelamiento({
-                    walletAgeDays,
-                    totalVolume:         (reportData.totalInUSDT + reportData.totalOutUSDT) || 0,
-                    txCount:              reportData.totalTx              || 0,
-                    exchangeInteraction:  reportData.exchangeInteractions || 0,
-                    isLinkedToRiskWallet: riskyCount > 0,
-                  });
-                }
-                const riesgoPredictivo = isConfirmedFrozen ? 100
-                  : freeze ? Math.max(riesgoPredBase, freeze.score)
-                  : riesgoPredBase;
-                const isLatente        = !isConfirmedFrozen && freeze?.nivel === "LATENTE";
+                // ── Análisis adicional (solo informativo) ─────────────────────
+                const walletAgeDays = (Date.now() - (reportData.dateCreated ?? Date.now())) / 86_400_000;
+                const adicional = calcularAnalisisAdicional({
+                  walletAgeDays,
+                  totalVolume:         (reportData.totalInUSDT + reportData.totalOutUSDT) || 0,
+                  txCount:              reportData.totalTx              || 0,
+                  exchangeInteraction:  reportData.exchangeInteractions || 0,
+                  isLinkedToRiskWallet: riskyCount > 0,
+                });
 
-                // ── 3. Score principal = solo blockchain real ──────────────────
-                // El score predictivo NUNCA infla el número principal
-                const score: number = isConfirmedFrozen ? 100 : riesgoBlockchain;
-
-                // ── 4. Hay señales adicionales que mostrar? ────────────────────
-                const hasAdditionalSignals = !isConfirmedFrozen && riesgoPredictivo >= 20;
-
-                const { label, color, bg } = getScoreCardConfig(score, isLatente);
-
-                const StatusRow = ({
-                  ok, text, sub,
-                }: { ok: boolean; text: string; sub?: string }) => (
+                const CheckRow = ({ ok, text, sub }: { ok: boolean; text: string; sub?: string }) => (
                   <div style={{
                     display: "flex", alignItems: "flex-start", gap: 10,
                     padding: "9px 12px", borderRadius: 10,
                     background: ok ? "rgba(0,220,160,0.06)" : "rgba(255,77,79,0.08)",
                     border: `1px solid ${ok ? "rgba(0,220,160,0.2)" : "rgba(255,77,79,0.25)"}`,
                   }}>
-                    <span style={{ fontSize: 15, lineHeight: 1, marginTop: 1, flexShrink: 0 }}>
-                      {ok ? "✅" : "❌"}
-                    </span>
+                    <span style={{ fontSize: 15, lineHeight: 1, marginTop: 1, flexShrink: 0 }}>{ok ? "✅" : "❌"}</span>
                     <div>
-                      <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: ok ? "#00DCA0" : DANGER }}>
-                        {text}
-                      </p>
-                      {sub && (
-                        <p style={{ margin: "2px 0 0", fontSize: 10, color: "rgba(255,255,255,0.4)" }}>{sub}</p>
-                      )}
+                      <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: ok ? "#00DCA0" : DANGER }}>{text}</p>
+                      {sub && <p style={{ margin: "2px 0 0", fontSize: 10, color: "rgba(255,255,255,0.38)" }}>{sub}</p>}
                     </div>
                   </div>
                 );
 
                 return (
                   <div className="rounded-3xl p-6 mb-4"
-                    style={{
-                      background: bg,
-                      border: `1px solid ${color}30`,
-                      boxShadow: `0 8px 40px ${color}18`,
-                    }}>
+                    style={{ background: bg, border: `1px solid ${color}30`, boxShadow: `0 8px 40px ${color}18` }}>
 
-                    {/* ── SECCIÓN PRINCIPAL: Estado real on-chain ────────────── */}
-                    <div style={{ marginBottom: 20 }}>
-                      <p style={{
-                        fontSize: 10, fontWeight: 800, letterSpacing: "0.16em",
-                        color: "rgba(255,255,255,0.35)", textTransform: "uppercase", marginBottom: 10,
-                      }}>
-                        🔍 Estado en blockchain
-                      </p>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-                        <StatusRow
-                          ok={!isBlacklisted}
-                          text={isBlacklisted ? "Wallet en lista negra USDT" : "No está en listas negras conocidas"}
-                          sub={isBlacklisted ? "Fondos potencialmente congelados por Tether" : "Fuente: TronScan + USDT Blacklist"}
-                        />
-                        <StatusRow
-                          ok={!isFrozen}
-                          text={isFrozen ? "Wallet congelada en la red TRON" : "No está congelada"}
-                          sub={isFrozen ? "La cuenta fue bloqueada a nivel de red" : "Fuente: TronGrid API"}
-                        />
-                        {riskyCount > 0 && (
-                          <div style={{
-                            display: "flex", alignItems: "flex-start", gap: 10,
-                            padding: "9px 12px", borderRadius: 10,
-                            background: "rgba(255,107,53,0.08)",
-                            border: "1px solid rgba(255,107,53,0.25)",
-                          }}>
-                            <span style={{ fontSize: 15, lineHeight: 1, marginTop: 1, flexShrink: 0 }}>⚠️</span>
-                            <div>
-                              <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: ORANGE }}>
-                                {riskyCount} interacción{riskyCount > 1 ? "es" : ""} con wallet{riskyCount > 1 ? "s" : ""} de riesgo
-                              </p>
-                              <p style={{ margin: "2px 0 0", fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
-                                Detectado en historial de transacciones on-chain
-                              </p>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Divider */}
-                    <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", marginBottom: 20 }} />
-
-                    {/* ── Shield + Score (basado solo en datos reales) ──────────── */}
+                    {/* ── Shield + resultado único ─────────────────────────────── */}
                     <div className="flex flex-col items-center text-center mb-5">
                       <div className="flex h-14 w-14 items-center justify-center rounded-2xl mb-4"
-                        style={{
-                          background: `${color}18`,
-                          border: `1px solid ${color}40`,
-                          boxShadow: `0 0 24px ${color}22`,
-                        }}>
+                        style={{ background: `${color}18`, border: `1px solid ${color}40`, boxShadow: `0 0 24px ${color}22` }}>
                         <Shield style={{ color, width: 26, height: 26 }} />
                       </div>
-
                       <p className="text-[10px] font-bold uppercase tracking-[0.2em] mb-2.5"
                         style={{ color: "rgba(255,255,255,0.38)" }}>
-                        RIESGO EN BLOCKCHAIN
+                        RESULTADO DEL ANÁLISIS
                       </p>
-
                       <div className="flex items-end leading-none mb-4">
-                        <span className="font-black" style={{ fontSize: 72, color, lineHeight: 1 }}>
-                          {score}
-                        </span>
-                        <span className="font-bold mb-1 ml-0.5" style={{ fontSize: 24, color: "rgba(255,255,255,0.28)" }}>
-                          /100
-                        </span>
+                        <span className="font-black" style={{ fontSize: 72, color, lineHeight: 1 }}>{risk.score}</span>
+                        <span className="font-bold mb-1 ml-0.5" style={{ fontSize: 24, color: "rgba(255,255,255,0.28)" }}>/100</span>
                       </div>
-
                       <span className="inline-flex items-center px-4 py-1.5 rounded-full text-sm font-bold"
-                        style={{
-                          background: `${color}1A`,
-                          border: `1px solid ${color}50`,
-                          color,
-                          letterSpacing: "0.01em",
-                        }}>
+                        style={{ background: `${color}1A`, border: `1px solid ${color}50`, color, letterSpacing: "0.01em" }}>
                         {label}
                       </span>
                     </div>
 
-                    {/* ── Risk recommendation (basado en score real) ── */}
-                    {(() => {
-                      const rm = getRiskMessage(score, isLatente);
-                      return (
-                        <div className="rounded-xl px-4 py-3 mb-5"
-                          style={{
-                            background: `${rm.color}18`,
-                            border: `1px solid ${rm.color}55`,
-                            borderLeft: `4px solid ${rm.color}`,
-                          }}>
-                          <div className="flex items-start gap-2.5">
-                            <span style={{ fontSize: 20, lineHeight: 1, flexShrink: 0, marginTop: 1 }}>{rm.icono}</span>
-                            <div>
-                              <p className="text-[10px] font-bold uppercase tracking-widest mb-1" style={{ color: rm.color }}>
-                                Datos públicos · Nivel {rm.nivel}
+                    {/* ── Mensaje principal ─────────────────────────────────────── */}
+                    <div className="rounded-xl px-4 py-3 mb-5"
+                      style={{ background: `${rm.color}18`, border: `1px solid ${rm.color}55`, borderLeft: `4px solid ${rm.color}` }}>
+                      <div className="flex items-start gap-2.5">
+                        <span style={{ fontSize: 20, lineHeight: 1, flexShrink: 0, marginTop: 1 }}>{rm.icono}</span>
+                        <p className="text-xs leading-relaxed" style={{ margin: 0, color: "rgba(255,255,255,0.85)" }}>
+                          {rm.mensaje}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* ── Estado verificado en blockchain ──────────────────────── */}
+                    <p style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.15em",
+                      color: "rgba(255,255,255,0.32)", textTransform: "uppercase", marginBottom: 8 }}>
+                      🔍 Estado verificado
+                    </p>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 16 }}>
+                      <CheckRow
+                        ok={!isBlacklisted}
+                        text={isBlacklisted ? "En lista negra USDT (Tether)" : "No está en listas negras"}
+                        sub="Fuente: TronScan + USDT Blacklist"
+                      />
+                      <CheckRow
+                        ok={!isFrozenWallet}
+                        text={isFrozenWallet ? "Wallet congelada en la red TRON" : "No está congelada"}
+                        sub="Fuente: TronGrid API"
+                      />
+                    </div>
+
+                    {/* ── Contrapartes de riesgo ───────────────────────────────── */}
+                    <p style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.15em",
+                      color: "rgba(255,255,255,0.32)", textTransform: "uppercase", marginBottom: 8 }}>
+                      🔗 Interacciones con direcciones de riesgo
+                    </p>
+                    {riskyCount === 0 ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", borderRadius: 10,
+                        background: "rgba(0,220,160,0.05)", border: "1px solid rgba(0,220,160,0.15)", marginBottom: 16 }}>
+                        <span style={{ fontSize: 14 }}>✅</span>
+                        <p style={{ margin: 0, fontSize: 12, color: "#00DCA0", fontWeight: 600 }}>
+                          Sin interacción con direcciones de riesgo conocidas
+                        </p>
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 16 }}>
+                        {(reportData.riskyCounterparties ?? []).slice(0, 5).map((cp, i) => (
+                          <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10,
+                            padding: "8px 12px", borderRadius: 10,
+                            background: cp.level === "critical" ? "rgba(255,77,79,0.08)" : "rgba(255,107,53,0.07)",
+                            border: `1px solid ${cp.level === "critical" ? "rgba(255,77,79,0.25)" : "rgba(255,107,53,0.2)"}` }}>
+                            <span style={{ fontSize: 14, lineHeight: 1, marginTop: 1, flexShrink: 0 }}>
+                              {cp.level === "critical" ? "🚨" : "⚠️"}
+                            </span>
+                            <div style={{ minWidth: 0 }}>
+                              <p style={{ margin: 0, fontSize: 10, fontFamily: "monospace",
+                                color: cp.level === "critical" ? DANGER : ORANGE, wordBreak: "break-all" }}>
+                                {cp.address.slice(0, 12)}…{cp.address.slice(-6)}
                               </p>
-                              <p className="text-xs leading-relaxed" style={{ color: "rgba(255,255,255,0.8)" }}>
-                                {rm.mensaje}
+                              <p style={{ margin: "2px 0 0", fontSize: 10, color: "rgba(255,255,255,0.45)" }}>
+                                {cp.label}
                               </p>
                             </div>
                           </div>
-                        </div>
-                      );
-                    })()}
-
-                    {/* ── SECCIÓN SECUNDARIA: Señales adicionales (predictivo) ── */}
-                    {hasAdditionalSignals && (
-                      <div style={{
-                        borderRadius: 12,
-                        background: "rgba(255,255,255,0.03)",
-                        border: "1px solid rgba(255,255,255,0.07)",
-                        padding: "12px 14px",
-                        marginBottom: 16,
-                      }}>
-                        <p style={{
-                          fontSize: 10, fontWeight: 800, letterSpacing: "0.14em",
-                          color: "rgba(255,255,255,0.3)", textTransform: "uppercase", marginBottom: 10,
-                        }}>
-                          🧠 Señales adicionales detectadas
-                        </p>
-                        {freeze && freeze.motivos.length > 0 && (
-                          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                            {freeze.motivos.map((m, i) => (
-                              <div key={i} style={{
-                                display: "flex", alignItems: "center", gap: 8,
-                                fontSize: 11, color: "rgba(255,255,255,0.55)",
-                              }}>
-                                <span style={{ color: AMBER, fontSize: 10, flexShrink: 0 }}>◆</span>
-                                {m}
-                              </div>
-                            ))}
-                          </div>
+                        ))}
+                        {riskyCount > 5 && (
+                          <p style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", textAlign: "center", margin: "4px 0 0" }}>
+                            +{riskyCount - 5} más en el historial completo
+                          </p>
                         )}
-                        <p style={{
-                          fontSize: 9, color: "rgba(255,255,255,0.25)", marginTop: 10, lineHeight: 1.5,
-                        }}>
-                          Señales basadas en patrones de comportamiento. No constituyen una confirmación de riesgo.
+                      </div>
+                    )}
+
+                    {/* ── Análisis adicional (informativo) ─────────────────────── */}
+                    {adicional.hasSignals && (
+                      <div style={{ borderRadius: 12, background: "rgba(255,255,255,0.03)",
+                        border: "1px solid rgba(255,255,255,0.07)", padding: "12px 14px", marginBottom: 16 }}>
+                        <p style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.14em",
+                          color: "rgba(255,255,255,0.28)", textTransform: "uppercase", marginBottom: 9 }}>
+                          🧠 Análisis adicional (informativo)
+                        </p>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                          {adicional.motivos.map((m, i) => (
+                            <div key={i} style={{ display: "flex", alignItems: "center", gap: 8,
+                              fontSize: 11, color: "rgba(255,255,255,0.5)" }}>
+                              <span style={{ color: "rgba(255,255,255,0.2)", fontSize: 10, flexShrink: 0 }}>◆</span>
+                              {m}
+                            </div>
+                          ))}
+                        </div>
+                        <p style={{ fontSize: 9, color: "rgba(255,255,255,0.22)", marginTop: 9, lineHeight: 1.5 }}>
+                          Patrones observados en datos on-chain. No determinan el nivel de riesgo principal.
                         </p>
                       </div>
                     )}
@@ -1673,10 +1570,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                       WALLET ADDRESS
                     </p>
                     <div className="flex items-center justify-between rounded-xl px-4 py-3"
-                      style={{
-                        background: "rgba(255,255,255,0.04)",
-                        border: "1px solid rgba(255,255,255,0.08)",
-                      }}>
+                      style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
                       <span className="text-sm font-mono text-white" style={{ letterSpacing: "0.04em" }}>
                         {reportData.address.slice(0, 8)}...{reportData.address.slice(-4)}
                       </span>
@@ -1684,27 +1578,17 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                         type="button"
                         onClick={() => handleCopyAddress(reportData.address)}
                         className="flex items-center justify-center rounded-lg transition-opacity active:opacity-60"
-                        style={{
-                          width: 32, height: 32,
-                          background: "rgba(255,255,255,0.06)",
-                          border: "1px solid rgba(255,255,255,0.1)",
-                        }}>
+                        style={{ width: 32, height: 32, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)" }}>
                         {copiedAddress
                           ? <CheckCheck style={{ width: 14, height: 14, color: GREEN }} />
                           : <Copy style={{ width: 14, height: 14, color: "rgba(255,255,255,0.5)" }} />}
                       </button>
                     </div>
 
-                    {/* ── Disclaimer ── */}
-                    <p style={{
-                      fontSize: 10,
-                      color: "rgba(255,255,255,0.28)",
-                      textAlign: "center",
-                      lineHeight: 1.6,
-                      margin: "12px 0 14px",
-                      padding: "0 4px",
-                    }}>
-                      Este análisis se basa en datos públicos de blockchain.
+                    {/* ── Fuente y disclaimer ─────────────────────────────────── */}
+                    <p style={{ fontSize: 9, color: "rgba(255,255,255,0.25)", textAlign: "center",
+                      lineHeight: 1.6, margin: "12px 0 14px", padding: "0 4px" }}>
+                      Fuente: TronScan + TronGrid + listas públicas · Este análisis se basa en datos públicos de blockchain.
                     </p>
 
                     {/* ── Share button ── */}
@@ -1872,95 +1756,60 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                   );
                 }
 
-                // ── Solo calcular predicción si NO está congelada ni en blacklist ─
-                const dateCreated          = reportData?.dateCreated          ?? Date.now();
-                const totalInUSDT          = reportData?.totalInUSDT          ?? 0;
-                const totalOutUSDT         = reportData?.totalOutUSDT         ?? 0;
-                const totalTx              = reportData?.totalTx              ?? 0;
-                const exchangeInteractions = reportData?.exchangeInteractions ?? 0;
-                const suspiciousInteractions = reportData?.suspiciousInteractions ?? 0;
-
+                // ── Análisis adicional (solo informativo, no define riesgo) ─────
+                const dateCreated = reportData?.dateCreated ?? Date.now();
                 const walletAgeDays = (Date.now() - dateCreated) / 86_400_000;
-                const prediccion = calcularRiesgoCongelamiento({
-                  walletAgeDays:        walletAgeDays        || 0,
-                  totalVolume:          (totalInUSDT + totalOutUSDT) || 0,
-                  txCount:              totalTx              || 0,
-                  exchangeInteraction:  exchangeInteractions || 0,
-                  isLinkedToRiskWallet: suspiciousInteractions > 0,
+                const adicional = calcularAnalisisAdicional({
+                  walletAgeDays:        walletAgeDays || 0,
+                  totalVolume:          ((reportData?.totalInUSDT ?? 0) + (reportData?.totalOutUSDT ?? 0)) || 0,
+                  txCount:              reportData?.totalTx              || 0,
+                  exchangeInteraction:  reportData?.exchangeInteractions || 0,
+                  isLinkedToRiskWallet: (reportData?.suspiciousInteractions ?? 0) > 0,
                 });
-
-                const nivelColor =
-                  prediccion.nivel === "ALTO"  ? "#ff4d4f" :
-                  prediccion.nivel === "MEDIO" ? "#fa8c16" :
-                                                 "#52c41a";
-                const nivelBg =
-                  prediccion.nivel === "ALTO"  ? "rgba(255,77,79,0.08)"  :
-                  prediccion.nivel === "MEDIO" ? "rgba(250,140,22,0.08)" :
-                                                 "rgba(82,196,26,0.08)";
-                const nivelBorder =
-                  prediccion.nivel === "ALTO"  ? "rgba(255,77,79,0.25)"  :
-                  prediccion.nivel === "MEDIO" ? "rgba(250,140,22,0.25)" :
-                                                 "rgba(82,196,26,0.25)";
 
                 return (
                   <div style={{
                     margin: "16px 0 0",
                     borderRadius: 16,
-                    border: `1px solid ${nivelBorder}`,
-                    background: nivelBg,
+                    border: "1px solid rgba(255,255,255,0.07)",
+                    background: "rgba(255,255,255,0.03)",
                     overflow: "hidden",
                   }}>
-                    {/* Header */}
                     <div style={{
-                      padding: "14px 18px",
-                      borderBottom: `1px solid ${nivelBorder}`,
+                      padding: "13px 18px",
+                      borderBottom: "1px solid rgba(255,255,255,0.07)",
                       display: "flex", alignItems: "center", justifyContent: "space-between",
                     }}>
-                      <span style={{ fontSize: 14, fontWeight: 700, color: "rgba(255,255,255,0.92)" }}>
-                        ⚠️ Predicción de congelamiento
+                      <span style={{ fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,0.7)" }}>
+                        🧠 Análisis adicional (informativo)
                       </span>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <span style={{
-                          fontFamily: "monospace", fontSize: 13, fontWeight: 700,
-                          color: "rgba(255,255,255,0.45)",
-                        }}>
-                          {prediccion.score}/100
-                        </span>
-                        <span style={{
-                          padding: "3px 12px", borderRadius: 20,
-                          background: nivelColor, color: "#fff",
-                          fontSize: 12, fontWeight: 800, letterSpacing: "0.06em",
-                        }}>
-                          {prediccion.nivel}
-                        </span>
-                      </div>
+                      <span style={{
+                        padding: "3px 10px", borderRadius: 20,
+                        background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.35)",
+                        fontSize: 10, fontWeight: 700, letterSpacing: "0.06em",
+                      }}>
+                        NO DEFINE RIESGO
+                      </span>
                     </div>
 
-                    {/* Motivos */}
-                    <div style={{ padding: "14px 18px" }}>
-                      {prediccion.motivos.length === 0 ? (
-                        <p style={{ margin: 0, fontSize: 13, color: "#52c41a" }}>
-                          ✓ Sin factores de riesgo de congelamiento detectados
+                    <div style={{ padding: "13px 18px" }}>
+                      {!adicional.hasSignals ? (
+                        <p style={{ margin: 0, fontSize: 12, color: "rgba(255,255,255,0.45)" }}>
+                          Sin patrones adicionales detectados en datos on-chain.
                         </p>
                       ) : (
                         <>
-                          <p style={{ margin: "0 0 10px", fontSize: 11, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                            Factores detectados
-                          </p>
-                          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 7 }}>
-                            {prediccion.motivos.map((m, i) => (
-                              <li key={i} style={{
-                                display: "flex", alignItems: "center", gap: 9,
-                                fontSize: 13, color: "rgba(255,255,255,0.82)",
-                              }}>
-                                <span style={{
-                                  width: 6, height: 6, borderRadius: "50%",
-                                  background: nivelColor, flexShrink: 0,
-                                }} />
+                          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 6 }}>
+                            {adicional.motivos.map((m, i) => (
+                              <li key={i} style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 12, color: "rgba(255,255,255,0.55)" }}>
+                                <span style={{ width: 5, height: 5, borderRadius: "50%", background: "rgba(255,255,255,0.25)", flexShrink: 0 }} />
                                 {m}
                               </li>
                             ))}
                           </ul>
+                          <p style={{ margin: "10px 0 0", fontSize: 10, color: "rgba(255,255,255,0.25)", lineHeight: 1.5 }}>
+                            Patrones observados en datos on-chain. No determinan el nivel de riesgo.
+                          </p>
                         </>
                       )}
                     </div>
@@ -1980,30 +1829,20 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
 
       {/* ── Hidden Share Card (rendered off-screen for html2canvas capture) ── */}
       {reportData && (() => {
-        const isConfirmedFrozen = !!(reportData.isFrozen || reportData.isInBlacklistDB);
-        const rawScore = computeRiskScore(reportData);
-        let freeze: CongelamientoResult | null = null;
-        if (!isConfirmedFrozen) {
-          const dateCreated = reportData.dateCreated ?? Date.now();
-          const walletAgeDays = (Date.now() - dateCreated) / 86_400_000;
-          freeze = calcularRiesgoCongelamiento({
-            walletAgeDays,
-            totalVolume:         (reportData.totalInUSDT  + reportData.totalOutUSDT) || 0,
-            txCount:              reportData.totalTx              || 0,
-            exchangeInteraction:  reportData.exchangeInteractions || 0,
-            isLinkedToRiskWallet: (reportData.suspiciousInteractions || 0) > 0,
-          });
-        }
-        const isLatente = !isConfirmedFrozen && freeze?.nivel === "LATENTE";
-        let sc = isConfirmedFrozen ? 100 : freeze && freeze.score >= 60 ? Math.max(rawScore, freeze.score) : rawScore;
-        const { label: scLabel, color: scColor } = getScoreCardConfig(sc, isLatente);
+        const risk = evalRealRisk(reportData);
+        const { label: scLabel, color: scColor } = getRiskCardConfig(risk.level);
+        const sc = risk.score;
 
         // Derived display values
-        const freezeNivel   = isConfirmedFrozen ? "ALTO" : (freeze?.nivel ?? "BAJO");
-        const freezeScore   = isConfirmedFrozen ? 100    : (freeze?.score ?? 0);
-        const motivosList   = isConfirmedFrozen
-          ? ["Wallet congelada o en lista negra"]
-          : (freeze?.motivos ?? []).slice(0, 3);
+        const freezeNivel = risk.level;
+        const adicionalShare = calcularAnalisisAdicional({
+          walletAgeDays: (Date.now() - (reportData.dateCreated ?? Date.now())) / 86_400_000,
+          totalVolume:         (reportData.totalInUSDT  + reportData.totalOutUSDT) || 0,
+          txCount:              reportData.totalTx              || 0,
+          exchangeInteraction:  reportData.exchangeInteractions || 0,
+          isLinkedToRiskWallet: (reportData.suspiciousInteractions || 0) > 0,
+        });
+        const motivosList = adicionalShare.motivos.slice(0, 3);
 
         const ultimaActividad = reportData.lastTxDate
           ? new Date(reportData.lastTxDate).toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" })
@@ -2015,11 +1854,10 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
         const confianzaColor = confianzaRaw === "Alta" ? GREEN : confianzaRaw === "Media" ? AMBER : ORANGE;
 
         const freezeColor =
-          freezeNivel === "ALTO"    ? DANGER  :
-          freezeNivel === "MEDIO"   ? ORANGE  :
-          freezeNivel === "LATENTE" ? AMBER   : GREEN;
+          freezeNivel === "ALTO"  ? DANGER :
+          freezeNivel === "MEDIO" ? ORANGE : GREEN;
 
-        const cardBg = sc >= 80 ? "#130303" : sc >= 60 ? "#140b02" : sc >= 30 ? "#111000" : "#001510";
+        const cardBg = sc >= 80 ? "#130303" : sc >= 50 ? "#140b02" : "#001510";
         const accentColor = scColor;
 
         return (
