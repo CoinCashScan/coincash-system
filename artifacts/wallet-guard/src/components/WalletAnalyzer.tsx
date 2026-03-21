@@ -2318,9 +2318,13 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
           ? new Date(reportData.lastTxDate).toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" })
           : "Sin actividad registrada";
 
-        const confianzaRaw = (reportData.transfersAnalyzed ?? 0) > 50
-          ? "Alta" : (reportData.transfersAnalyzed ?? 0) > 10
-          ? "Media" : "Baja";
+        // Nivel de confianza basado en risk score + señales adicionales
+        let confianzaRaw: "Alta" | "Media" | "Baja" =
+          sc <= 20 ? "Alta" : sc <= 60 ? "Media" : "Baja";
+        // Interacciones riesgosas → forzar Baja
+        if (_shareHasRisky) confianzaRaw = "Baja";
+        // Wallet muy nueva (< 7 días) → máximo Media
+        if (_shareAgeDays < 7 && confianzaRaw === "Alta") confianzaRaw = "Media";
         const confianzaColor = confianzaRaw === "Alta" ? GREEN : confianzaRaw === "Media" ? AMBER : ORANGE;
 
         const freezeColor =
