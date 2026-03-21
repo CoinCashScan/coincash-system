@@ -84,33 +84,102 @@ function getRiskStatusConfig(level: RiskLevel): { msg: string; color: string; Ic
   return                        { msg: "Sin riesgos detectados",          color: GREEN,   Icon: CheckCircle2 };
 }
 
-// ── Análisis adicional (informativo) — NO define el riesgo principal ──────────
-// Patrones de comportamiento on-chain. Solo informativo, sin score en UI principal.
+// ── Predicción de congelamiento — basada en criterios reales Tether/TRON ──────
+// Criterios que efectivamente llevan al congelamiento de wallets USDT TRC20:
+// 1. Interacción con wallets sancionadas/contaminadas
+// 2. Wallet nueva + alto volumen (perfil de alto riesgo)
+// 3. Movimientos rápidos sin historial (patrón de lavado)
+// 4. Alto volumen sin paso por exchanges (P2P opaco)
+// 5. Alta velocidad de transacciones en wallet reciente
+
 interface CongelamientoInput {
   walletAgeDays: number;
   totalVolume: number;
   txCount: number;
   exchangeInteraction: number;
   isLinkedToRiskWallet: boolean;
+  riskyCount: number;
 }
 interface CongelamientoResult {
-  motivos: string[];
+  score: number;
+  nivel: "ALTO" | "MEDIO" | "BAJO";
+  factores: { texto: string; peso: "critico" | "alto" | "medio" }[];
   hasSignals: boolean;
 }
+
 function calcularAnalisisAdicional(data: Partial<CongelamientoInput>): CongelamientoResult {
   const walletAgeDays       = data.walletAgeDays       ?? 0;
   const totalVolume         = data.totalVolume         ?? 0;
   const txCount             = data.txCount             ?? 0;
   const exchangeInteraction = data.exchangeInteraction ?? 0;
-  const motivos: string[] = [];
+  const isLinkedToRisk      = data.isLinkedToRiskWallet ?? false;
+  const riskyCount          = data.riskyCount          ?? 0;
 
-  if (walletAgeDays > 0 && walletAgeDays < 30)  motivos.push("Wallet creada hace menos de 30 días");
-  if (totalVolume > 50_000)                       motivos.push(`Volumen alto: ${(totalVolume / 1000).toFixed(0)}K USDT`);
-  if (txCount > 100)                              motivos.push(`Alta actividad: ${txCount} transacciones`);
-  if (exchangeInteraction === 0 && txCount > 10)  motivos.push("Sin interacción con exchanges conocidos");
-  if (data.isLinkedToRiskWallet)                  motivos.push("Historial incluye wallets de riesgo");
+  let score = 0;
+  const factores: CongelamientoResult["factores"] = [];
 
-  return { motivos, hasSignals: motivos.length > 0 };
+  // ── Criterio 1: Contaminación (interacción con wallets marcadas) ─────────
+  // Riesgo más grave: la "contaminación" es la principal causa de freeze
+  if (riskyCount >= 3) {
+    score += 45;
+    factores.push({ texto: `${riskyCount} interacciones con wallets sancionadas — contaminación alta`, peso: "critico" });
+  } else if (riskyCount === 2) {
+    score += 30;
+    factores.push({ texto: "2 interacciones con wallets marcadas — contaminación detectada", peso: "alto" });
+  } else if (riskyCount === 1 || isLinkedToRisk) {
+    score += 18;
+    factores.push({ texto: "Interacción con wallet de riesgo en historial", peso: "medio" });
+  }
+
+  // ── Criterio 4: Wallet nueva + alto volumen (MUY IMPORTANTE) ────────────
+  const esReciente = walletAgeDays > 0 && walletAgeDays < 30;
+  const esSemiReciente = walletAgeDays >= 30 && walletAgeDays < 90;
+
+  if (esReciente && totalVolume > 10_000) {
+    score += 40;
+    factores.push({ texto: `Wallet nueva (${Math.floor(walletAgeDays)}d) con volumen $${(totalVolume / 1000).toFixed(1)}K USDT — alerta automática`, peso: "critico" });
+  } else if (esReciente && totalVolume > 1_000) {
+    score += 22;
+    factores.push({ texto: `Wallet reciente (${Math.floor(walletAgeDays)}d) con actividad de $${totalVolume.toFixed(0)} USDT`, peso: "alto" });
+  } else if (esReciente) {
+    score += 10;
+    factores.push({ texto: `Wallet creada hace ${Math.floor(walletAgeDays)} días — historial corto`, peso: "medio" });
+  } else if (esSemiReciente && totalVolume > 50_000) {
+    score += 18;
+    factores.push({ texto: `Wallet joven (${Math.floor(walletAgeDays)}d) con alto volumen ($${(totalVolume / 1000).toFixed(0)}K USDT)`, peso: "alto" });
+  }
+
+  // ── Criterio 3: Movimientos tipo lavado (velocidad alta en wallet reciente) ─
+  const walletAgeForVelocity = Math.max(walletAgeDays, 1);
+  const txPerDay = txCount / walletAgeForVelocity;
+
+  if (txPerDay > 10 && walletAgeDays < 90) {
+    score += 25;
+    factores.push({ texto: `Alta velocidad: ${txPerDay.toFixed(1)} tx/día — patrón de movimiento rápido`, peso: "critico" });
+  } else if (txPerDay > 5 && walletAgeDays < 90) {
+    score += 15;
+    factores.push({ texto: `${txCount} tx en ${Math.floor(walletAgeDays)}d — ritmo inusualmente alto`, peso: "alto" });
+  } else if (txCount > 200) {
+    score += 10;
+    factores.push({ texto: `Alta actividad acumulada: ${txCount} transacciones`, peso: "medio" });
+  }
+
+  // ── Criterio 5: Alto volumen sin paso por exchanges (P2P opaco) ──────────
+  if (exchangeInteraction === 0 && totalVolume > 5_000) {
+    score += 18;
+    factores.push({ texto: `$${(totalVolume / 1000).toFixed(1)}K USDT sin pasar por exchanges — flujo P2P opaco`, peso: "alto" });
+  } else if (exchangeInteraction === 0 && totalVolume > 500) {
+    score += 8;
+    factores.push({ texto: "Sin interacción con exchanges conocidos", peso: "medio" });
+  }
+
+  score = Math.min(100, score);
+
+  const nivel: CongelamientoResult["nivel"] =
+    score >= 55 ? "ALTO"  :
+    score >= 25 ? "MEDIO" : "BAJO";
+
+  return { score, nivel, factores, hasSignals: factores.length > 0 };
 }
 
 // Daily stats helpers (localStorage)
@@ -1418,7 +1487,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                 const isBlacklisted = !!(reportData.isInBlacklistDB);
                 const isFrozenWallet = !!(reportData.isFrozen);
 
-                // ── Análisis adicional (solo informativo) ─────────────────────
+                // ── Predicción de congelamiento ───────────────────────────────
                 const walletAgeDays = (Date.now() - (reportData.dateCreated ?? Date.now())) / 86_400_000;
                 const adicional = calcularAnalisisAdicional({
                   walletAgeDays,
@@ -1426,6 +1495,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                   txCount:              reportData.totalTx              || 0,
                   exchangeInteraction:  reportData.exchangeInteractions || 0,
                   isLinkedToRiskWallet: riskyCount > 0,
+                  riskyCount,
                 });
 
                 const CheckRow = ({ ok, text, sub }: { ok: boolean; text: string; sub?: string }) => (
@@ -1538,28 +1608,50 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                       </div>
                     )}
 
-                    {/* ── Análisis adicional (informativo) ─────────────────────── */}
-                    {adicional.hasSignals && (
-                      <div style={{ borderRadius: 12, background: "rgba(255,255,255,0.03)",
-                        border: "1px solid rgba(255,255,255,0.07)", padding: "12px 14px", marginBottom: 16 }}>
-                        <p style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.14em",
-                          color: "rgba(255,255,255,0.28)", textTransform: "uppercase", marginBottom: 9 }}>
-                          🧠 Análisis adicional (informativo)
-                        </p>
-                        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                          {adicional.motivos.map((m, i) => (
-                            <div key={i} style={{ display: "flex", alignItems: "center", gap: 8,
-                              fontSize: 11, color: "rgba(255,255,255,0.5)" }}>
-                              <span style={{ color: "rgba(255,255,255,0.2)", fontSize: 10, flexShrink: 0 }}>◆</span>
-                              {m}
+                    {/* ── Predicción de congelamiento ──────────────────────────── */}
+                    {(() => {
+                      const nivelColor = adicional.nivel === "ALTO" ? DANGER : adicional.nivel === "MEDIO" ? ORANGE : GREEN;
+                      const nivelBg    = adicional.nivel === "ALTO" ? "rgba(255,77,79,0.07)" : adicional.nivel === "MEDIO" ? "rgba(255,107,53,0.06)" : "rgba(0,220,160,0.05)";
+                      const nivelBorder = adicional.nivel === "ALTO" ? "rgba(255,77,79,0.22)" : adicional.nivel === "MEDIO" ? "rgba(255,107,53,0.2)" : "rgba(0,220,160,0.15)";
+                      const pesoColor = (p: string) => p === "critico" ? DANGER : p === "alto" ? ORANGE : AMBER;
+                      return (
+                        <div style={{ borderRadius: 14, border: `1px solid ${nivelBorder}`, background: nivelBg, marginBottom: 16, overflow: "hidden" }}>
+                          <div style={{ padding: "11px 14px", borderBottom: `1px solid ${nivelBorder}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.8)" }}>
+                              🧊 Predicción de congelamiento
+                            </span>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <span style={{ fontSize: 11, fontFamily: "monospace", color: "rgba(255,255,255,0.35)" }}>
+                                {adicional.score}/100
+                              </span>
+                              <span style={{ padding: "2px 10px", borderRadius: 20, background: nivelColor,
+                                color: "#fff", fontSize: 10, fontWeight: 800, letterSpacing: "0.05em" }}>
+                                {adicional.nivel}
+                              </span>
                             </div>
-                          ))}
+                          </div>
+                          <div style={{ padding: "11px 14px" }}>
+                            {!adicional.hasSignals ? (
+                              <p style={{ margin: 0, fontSize: 12, color: "#00DCA0" }}>
+                                ✓ Sin factores de riesgo de congelamiento detectados
+                              </p>
+                            ) : (
+                              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                                {adicional.factores.map((f, i) => (
+                                  <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: pesoColor(f.peso), flexShrink: 0, marginTop: 5 }} />
+                                    <p style={{ margin: 0, fontSize: 11, color: "rgba(255,255,255,0.7)", lineHeight: 1.45 }}>{f.texto}</p>
+                                  </div>
+                                ))}
+                                <p style={{ margin: "6px 0 0", fontSize: 9, color: "rgba(255,255,255,0.25)", lineHeight: 1.5 }}>
+                                  Basado en criterios reales de congelamiento Tether/TRON. No garantiza congelamiento futuro.
+                                </p>
+                              </div>
+                            )}
+                          </div>
                         </div>
-                        <p style={{ fontSize: 9, color: "rgba(255,255,255,0.22)", marginTop: 9, lineHeight: 1.5 }}>
-                          Patrones observados en datos on-chain. No determinan el nivel de riesgo principal.
-                        </p>
-                      </div>
-                    )}
+                      );
+                    })()}
 
                     {/* Divider */}
                     <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", marginBottom: 16 }} />
@@ -1756,15 +1848,17 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                   );
                 }
 
-                // ── Análisis adicional (solo informativo, no define riesgo) ─────
+                // ── Predicción de congelamiento ───────────────────────────────
                 const dateCreated = reportData?.dateCreated ?? Date.now();
                 const walletAgeDays = (Date.now() - dateCreated) / 86_400_000;
+                const riskyCountLocal = reportData?.suspiciousInteractions ?? 0;
                 const adicional = calcularAnalisisAdicional({
                   walletAgeDays:        walletAgeDays || 0,
                   totalVolume:          ((reportData?.totalInUSDT ?? 0) + (reportData?.totalOutUSDT ?? 0)) || 0,
                   txCount:              reportData?.totalTx              || 0,
                   exchangeInteraction:  reportData?.exchangeInteractions || 0,
-                  isLinkedToRiskWallet: (reportData?.suspiciousInteractions ?? 0) > 0,
+                  isLinkedToRiskWallet: riskyCountLocal > 0,
+                  riskyCount:           riskyCountLocal,
                 });
 
                 return (
@@ -1775,40 +1869,69 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                     background: "rgba(255,255,255,0.03)",
                     overflow: "hidden",
                   }}>
-                    <div style={{
-                      padding: "13px 18px",
-                      borderBottom: "1px solid rgba(255,255,255,0.07)",
-                      display: "flex", alignItems: "center", justifyContent: "space-between",
-                    }}>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,0.7)" }}>
-                        🧠 Análisis adicional (informativo)
-                      </span>
-                      <span style={{
-                        padding: "3px 10px", borderRadius: 20,
-                        background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.35)",
-                        fontSize: 10, fontWeight: 700, letterSpacing: "0.06em",
-                      }}>
-                        NO DEFINE RIESGO
-                      </span>
+                    {(() => {
+                      const hColor = adicional.nivel === "ALTO" ? DANGER : adicional.nivel === "MEDIO" ? ORANGE : GREEN;
+                      return (
+                        <div style={{
+                          padding: "13px 18px",
+                          borderBottom: "1px solid rgba(255,255,255,0.07)",
+                          display: "flex", alignItems: "center", justifyContent: "space-between",
+                        }}>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,0.85)" }}>
+                            🧊 Predicción de congelamiento
+                          </span>
+                          <span style={{
+                            padding: "3px 10px", borderRadius: 20,
+                            background: `${hColor}18`, border: `1px solid ${hColor}40`,
+                            color: hColor, fontSize: 10, fontWeight: 800, letterSpacing: "0.06em",
+                          }}>
+                            {adicional.nivel}
+                          </span>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Score bar */}
+                    <div style={{ padding: "10px 18px 0", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                      {(() => {
+                        const nivelColor2 = adicional.nivel === "ALTO" ? DANGER : adicional.nivel === "MEDIO" ? ORANGE : GREEN;
+                        return (
+                          <div>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                              <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>Probabilidad de congelamiento</span>
+                              <span style={{ fontSize: 12, fontWeight: 800, fontFamily: "monospace", color: nivelColor2 }}>{adicional.score}%</span>
+                            </div>
+                            <div style={{ height: 5, borderRadius: 4, background: "rgba(255,255,255,0.07)", marginBottom: 14, overflow: "hidden" }}>
+                              <div style={{ height: "100%", borderRadius: 4, width: `${adicional.score}%`, background: `linear-gradient(90deg, ${nivelColor2}90, ${nivelColor2})`, transition: "width 0.6s ease" }} />
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
 
                     <div style={{ padding: "13px 18px" }}>
                       {!adicional.hasSignals ? (
-                        <p style={{ margin: 0, fontSize: 12, color: "rgba(255,255,255,0.45)" }}>
-                          Sin patrones adicionales detectados en datos on-chain.
+                        <p style={{ margin: 0, fontSize: 13, color: "#00DCA0" }}>
+                          ✓ Sin factores de riesgo de congelamiento detectados
                         </p>
                       ) : (
                         <>
-                          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 6 }}>
-                            {adicional.motivos.map((m, i) => (
-                              <li key={i} style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 12, color: "rgba(255,255,255,0.55)" }}>
-                                <span style={{ width: 5, height: 5, borderRadius: "50%", background: "rgba(255,255,255,0.25)", flexShrink: 0 }} />
-                                {m}
-                              </li>
-                            ))}
+                          <p style={{ margin: "0 0 10px", fontSize: 10, color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                            Factores detectados
+                          </p>
+                          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 8 }}>
+                            {adicional.factores.map((f, i) => {
+                              const c = f.peso === "critico" ? DANGER : f.peso === "alto" ? ORANGE : AMBER;
+                              return (
+                                <li key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: c, flexShrink: 0, marginTop: 5 }} />
+                                  <span style={{ fontSize: 12, color: "rgba(255,255,255,0.78)", lineHeight: 1.45 }}>{f.texto}</span>
+                                </li>
+                              );
+                            })}
                           </ul>
-                          <p style={{ margin: "10px 0 0", fontSize: 10, color: "rgba(255,255,255,0.25)", lineHeight: 1.5 }}>
-                            Patrones observados en datos on-chain. No determinan el nivel de riesgo.
+                          <p style={{ margin: "12px 0 0", fontSize: 10, color: "rgba(255,255,255,0.25)", lineHeight: 1.5 }}>
+                            Basado en criterios reales de congelamiento Tether/TRON. No garantiza congelamiento futuro.
                           </p>
                         </>
                       )}
@@ -1841,8 +1964,9 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
           txCount:              reportData.totalTx              || 0,
           exchangeInteraction:  reportData.exchangeInteractions || 0,
           isLinkedToRiskWallet: (reportData.suspiciousInteractions || 0) > 0,
+          riskyCount:           reportData.suspiciousInteractions || 0,
         });
-        const motivosList = adicionalShare.motivos.slice(0, 3);
+        const motivosList = adicionalShare.factores.slice(0, 3).map(f => f.texto);
 
         const ultimaActividad = reportData.lastTxDate
           ? new Date(reportData.lastTxDate).toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" })
