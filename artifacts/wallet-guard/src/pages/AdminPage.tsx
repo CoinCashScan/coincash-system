@@ -915,11 +915,11 @@ function AdminPanelInner() {
                           <span style={{
                             fontSize: 9, fontWeight: 700, letterSpacing: "0.06em", padding: "2px 7px",
                             borderRadius: 10,
-                            background: r.plan_type === "pro" ? "rgba(167,139,250,0.15)" : "rgba(0,255,198,0.08)",
-                            color: r.plan_type === "pro" ? "#A78BFA" : "#00FFC6",
-                            border: `1px solid ${r.plan_type === "pro" ? "rgba(167,139,250,0.3)" : "rgba(0,255,198,0.2)"}`,
+                            background: r.plan_type === "pro" ? "rgba(167,139,250,0.15)" : r.plan_type === "basico" ? "rgba(96,165,250,0.12)" : "rgba(0,255,198,0.08)",
+                            color: r.plan_type === "pro" ? "#A78BFA" : r.plan_type === "basico" ? "#60A5FA" : "#00FFC6",
+                            border: `1px solid ${r.plan_type === "pro" ? "rgba(167,139,250,0.3)" : r.plan_type === "basico" ? "rgba(96,165,250,0.3)" : "rgba(0,255,198,0.2)"}`,
                           }}>
-                            {r.plan_type === "pro" ? "PRO" : "FREE"}
+                            {r.plan_type === "pro" ? "PRO" : r.plan_type === "basico" ? "BÁSICO" : "FREE"}
                           </span>
                         </div>
                       </div>
@@ -1151,10 +1151,10 @@ function AdminPanelInner() {
                 {planesStats && (
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
                     {[
-                      { label: "Total usuarios", value: planesStats.totalUsers, color: "#00FFC6" },
-                      { label: "Usuarios PRO",   value: planesStats.proUsers,   color: "#A78BFA" },
-                      { label: "Usuarios FREE",  value: planesStats.freeUsers,  color: "#6B7280" },
-                      { label: "Scans hoy",      value: planesStats.scansToday, color: "#F59E0B" },
+                      { label: "Total usuarios",   value: planesStats.totalUsers, color: "#00FFC6" },
+                      { label: "Usuarios pagados", value: planesStats.proUsers,   color: "#A78BFA" },
+                      { label: "Usuarios FREE",    value: planesStats.freeUsers,  color: "#6B7280" },
+                      { label: "Scans hoy",        value: planesStats.scansToday, color: "#F59E0B" },
                     ].map((item) => (
                       <div key={item.label} style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 14, padding: "14px 16px" }}>
                         <div style={{ fontSize: 10, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>{item.label}</div>
@@ -1249,12 +1249,13 @@ function AdminPanelInner() {
 
                 {/* ── Usuarios table ── */}
                 {(() => {
+                  const isPaidPlan = (p: string) => p === "pro" || p === "basico";
                   const sorted = [...planesUsers].sort((a, b) => {
-                    const aScore = (a.plan === "pro" ? 2 : 0) + (a.scansToday > 0 ? 1 : 0);
-                    const bScore = (b.plan === "pro" ? 2 : 0) + (b.scansToday > 0 ? 1 : 0);
+                    const aScore = (a.plan === "pro" ? 3 : a.plan === "basico" ? 2 : 0) + (a.scansToday > 0 ? 1 : 0);
+                    const bScore = (b.plan === "pro" ? 3 : b.plan === "basico" ? 2 : 0) + (b.scansToday > 0 ? 1 : 0);
                     return bScore - aScore;
                   });
-                  const isActive = (u: PlanUser) => u.plan === "pro" || u.scansToday > 0;
+                  const isActive = (u: PlanUser) => isPaidPlan(u.plan) || u.scansToday > 0;
                   const visible  = showOnlyActive ? sorted.filter(isActive) : sorted;
                   const hiddenCount = sorted.length - sorted.filter(isActive).length;
 
@@ -1299,30 +1300,36 @@ function AdminPanelInner() {
                         </div>
                       ) : (
                         visible.map((u) => {
-                          const isPro     = u.plan === "pro";
-                          const isBusy    = actionBusy === u.ccId;
-                          const isPending = !!u.upgradeRequestedAt;
+                          const isPro      = u.plan === "pro";
+                          const isBasico   = u.plan === "basico";
+                          const isPaid     = isPro || isBasico;
+                          const isBusy     = actionBusy === u.ccId;
+                          const isPending  = !!u.upgradeRequestedAt;
                           const isActiveUser = u.scansToday > 0;
+
+                          const planBadgeText  = isPro ? "⭐ PRO" : isBasico ? "💳 BÁSICO" : "FREE";
+                          const planBadgeBg    = isPro ? "rgba(245,158,11,0.18)" : isBasico ? "rgba(96,165,250,0.15)" : "rgba(107,114,128,0.2)";
+                          const planBadgeColor = isPro ? "#F59E0B" : isBasico ? "#60A5FA" : "#9CA3AF";
+                          const planBadgeBorder= isPro ? "1px solid rgba(245,158,11,0.45)" : isBasico ? "1px solid rgba(96,165,250,0.35)" : "1px solid rgba(107,114,128,0.3)";
+                          const leftBorder     = isPending ? "3px solid #F59E0B" : isPaid ? "3px solid #A78BFA" : isActiveUser ? "3px solid #00DCA0" : "3px solid transparent";
 
                           return (
                             <div key={u.ccId} style={{
                               padding: "12px 14px",
                               borderBottom: "1px solid rgba(255,255,255,0.04)",
-                              borderLeft: isPending ? "3px solid #F59E0B" : isPro ? "3px solid #F59E0B" : isActiveUser ? "3px solid #00DCA0" : "3px solid transparent",
+                              borderLeft: leftBorder,
                             }}>
                               {/* Row 1: ccId + badges */}
                               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4, flexWrap: "wrap" }}>
                                 <span style={{ fontFamily: "monospace", fontSize: 12, color: "#E5E7EB", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                   {u.ccId}
                                 </span>
-                                {/* PRO badge — dorado */}
+                                {/* Plan badge */}
                                 <span style={{
                                   fontSize: 10, fontWeight: 700, borderRadius: 6, padding: "2px 7px",
-                                  background: isPro ? "rgba(245,158,11,0.18)" : "rgba(107,114,128,0.2)",
-                                  color: isPro ? "#F59E0B" : "#9CA3AF",
-                                  border: isPro ? "1px solid rgba(245,158,11,0.45)" : "1px solid rgba(107,114,128,0.3)",
+                                  background: planBadgeBg, color: planBadgeColor, border: planBadgeBorder,
                                 }}>
-                                  {isPro ? "⭐ PRO" : "FREE"}
+                                  {planBadgeText}
                                 </span>
                                 {/* ACTIVO badge — verde, solo si tiene scans */}
                                 {isActiveUser && (
@@ -1350,7 +1357,7 @@ function AdminPanelInner() {
                               </div>
                               {/* Row 3: action buttons */}
                               <div style={{ display: "flex", gap: 6 }}>
-                                {!isPro ? (
+                                {!isPaid ? (
                                   <button
                                     disabled={isBusy}
                                     onClick={() => planAction("set-plan", u.ccId, { plan: "pro" })}

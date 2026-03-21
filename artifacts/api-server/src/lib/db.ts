@@ -1966,7 +1966,7 @@ export async function getFreemiumStats(): Promise<{
   const [usersRes, scansRes] = await Promise.all([
     pool.query<{ total: string; pro: string; free: string }>(`
       SELECT COUNT(*) FILTER (WHERE coincash_id != 'CC-SUPPORT') AS total,
-             COUNT(*) FILTER (WHERE plan = 'pro' AND coincash_id != 'CC-SUPPORT') AS pro,
+             COUNT(*) FILTER (WHERE plan IN ('pro','basico') AND coincash_id != 'CC-SUPPORT') AS pro,
              COUNT(*) FILTER (WHERE plan = 'free' AND coincash_id != 'CC-SUPPORT') AS free
         FROM users
     `),
