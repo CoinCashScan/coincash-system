@@ -1711,10 +1711,20 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                 const displayScore = (isBlockchainSafe && alertasCmpt.totalScore >= 50) ? 30 : risk.score;
                 void displayScore;
 
-                // ── Score numérico — SOLO datos reales de blockchain ──────────
-                const riskScore = (isBlacklisted || isFrozenWallet) ? 100
-                                : hasRiskyInteractions               ? 60
-                                :                                       5;
+                // ── Score acumulativo — tipo Bitrace ─────────────────────────
+                const txPerDay = walletAgeDays > 0 ? (reportData.totalTx || 0) / walletAgeDays : 0;
+                const hasExchangeInteraction = (reportData.exchangeInteractions || 0) > 0;
+
+                let riskScore = 0;
+                if (isBlacklisted)         riskScore += 100;
+                if (isFrozenWallet)        riskScore += 100;
+                if (hasRiskyInteractions)  riskScore += 40;
+                if (totalVolume > 50000)   riskScore += 10;
+                if (walletAgeDays < 7)     riskScore += 15;
+                if (!hasExchangeInteraction) riskScore += 15;
+                if (txPerDay > 10)         riskScore += 10;
+                if (riskScore > 100)       riskScore = 100;
+                if (riskScore === 0)       riskScore = 5;
 
                 const riskScoreLabel = riskScore >= 90 ? "Riesgo crítico"
                                      : riskScore >= 60 ? "Riesgo alto"
