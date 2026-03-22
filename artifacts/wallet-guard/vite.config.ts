@@ -64,7 +64,7 @@ export default defineConfig({
     allowedHosts: true,
     fs: {
       strict: true,
-      deny: ["**/.*"],
+      deny: ["**/.git/**", "**/.env*"],
     },
     proxy: {
       "/api": {
