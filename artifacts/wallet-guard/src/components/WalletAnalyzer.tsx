@@ -775,11 +775,36 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
     let trc20TxIn  = 0;
     let trc20TxOut = 0;
 
+    // Track seen tx_ids to avoid double-counting duplicate transfers
+    const seenTxIds = new Set<string>();
+
     transfers.forEach((t: any) => {
-      // USDT TRC20 always uses 6 decimals. Hardcode the divisor so we never
-      // display raw uint256 blockchain values regardless of token_info content.
+      // ── Guard 1: only process USDT transfers ─────────────────────────────
+      // The API is filtered by contract_address, but verify via token_info as
+      // a second defense against non-USDT tokens leaking through the proxy.
+      const tokenAddr   = t.token_info?.address ?? t.token_info?.contract_address ?? "";
+      const tokenSymbol = (t.token_info?.symbol ?? "").toUpperCase();
+      if (tokenAddr && tokenAddr !== usdtContract) return; // wrong contract
+      if (tokenSymbol && tokenSymbol !== "USDT")   return; // wrong symbol
+
+      // ── Guard 2: deduplication by transaction id ──────────────────────────
+      const txId = t.transaction_id ?? t.tx_id ?? "";
+      if (txId && seenTxIds.has(txId)) return;
+      if (txId) seenTxIds.add(txId);
+
+      // ── Conversion: use token_info.decimals when available, else 6 ────────
+      const decimals = (typeof t.token_info?.decimals === "number" && t.token_info.decimals > 0)
+        ? t.token_info.decimals : 6;
+      const divisor  = Math.pow(10, decimals);
+
       const raw    = parseFloat(t.value || "0");
-      const amount = Number.isFinite(raw) ? raw / 1_000_000 : 0;
+      const amount = Number.isFinite(raw) ? raw / divisor : 0;
+
+      // ── Guard 3: flag and skip per-tx values that are clearly wrong ───────
+      if (amount > 100_000_000) {
+        console.warn("[USDT] Suspicious tx value detected — skipping:", amount, "raw:", raw, "decimals:", decimals, "tx:", txId);
+        return;
+      }
 
       if (t.to === addr) {
         totalInUSDT  += amount;
@@ -813,10 +838,10 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
       totalTx = trc20TxIn + trc20TxOut;
     }
 
-    // Safety cap: prevent astronomical numbers from slipping through if the
-    // blockchain ever returns unexpected raw values.
-    totalInUSDT  = Number.isFinite(totalInUSDT)  ? Math.min(totalInUSDT,  1e12) : 0;
-    totalOutUSDT = Number.isFinite(totalOutUSDT) ? Math.min(totalOutUSDT, 1e12) : 0;
+    // Safety cap: max realistic single-wallet USDT volume is ~$100M.
+    // Values beyond this indicate a parsing error upstream.
+    totalInUSDT  = Number.isFinite(totalInUSDT)  ? Math.min(totalInUSDT,  1e8) : 0;
+    totalOutUSDT = Number.isFinite(totalOutUSDT) ? Math.min(totalOutUSDT, 1e8) : 0;
 
     // Derive USDT balance from transfer sums so all 4 display values are
     // computed from the same source (prevents chain-field vs. transfer-sum drift).
