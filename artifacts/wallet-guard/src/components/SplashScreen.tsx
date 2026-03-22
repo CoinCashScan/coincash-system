@@ -56,7 +56,8 @@ const MESSAGES = [
 ];
 const FINAL_MSG    = "Sistema listo";
 const MSG_FADE_MS  = 250;
-const TOTAL_MS     = 10_000;   // 10 s visible splash
+const TOTAL_MS     = 5_000;    // 5 s máximo visible splash
+const MIN_MS       = 1_500;    // 1.5 s mínimo si ya cargó
 const FADEOUT_MS   = 600;
 
 interface Props { onDone: () => void; }
@@ -74,10 +75,36 @@ export default function SplashScreen({ onDone }: Props) {
   // ── Screen lifecycle ─────────────────────────────────────────────────────
   useEffect(() => {
     injectKeyframes();
+    const startMs = Date.now();
     const t1 = setTimeout(() => setPhase("hold"), 500);
+
+    // Hard cap: always dismiss at TOTAL_MS (5 s)
     const t2 = setTimeout(() => setPhase("out"),  TOTAL_MS);
     const t3 = setTimeout(() => onDone(),         TOTAL_MS + FADEOUT_MS);
-    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+
+    // Smart early dismiss: if app already loaded → dismiss at MIN_MS (1.5 s).
+    // If not yet loaded → dismiss at MIN_MS after the load event fires,
+    // but never beyond the hard cap above.
+    const earlyDismiss = () => {
+      const elapsed = Date.now() - startMs;
+      const delay   = Math.max(0, MIN_MS - elapsed);
+      setTimeout(() => {
+        clearTimeout(t2); clearTimeout(t3);
+        setPhase("out");
+        setTimeout(onDone, FADEOUT_MS);
+      }, delay);
+    };
+
+    if (document.readyState === "complete") {
+      earlyDismiss();
+    } else {
+      window.addEventListener("load", earlyDismiss, { once: true });
+    }
+
+    return () => {
+      clearTimeout(t1); clearTimeout(t2); clearTimeout(t3);
+      window.removeEventListener("load", earlyDismiss);
+    };
   }, [onDone]);
 
   // ── Non-linear progress ticker (50 ms) ───────────────────────────────────
