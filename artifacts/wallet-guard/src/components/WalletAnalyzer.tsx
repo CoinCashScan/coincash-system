@@ -2153,6 +2153,109 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                 );
               })()}
 
+              {/* ── Balance en Wallet ── */}
+              {!reportData.isInactiveAddress && (() => {
+                const trx  = reportData.balanceTRX  ?? 0;
+                const usdt = reportData.balanceUSDT ?? 0;
+                const isEmpty  = trx === 0 && usdt === 0;
+                const isHighValue = usdt >= 100_000;
+                return (
+                  <div className="rounded-3xl p-5 mb-4"
+                    style={{
+                      background: "linear-gradient(135deg,#141A24 0%,#0D1117 100%)",
+                      border: "1px solid rgba(255,255,255,0.08)",
+                      boxShadow: "0 6px 24px rgba(0,0,0,0.35)",
+                    }}>
+                    {/* Header */}
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2.5">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-xl"
+                          style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.10)" }}>
+                          <span style={{ fontSize: 18, lineHeight: 1 }}>💰</span>
+                        </div>
+                        <div>
+                          <p className="text-[9px] font-bold uppercase tracking-[0.18em] mb-0.5"
+                            style={{ color: "rgba(255,255,255,0.30)" }}>
+                            RESUMEN DE ACTIVIDAD
+                          </p>
+                          <p className="text-sm font-bold" style={{ color: "rgba(255,255,255,0.90)" }}>
+                            Balance en Wallet
+                          </p>
+                        </div>
+                      </div>
+                      {isHighValue && (
+                        <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-black"
+                          style={{
+                            background: "rgba(255,215,0,0.12)",
+                            border: "1px solid rgba(255,215,0,0.35)",
+                            color: "#FFD700",
+                            letterSpacing: "0.04em",
+                          }}>
+                          💼 Wallet de alto valor
+                        </span>
+                      )}
+                    </div>
+
+                    {isEmpty ? (
+                      /* Sin fondos */
+                      <div className="rounded-2xl px-4 py-4 flex items-center gap-3"
+                        style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}>
+                        <span style={{ fontSize: 20, flexShrink: 0 }}>⚪</span>
+                        <p className="text-sm font-semibold" style={{ color: "rgba(255,255,255,0.45)", margin: 0 }}>
+                          Sin fondos actuales
+                        </p>
+                      </div>
+                    ) : (
+                      /* Balances */
+                      <div className="grid grid-cols-2 gap-3">
+                        {/* TRX */}
+                        <div className="rounded-2xl px-4 py-3.5"
+                          style={{ background: "rgba(255,255,255,0.035)", border: "1px solid rgba(255,255,255,0.07)" }}>
+                          <p className="text-[9px] font-bold uppercase tracking-[0.16em] mb-2"
+                            style={{ color: "rgba(255,255,255,0.28)" }}>
+                            TRX
+                          </p>
+                          <p className="text-base font-black" style={{ color: "rgba(255,255,255,0.88)", margin: 0 }}>
+                            {trx < 0.01 && trx > 0
+                              ? "< 0.01"
+                              : trx.toLocaleString("es-ES", { maximumFractionDigits: 2 })
+                            }
+                          </p>
+                          <p className="text-[10px] mt-0.5" style={{ color: "rgba(255,255,255,0.30)", margin: 0 }}>
+                            TRX
+                          </p>
+                        </div>
+                        {/* USDT */}
+                        <div className="rounded-2xl px-4 py-3.5"
+                          style={{
+                            background: isHighValue
+                              ? "rgba(255,215,0,0.06)"
+                              : "rgba(255,255,255,0.035)",
+                            border: isHighValue
+                              ? "1px solid rgba(255,215,0,0.20)"
+                              : "1px solid rgba(255,255,255,0.07)",
+                          }}>
+                          <p className="text-[9px] font-bold uppercase tracking-[0.16em] mb-2"
+                            style={{ color: isHighValue ? "rgba(255,215,0,0.50)" : "rgba(255,255,255,0.28)" }}>
+                            USDT
+                          </p>
+                          <p className="text-base font-black"
+                            style={{ color: isHighValue ? "#FFD700" : "rgba(255,255,255,0.88)", margin: 0 }}>
+                            {usdt < 0.01 && usdt > 0
+                              ? "< 0.01"
+                              : `$${usdt.toLocaleString("es-ES", { maximumFractionDigits: 2 })}`
+                            }
+                          </p>
+                          <p className="text-[10px] mt-0.5" style={{ color: isHighValue ? "rgba(255,215,0,0.40)" : "rgba(255,255,255,0.30)", margin: 0 }}>
+                            TRC20
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
               {/* ── Full analysis report ── */}
               {!reportData.isInactiveAddress && <TronAnalysisReport reportData={reportData} />}
 
