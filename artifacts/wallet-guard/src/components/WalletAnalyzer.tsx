@@ -1748,17 +1748,21 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                 void displayScore;
 
                 // ── Score acumulativo — tipo Bitrace ─────────────────────────
-                const txPerDay = walletAgeDays > 0 ? (reportData.totalTx || 0) / walletAgeDays : 0;
+                const txCount  = (reportData.totalTx || 0);
+                const txPerDay = walletAgeDays > 0 ? txCount / walletAgeDays : 0;
                 const hasExchangeInteraction = (reportData.exchangeInteractions || 0) > 0;
+                const hasHighVolume   = totalVolume > 100_000;
+                const hasHighActivity = txCount > 50;
 
                 let riskScore = 0;
                 if (isBlacklisted)         riskScore += 100;
                 if (isFrozenWallet)        riskScore += 100;
                 if (hasRiskyInteractions)  riskScore += 40;
-                if (totalVolume > 50000)   riskScore += 10;
+                if (hasHighVolume)         riskScore += 15;
                 if (walletAgeDays < 7)     riskScore += 15;
                 if (!hasExchangeInteraction) riskScore += 15;
                 if (txPerDay > 10)         riskScore += 10;
+                if (hasHighActivity)       riskScore += 10;
                 if (riskScore > 100)       riskScore = 100;
                 if (riskScore === 0)       riskScore = 5;
 
@@ -1782,8 +1786,20 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                          : showBehaviorWarning                  ? "linear-gradient(135deg,#1A1200 0%,#0F0B00 100%)"
                          :                                        "linear-gradient(135deg,#001A0E 0%,#000F08 100%)";
 
+                // ── Causa principal de la alerta de comportamiento ────────────
+                const behaviorCause = hasHighVolume && hasHighActivity ? "volume+activity"
+                                    : hasHighVolume                    ? "volume"
+                                    : hasHighActivity                  ? "activity"
+                                    :                                    "generic";
+
                 const label = showRedAlert      ? "RIESGO CRÍTICO CONFIRMADO"
                             : isCriticoExtremo  ? "RIESGO CRÍTICO EXTREMO"
+                            : showBehaviorWarning && behaviorCause === "volume"
+                                                ? "Actividad de alto volumen detectada"
+                            : showBehaviorWarning && behaviorCause === "activity"
+                                                ? "Alta actividad de transacciones"
+                            : showBehaviorWarning && behaviorCause === "volume+activity"
+                                                ? "Volumen y actividad elevados"
                             : showBehaviorWarning ? "Actividad inusual detectada"
                             :                       "Sin riesgo en blockchain";
 
@@ -1795,8 +1811,14 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                   ? "RIESGO CRÍTICO CONFIRMADO. Esta wallet está en lista negra USDT o fue congelada en la red TRON. Evita cualquier interacción."
                   : isCriticoExtremo
                   ? "RIESGO CRÍTICO EXTREMO. Esta wallet interactuó con direcciones de alto riesgo y su puntuación acumulada supera el umbral crítico. Evita cualquier transacción."
+                  : showBehaviorWarning && behaviorCause === "volume"
+                  ? `Sin riesgo directo en blockchain, pero con actividad relevante detectada: volumen superior a $${(totalVolume / 1000).toFixed(0)}K USDT. Verifica el origen de los fondos.`
+                  : showBehaviorWarning && behaviorCause === "activity"
+                  ? `Sin riesgo directo en blockchain, pero con alta actividad detectada: ${txCount} transacciones registradas. Patrón inusual para una wallet estándar.`
+                  : showBehaviorWarning && behaviorCause === "volume+activity"
+                  ? `Sin riesgo directo en blockchain, pero con actividad relevante detectada: $${(totalVolume / 1000).toFixed(0)}K USDT en ${txCount} transacciones. Verifica el contexto antes de operar.`
                   : showBehaviorWarning
-                  ? "Se detectaron patrones como alto volumen o transferencias directas entre wallets. Esto no representa un riesgo confirmado en blockchain."
+                  ? "Se detectaron patrones como transferencias directas entre wallets sin pasar por exchanges. No representa un riesgo confirmado en blockchain."
                   : "Esta wallet no aparece en listas negras ni tiene restricciones activas en la red.";
 
                 const CheckRow = ({ ok, text, sub }: { ok: boolean; text: string; sub?: string }) => (
@@ -2293,14 +2315,19 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
         const _shareBlacklisted = reportData.isBlacklisted || false;
         const _shareFrozen = reportData.isFrozen || false;
 
+        const _shareTxCount = reportData.totalTx || 0;
+        const _shareHighVolume   = _shareVolume > 100_000;
+        const _shareHighActivity = _shareTxCount > 50;
+
         let sc = 0;
-        if (_shareBlacklisted)   sc += 100;
-        if (_shareFrozen)        sc += 100;
-        if (_shareHasRisky)      sc += 40;
-        if (_shareVolume > 50000) sc += 10;
-        if (_shareAgeDays < 7)   sc += 15;
-        if (!_shareHasExchange)  sc += 15;
-        if (_shareTxPerDay > 10) sc += 10;
+        if (_shareBlacklisted)    sc += 100;
+        if (_shareFrozen)         sc += 100;
+        if (_shareHasRisky)       sc += 40;
+        if (_shareHighVolume)     sc += 15;
+        if (_shareAgeDays < 7)    sc += 15;
+        if (!_shareHasExchange)   sc += 15;
+        if (_shareTxPerDay > 10)  sc += 10;
+        if (_shareHighActivity)   sc += 10;
         if (sc > 100) sc = 100;
         if (sc === 0) sc = 5;
 
