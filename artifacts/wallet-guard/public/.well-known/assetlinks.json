@@ -1,8 +1,12 @@
-[{
-  "relation": ["delegate_permission/common.handle_all_urls"],
-  "target": {
-    "namespace": "android_app",
-    "package_name": "com.hardsoftcomputer.coincash",
-    "sha256_cert_fingerprints": ["9C:7A:17:F8:83:92:60:0C:51:6D:64:38:08:EA:49:61:A6:73:B7:5C:44:0E:42:F8:0C:CB:14:F9:73:ED:E4:61"]
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.hardsoftcomputer.coincash",
+      "sha256_cert_fingerprints": [
+        "9C:7A:17:F8:83:92:60:0C:51:6D:64:38:08:EA:49:61:A6:73:B7:5C:44:0E:42:F8:0C:CB:14:F9:73:ED:E4:61"
+      ]
+    }
   }
-}]
+]
