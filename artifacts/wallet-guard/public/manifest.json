@@ -2,12 +2,15 @@
   "name": "CoinCash",
   "short_name": "CoinCash",
   "description": "Analizador de billeteras TRON — USDT TRC20 Risk Scanner",
+  "lang": "es",
+  "dir": "ltr",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#0B0F1A",
   "theme_color": "#00FFAA",
+  "categories": ["finance", "utilities"],
   "icons": [
     {
       "src": "/icon-192.png",
@@ -20,6 +23,21 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/install-screenshot.png",
+      "sizes": "1080x1920",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "CoinCash Scanner — análisis de wallet TRON"
     }
   ]
 }
