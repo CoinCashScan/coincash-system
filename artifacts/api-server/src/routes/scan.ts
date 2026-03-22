@@ -299,16 +299,28 @@ router.post("/scan", async (req, res) => {
       return res.json({ ok: true, plan: "free", scansToday, remaining, canScan: remaining > 0 });
 
     } else {
-      // PRO user — record but don't increment or block
+      // ── PRO plan: decrement scan budget, record, return ────────────────────
+      const newRemaining = await decrementPaidScans(ccId);
+      if (newRemaining !== null && newRemaining < 0) {
+        return res.status(429).json({
+          ok: false, error: "limit_reached", plan: "pro",
+          canScan: false, remaining: 0, paidScansRemaining: 0,
+          message: "Has agotado tus scans del plan Pro.",
+        });
+      }
       const geo = await geolocate(ip);
       recordScanFull({
         wallet, country: geo.country, countryCode: geo.countryCode,
         deviceId: deviceId || "", ccId: ccId || "",
         ipHash: groupId, planType: "pro",
       }).catch(() => {});
-
+      const remaining = newRemaining ?? (await getPaidScansRemaining(ccId)) ?? 0;
       const daysRemaining = ccId ? await getProDaysRemaining(ccId) : null;
-      return res.json({ ok: true, plan: "pro", scansToday: null, remaining: null, canScan: true, daysRemaining });
+      return res.json({
+        ok: true, plan: "pro", scansToday: null,
+        remaining, canScan: remaining > 0,
+        paidScansRemaining: remaining, daysRemaining,
+      });
     }
   } catch (err: any) {
     console.error("[scan] error:", err?.message);

@@ -463,7 +463,17 @@ async function recordScanUnified(ccId: string, wallet: string): Promise<Freemium
       return { plan: "free", scansToday: data.scansToday ?? 0, limit: FREE_SCAN_LIMIT, canScan: false, remaining: 0, blocked: "evasion", ipHash: data.ipHash, paidScansRemaining: null };
     }
     if (res.status === 429 || data.error === "limit_reached") {
-      return { plan: "free", scansToday: data.scansToday ?? 5, limit: FREE_SCAN_LIMIT, canScan: false, remaining: 0, blocked: "limit_reached", paidScansRemaining: null };
+      // Preserve the plan (basico/pro) so UI shows correct message and badge
+      const blockedPlan = (data.plan === "basico" || data.plan === "pro") ? data.plan : "free";
+      return {
+        plan:               blockedPlan,
+        scansToday:         data.scansToday ?? 5,
+        limit:              FREE_SCAN_LIMIT,
+        canScan:            false,
+        remaining:          0,
+        blocked:            "limit_reached",
+        paidScansRemaining: 0,
+      };
     }
     if (data.plan === "basico" || data.plan === "pro") {
       return {
