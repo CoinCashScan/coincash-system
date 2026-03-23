@@ -116,9 +116,65 @@ router.post("/reply-to-app", async (req, res) => {
   }
 });
 
+// ── OpenAI helper ─────────────────────────────────────────────────────────────
+
+async function askOpenAI(userText: string): Promise<string | null> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    console.warn("[openai] OPENAI_API_KEY no configurada");
+    return null;
+  }
+
+  try {
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: "Eres soporte de CoinCash. Responde claro, corto, amable y profesional. Ayudas con wallets, errores y pagos.",
+          },
+          {
+            role: "user",
+            content: userText,
+          },
+        ],
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.text();
+      console.error("[openai] API error:", err.slice(0, 200));
+      return null;
+    }
+
+    const data = await res.json();
+    return data.choices?.[0]?.message?.content ?? null;
+  } catch (err: any) {
+    console.error("[openai] fetch error:", err?.message);
+    return null;
+  }
+}
+
+/** Send a message back to a Telegram chat. */
+async function sendToTelegram(chatId: string | number, text: string): Promise<void> {
+  if (!BOT_TOKEN) return;
+  await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: chatId, text }),
+  }).catch((err) => console.error("[telegram] sendMessage error:", err?.message));
+}
+
 // ── POST /api/telegram-webhook ────────────────────────────────────────────────
 // Registered as the Telegram Bot webhook.
-// Receives updates, extracts admin replies, and routes them to the user's chat.
+// Receives updates, calls OpenAI for an AI reply sent back to Telegram,
+// and also routes the message to the correct user's in-app chat.
 
 router.post("/telegram-webhook", async (req, res) => {
   // Always acknowledge immediately so Telegram doesn't retry.
@@ -130,8 +186,8 @@ router.post("/telegram-webhook", async (req, res) => {
 
     if (!msg) return;
 
-    const text      = (msg.text ?? "").trim();
-    const fromBot   = msg.from?.is_bot === true;
+    const text           = (msg.text ?? "").trim();
+    const fromBot        = msg.from?.is_bot === true;
     const telegramChatId = msg.chat?.id;
 
     // 1. Ignore empty messages or messages sent by the bot itself
@@ -140,12 +196,23 @@ router.post("/telegram-webhook", async (req, res) => {
     // 2. Ignore outgoing system notifications (messages the app sent TO Telegram)
     if (text.startsWith("🟢")) return;
 
-    // 3. Determine the target user CC-ID.
+    // ── OpenAI auto-reply to Telegram ─────────────────────────────────────────
+    // Call OpenAI and send the AI-generated response back to the same Telegram chat.
+    // Runs concurrently with the in-app delivery below.
+    const aiReplyPromise = askOpenAI(text).then(async (respuesta) => {
+      if (respuesta && telegramChatId) {
+        await sendToTelegram(telegramChatId, respuesta);
+        console.log(`[openai] ✅ Respuesta enviada a Telegram (chat ${telegramChatId}): "${respuesta.slice(0, 80)}"`);
+      }
+    });
+
+    // ── In-app routing ────────────────────────────────────────────────────────
+    // Determine the target user CC-ID and deliver the message to the in-app chat.
     //
     //    Strategy A: Admin replies to a notification using Telegram's reply feature
     //                → extract CC-ID from the original notification text.
     //
-    //    Strategy B: Admin writes "CC-XXXXXX: mensaje" or "CC-XXXXXX mensaje".
+    //    Strategy B: Admin writes "CC-XXXXXX: mensaje" or includes CC-ID anywhere.
     //
     //    Strategy C: Fallback to the last user that sent a message from this
     //                Telegram chat (so admin can reply normally without CC-ID).
@@ -162,13 +229,11 @@ router.post("/telegram-webhook", async (req, res) => {
 
     // Strategy B — CC-ID in message text
     if (!userId) {
-      // Format: "CC-123456: mensaje" at start (colon separator)
       const colonMatch = text.match(/^(CC-\d{6})\s*:\s*(.+)$/si);
       if (colonMatch) {
         userId    = colonMatch[1].toUpperCase();
         replyText = colonMatch[2].trim();
       }
-      // Format: "CC-123456 mensaje" at start (space only)
       if (!userId) {
         const spaceMatch = text.match(/^(CC-\d{6})\s+(.+)$/si);
         if (spaceMatch) {
@@ -176,14 +241,12 @@ router.post("/telegram-webhook", async (req, res) => {
           replyText = spaceMatch[2].trim();
         }
       }
-      // Format: CC-ID appears anywhere in the text (e.g. "mensaje para CC-123456")
-      // Strip it from the message and use the remaining text as the reply.
       if (!userId) {
         const anyMatch = text.match(/\b(CC-\d{6})\b/i);
         if (anyMatch) {
           userId    = anyMatch[1].toUpperCase();
           replyText = text.replace(anyMatch[0], "").replace(/\s{2,}/g, " ").trim();
-          if (!replyText) replyText = text; // fallback: send full text if stripping leaves nothing
+          if (!replyText) replyText = text;
         }
       }
       if (userId) console.log(`[telegram-webhook] Strategy B → userId: ${userId}`);
@@ -195,19 +258,17 @@ router.post("/telegram-webhook", async (req, res) => {
       if (userId) console.log(`[telegram-webhook] Strategy C (last active) → userId: ${userId}`);
     }
 
-    if (!userId || !replyText) {
-      console.warn(`[telegram-webhook] No se pudo determinar userId. text="${text.slice(0, 100)}" replyTo="${replyToText.slice(0, 100)}"`);
-      return;
+    if (userId && replyText) {
+      const io = req.app.get("io");
+      await deliverSupportReply(io, userId, replyText);
+      if (telegramChatId) lastActiveUser.set(telegramChatId, userId);
+      console.log(`[telegram-webhook] ✅ Respuesta in-app → ${userId}: "${replyText.slice(0, 80)}"`);
+    } else {
+      console.warn(`[telegram-webhook] No se pudo determinar userId para entrega in-app. text="${text.slice(0, 100)}"`);
     }
 
-    // 4. Deliver the reply to the in-app chat
-    const io = req.app.get("io");
-    await deliverSupportReply(io, userId, replyText);
-
-    // Update last-active user for this Telegram chat
-    if (telegramChatId) lastActiveUser.set(telegramChatId, userId);
-
-    console.log(`[telegram-webhook] ✅ Respuesta entregada → ${userId}: "${replyText.slice(0, 80)}"`);
+    // Wait for OpenAI reply to finish (non-blocking on error)
+    await aiReplyPromise.catch(() => {});
 
   } catch (err: any) {
     console.error("[telegram-webhook] Error:", err?.message);
