@@ -8,7 +8,7 @@ import {
   ensureChatUsersTable, ensureChatContactsTable,
   ensureDmTables, ensureVisitsTable, ensureAccountPinsTable,
   ensureScanTable, ensureFreemiumTable, ensureDeviceTable,
-  ensureFraudSystem, decayFraudScores,
+  ensureFraudSystem, ensureFpScanLimitsTable, decayFraudScores,
   deleteOldChatMessages, expireProUsers,
 } from "./lib/db";
 
@@ -56,6 +56,7 @@ if (existsSync(walletGuardDist)) {
     await ensureFreemiumTable();
     await ensureDeviceTable();
     await ensureFraudSystem();
+    await ensureFpScanLimitsTable();
 
     // ── Chat message cleanup (every hour) ────────────────────────────────────
     const runCleanup = async () => {

@@ -82,6 +82,53 @@ export async function resolveIdentity(): Promise<string> {
 }
 
 /**
+ * Generate a stable device fingerprint hash.
+ * Based on: User-Agent + screen resolution + timezone.
+ * Result is 16 hex chars (truncated SHA-256) and cached in localStorage.
+ *
+ * - Does NOT depend on localStorage content → survives clearing
+ * - Changing browser ≠ same fingerprint (UA differs)
+ * - Same browser on same device → same fingerprint across sessions
+ */
+const LS_FP_HASH = "cc-fp-hash";
+
+export async function getDeviceHash(): Promise<string> {
+  try {
+    // Return cached fingerprint if already computed this session
+    const cached = sessionStorage.getItem(LS_FP_HASH);
+    if (cached) return cached;
+
+    const raw = [
+      navigator.userAgent,
+      `${screen.width}x${screen.height}`,
+      Intl.DateTimeFormat().resolvedOptions().timeZone,
+      String(navigator.hardwareConcurrency ?? ""),
+      navigator.platform ?? "",
+    ].join("|");
+
+    let hash = "";
+    if (crypto?.subtle) {
+      const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(raw));
+      hash = Array.from(new Uint8Array(buf))
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("")
+        .slice(0, 32);
+    } else {
+      let h = 0;
+      for (let i = 0; i < raw.length; i++) {
+        h = (Math.imul(31, h) + raw.charCodeAt(i)) | 0;
+      }
+      hash = Math.abs(h).toString(16).padStart(8, "0");
+    }
+
+    try { sessionStorage.setItem(LS_FP_HASH, hash); } catch {}
+    return hash;
+  } catch {
+    return "";
+  }
+}
+
+/**
  * Store a sync code that will be claimed on the next page load.
  * After calling this, reload the page so resolveIdentity picks it up.
  */

@@ -39,6 +39,7 @@ import {
   getPendingUpgrades,
   getFreemiumStats,
   identifyDevice,
+  getFpScanCount,
   getSyncCodeForCC,
   getDeviceBySyncCode,
   recordScanFull,
@@ -133,28 +134,32 @@ router.get("/freemium/status", async (req, res) => {
 
   // group_id = SHA256(IP) — all devices sharing an IP share this group pool
   // device_id = UUID from localStorage — fallback when IP is unavailable
+  // fp = device fingerprint hash — strongest anti-evasion signal
   const groupId  = getIpHash(req);
   const deviceId = ((req.query.deviceId ?? "") as string).trim();
+  const fp       = ((req.query.fp ?? "") as string).trim();
 
   try {
     // Register user row on first visit (fire-and-forget, non-blocking)
     ensureFreemiumUser(ccId).catch(() => {});
 
-    const [plan, ccScans, groupScans, deviceScans] = await Promise.all([
+    const [plan, ccScans, groupScans, deviceScans, fpScans] = await Promise.all([
       getUserPlan(ccId),
       getScanCountToday(ccId),
-      getGroupScanCount(groupId),                     // primary: shared IP pool
-      deviceId ? getDeviceScanCount(deviceId) : Promise.resolve(0), // fallback: solo device
+      getGroupScanCount(groupId),
+      deviceId ? getDeviceScanCount(deviceId) : Promise.resolve(0),
+      fp       ? getFpScanCount(fp)           : Promise.resolve(0),
     ]);
 
     const isPaid = plan === "basico" || plan === "pro";
 
-    // If we have a group (IP resolved) → group total is the limit.
-    // If no IP → fall back to individual device count.
-    // CC-ID count is always checked as the floor.
-    const scansToday    = groupId
-      ? Math.max(ccScans, groupScans)
-      : Math.max(ccScans, deviceScans);
+    // Fingerprint count is the strongest signal (survives browser/IP changes).
+    // Group (IP pool) is secondary. CC-ID is the floor.
+    const scansToday = Math.max(
+      ccScans,
+      groupId ? groupScans : deviceScans,
+      fpScans,
+    );
 
     // Paid plans: canScan depends on remaining scan budget, not daily limit
     let canScan: boolean;

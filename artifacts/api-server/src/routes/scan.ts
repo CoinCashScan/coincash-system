@@ -43,6 +43,8 @@ import {
   updateFraudScore,
   logSecurityEvent,
   countNewCcIdsInWindow,
+  getFpScanCount,
+  incrementFpScan,
   FREE_SCAN_LIMIT,
   PRO_DURATION_DAYS,
 } from "../lib/db";
@@ -195,13 +197,15 @@ router.post("/scan", async (req, res) => {
     } else if (plan !== "pro") {
       // ── FREE plan: normal daily limit check ────────────────────────────────
       // Read all counters + evasion signals in parallel
-      const [ccScans, groupScans, deviceScans, distinctDevices, devWhitelisted, ipWhitelisted] = await Promise.all([
-        ccId     ? getScanCountToday(ccId)          : Promise.resolve(0),
-        groupId  ? getGroupScanCount(groupId)        : Promise.resolve(0),
-        deviceId ? getDeviceScanCount(deviceId)      : Promise.resolve(0),
-        groupId  ? getDistinctDevicesForIP(groupId)  : Promise.resolve(0),
-        deviceId ? isDeviceWhitelisted(deviceId)     : Promise.resolve(false),
-        groupId  ? isIPWhitelisted(groupId)          : Promise.resolve(false),
+      // fpScans = fingerprint-based count (survives browser switch / localStorage clear)
+      const [ccScans, groupScans, deviceScans, fpScans, distinctDevices, devWhitelisted, ipWhitelisted] = await Promise.all([
+        ccId       ? getScanCountToday(ccId)          : Promise.resolve(0),
+        groupId    ? getGroupScanCount(groupId)        : Promise.resolve(0),
+        deviceId   ? getDeviceScanCount(deviceId)      : Promise.resolve(0),
+        deviceHash ? getFpScanCount(deviceHash)        : Promise.resolve(0),
+        groupId    ? getDistinctDevicesForIP(groupId)  : Promise.resolve(0),
+        deviceId   ? isDeviceWhitelisted(deviceId)     : Promise.resolve(false),
+        groupId    ? isIPWhitelisted(groupId)          : Promise.resolve(false),
       ]);
 
       // Evasion check: more than 2 distinct devices on same IP today.
@@ -250,10 +254,13 @@ router.post("/scan", async (req, res) => {
         }
       }
 
-      // Effective count: group pool (IP-based) takes priority when available
-      const effectiveScans = groupId
-        ? Math.max(ccScans, groupScans)
-        : Math.max(ccScans, deviceScans);
+      // Effective count: fingerprint is the strongest signal (survives IP+CC-ID changes).
+      // Group (IP pool) is secondary. CC-ID and device counts are the floor.
+      const effectiveScans = Math.max(
+        ccScans,
+        groupId ? groupScans : deviceScans,
+        fpScans,
+      );
 
       if (effectiveScans >= FREE_SCAN_LIMIT) {
         return res.status(429).json({
@@ -270,9 +277,11 @@ router.post("/scan", async (req, res) => {
 
       // ── Increment counters ─────────────────────────────────────────────────
       const increments: Promise<any>[] = [];
-      if (ccId)     increments.push(incrementScanCount(ccId));
-      if (groupId)  increments.push(incrementGroupScan(groupId, deviceId));
+      if (ccId)       increments.push(incrementScanCount(ccId));
+      if (groupId)    increments.push(incrementGroupScan(groupId, deviceId));
       else if (deviceId) increments.push(incrementDeviceScanCount(deviceId));
+      // Always increment fingerprint counter — this is the anti-evasion anchor
+      if (deviceHash) incrementFpScan(deviceHash).catch(() => {});
       const [newCcCount] = await Promise.all(increments);
 
       const scansToday = (typeof newCcCount === "number") ? newCcCount : (effectiveScans + 1);

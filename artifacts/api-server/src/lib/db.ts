@@ -2183,7 +2183,63 @@ export async function countNewCcIdsInWindow(windowMinutes: number): Promise<numb
   return parseInt(res.rows[0]?.cnt as any, 10) || 0;
 }
 
-/** Fetch recent security log entries (admin). */
+// ── Fingerprint-based daily scan limits ──────────────────────────────────────
+
+/**
+ * Create the fp_scan_limits table.
+ * Tracks per-fingerprint daily scan counts independently of CC-ID or IP.
+ * Safe to re-run.
+ */
+export async function ensureFpScanLimitsTable(): Promise<void> {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fp_scan_limits (
+      fp_hash    TEXT NOT NULL,
+      scan_date  DATE NOT NULL DEFAULT CURRENT_DATE,
+      scan_count INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (fp_hash, scan_date)
+    )
+  `);
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS fp_scan_limits_date_idx ON fp_scan_limits (scan_date)`,
+  );
+  console.log("[db] fp_scan_limits table ready");
+}
+
+/** Return today's scan count for a device fingerprint hash. */
+export async function getFpScanCount(fpHash: string): Promise<number> {
+  if (!fpHash) return 0;
+  try {
+    const res = await pool.query<{ scan_count: number }>(
+      `SELECT scan_count FROM fp_scan_limits WHERE fp_hash = $1 AND scan_date = CURRENT_DATE`,
+      [fpHash],
+    );
+    return res.rows[0]?.scan_count ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Atomically increment the fingerprint scan counter for today.
+ * Returns the updated count.
+ */
+export async function incrementFpScan(fpHash: string): Promise<number> {
+  if (!fpHash) return 0;
+  try {
+    const res = await pool.query<{ scan_count: number }>(
+      `INSERT INTO fp_scan_limits (fp_hash, scan_date, scan_count)
+       VALUES ($1, CURRENT_DATE, 1)
+       ON CONFLICT (fp_hash, scan_date) DO UPDATE
+         SET scan_count = fp_scan_limits.scan_count + 1
+       RETURNING scan_count`,
+      [fpHash],
+    );
+    return res.rows[0]?.scan_count ?? 1;
+  } catch {
+    return 0;
+  }
+}
+
 export async function getSecurityLog(ccId?: string, limit = 50): Promise<{
   id: number; ccId: string; ip: string; deviceHash: string;
   action: string; details: any; loggedAt: string;

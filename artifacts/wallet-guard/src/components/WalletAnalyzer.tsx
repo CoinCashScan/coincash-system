@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import html2canvas from "html2canvas";
 import QRCode from "qrcode";
 import { API_BASE } from "@/lib/apiConfig";
-import { getDeviceId } from "@/lib/identity";
+import { getDeviceId, getDeviceHash } from "@/lib/identity";
 import { ScanSearch, Loader2, QrCode, X, CheckCircle2, AlertTriangle, ShieldAlert,
          Copy, Check, CheckCheck, Activity, Zap, Hash, Shield } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -427,28 +427,6 @@ async function fetchFreemiumStatus(ccId: string): Promise<FreemiumStatus> {
 }
 
 // Unified scan call: validates limit backend-side + records tracking + returns updated status.
-/** Generate a stable browser fingerprint hash for fraud detection. */
-async function getDeviceHash(): Promise<string> {
-  try {
-    const fp = [
-      navigator.userAgent,
-      navigator.language,
-      `${screen.width}x${screen.height}`,
-      Intl.DateTimeFormat().resolvedOptions().timeZone,
-      String(navigator.hardwareConcurrency ?? ""),
-    ].join("|");
-    if (crypto?.subtle) {
-      const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(fp));
-      return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 16);
-    }
-    let h = 0;
-    for (let i = 0; i < fp.length; i++) { h = (Math.imul(31, h) + fp.charCodeAt(i)) | 0; }
-    return Math.abs(h).toString(16).padStart(8, "0");
-  } catch {
-    return "";
-  }
-}
-
 async function recordScanUnified(ccId: string, wallet: string): Promise<FreemiumStatus> {
   try {
     const deviceId   = getDeviceId();

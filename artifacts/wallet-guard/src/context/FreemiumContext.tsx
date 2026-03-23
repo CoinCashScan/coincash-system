@@ -4,7 +4,7 @@ import {
 } from "react";
 import { io, type Socket } from "socket.io-client";
 import { SOCKET_URL, SOCKET_PATH, API_BASE } from "@/lib/apiConfig";
-import { resolveIdentity, getDeviceId } from "@/lib/identity";
+import { resolveIdentity, getDeviceId, getDeviceHash } from "@/lib/identity";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -59,9 +59,14 @@ const FreemiumContext = createContext<FreemiumContextValue | null>(null);
 
 async function fetchFreemiumStatus(ccId: string): Promise<FreemiumStatus> {
   try {
-    const deviceId = getDeviceId();
-    const params   = new URLSearchParams({ ccId, ...(deviceId ? { deviceId } : {}) });
-    const res      = await fetch(`${API_BASE}/freemium/status?${params}`);
+    const deviceId   = getDeviceId();
+    const deviceHash = await getDeviceHash();
+    const params     = new URLSearchParams({
+      ccId,
+      ...(deviceId   ? { deviceId }   : {}),
+      ...(deviceHash ? { fp: deviceHash } : {}),
+    });
+    const res = await fetch(`${API_BASE}/freemium/status?${params}`);
     if (!res.ok) return DEFAULT_FREEMIUM;
     const data = await res.json();
     return { ...DEFAULT_FREEMIUM, ...data };
