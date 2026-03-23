@@ -16,6 +16,7 @@ import authRouter from "./auth";
 import scanRouter from "./scan";
 import tronRouter from "./tron";
 import freemiumRouter from "./freemium";
+import telegramRouter from "./telegram";
 
 const router: IRouter = Router();
 
@@ -36,5 +37,6 @@ router.use(authRouter);
 router.use(scanRouter);
 router.use(tronRouter);
 router.use(freemiumRouter);
+router.use(telegramRouter);
 
 export default router;
