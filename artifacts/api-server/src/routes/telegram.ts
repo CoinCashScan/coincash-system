@@ -236,12 +236,81 @@ router.post("/telegram-webhook", async (req, res) => {
 
     if (!msg) return;
 
-    const text           = (msg.text ?? "").trim();
     const fromBot        = msg.from?.is_bot === true;
     const telegramChatId = msg.chat?.id;
 
-    // 1. Ignore empty messages or messages sent by the bot itself
-    if (!text || fromBot) return;
+    if (fromBot) return;
+
+    // ── Image analysis (vision) ───────────────────────────────────────────────
+    // If the message contains a photo, analyze it with OpenAI vision and reply.
+    if (msg.photo && Array.isArray(msg.photo) && msg.photo.length > 0) {
+      const fileId = msg.photo[msg.photo.length - 1].file_id;
+
+      try {
+        // Get the file path from Telegram
+        const fileRes  = await fetch(
+          `https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${fileId}`,
+        );
+        const fileData = await fileRes.json();
+        const filePath = fileData?.result?.file_path;
+
+        if (!filePath) {
+          await sendToTelegram(telegramChatId, "No pude obtener la imagen. Intenta de nuevo.");
+          return;
+        }
+
+        const imageUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
+        const apiKey   = process.env.OPENAI_API_KEY;
+
+        if (!apiKey) {
+          console.warn("[openai-vision] OPENAI_API_KEY no configurada");
+          return;
+        }
+
+        const visionRes = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${apiKey}`,
+            "Content-Type":  "application/json",
+          },
+          body: JSON.stringify({
+            model: "gpt-4o-mini",
+            messages: [
+              {
+                role: "system",
+                content: "Eres experto en análisis de wallets cripto (TRON, USDT, riesgo, blacklist, transacciones). Responde claro y profesional.",
+              },
+              {
+                role: "user",
+                content: [
+                  { type: "text",      text: "Analiza esta imagen y dime si la wallet tiene riesgo y por qué:" },
+                  { type: "image_url", image_url: { url: imageUrl } },
+                ],
+              },
+            ],
+          }),
+        });
+
+        const visionData = await visionRes.json();
+        const reply      = visionData.choices?.[0]?.message?.content;
+
+        if (reply) {
+          await sendToTelegram(telegramChatId, reply);
+          console.log(`[openai-vision] ✅ Análisis de imagen enviado a chat ${telegramChatId}`);
+        } else {
+          console.error("[openai-vision] Sin respuesta:", JSON.stringify(visionData).slice(0, 200));
+        }
+      } catch (err: any) {
+        console.error("[openai-vision] Error:", err?.message);
+      }
+
+      return;
+    }
+
+    const text = (msg.text ?? "").trim();
+
+    // 1. Ignore empty text messages
+    if (!text) return;
 
     // 2. Ignore outgoing system notifications (messages the app sent TO Telegram)
     if (text.startsWith("🟢")) return;
