@@ -330,26 +330,44 @@ router.post("/telegram-webhook", async (req, res) => {
     if (msg.photo && Array.isArray(msg.photo) && msg.photo.length > 0) {
       const fileId = msg.photo[msg.photo.length - 1].file_id;
 
+      // Step 1: Obtain the Telegram file URL
+      let imageUrl: string | null = null;
       try {
         const fileRes  = await fetch(
           `https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${fileId}`,
         );
         const fileData = await fileRes.json();
         const filePath = fileData?.result?.file_path;
-
-        if (!filePath) {
-          await sendToTelegram(telegramChatId, "No pude obtener la imagen. Intenta de nuevo.");
-          return;
+        if (filePath) {
+          imageUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
         }
+      } catch (err: any) {
+        console.error("[openai-vision] Error obteniendo URL de imagen:", err?.message);
+      }
 
-        const imageUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
-        const apiKey   = process.env.OPENAI_API_KEY;
+      if (!imageUrl) {
+        await sendToTelegram(
+          telegramChatId,
+          "No pude obtener la imagen. Por favor intenta enviarla de nuevo.",
+        );
+        return;
+      }
 
-        if (!apiKey) {
-          console.warn("[openai-vision] OPENAI_API_KEY no configurada");
-          return;
-        }
+      const apiKey = process.env.OPENAI_API_KEY;
+      if (!apiKey) {
+        console.warn("[openai-vision] OPENAI_API_KEY no configurada");
+        await sendToTelegram(
+          telegramChatId,
+          "Servicio de análisis de imágenes no disponible en este momento. Por favor escríbenos tu consulta.",
+        );
+        return;
+      }
 
+      // Step 2: Send to OpenAI vision
+      let visionReply: string | null = null;
+      let visionError = false;
+
+      try {
         const visionRes = await fetch("https://api.openai.com/v1/chat/completions", {
           method: "POST",
           headers: {
@@ -371,6 +389,10 @@ REGLAS LEGALES:
 - Siempre proteger legalmente a CoinCash.
 
 ANÁLISIS DE IMAGEN:
+
+Si la imagen NO muestra claramente una wallet cripto o no puedes extraer información relevante:
+→ Responde EXACTAMENTE: "IMAGEN_NO_CLARA"
+(Solo esta palabra, sin más texto)
 
 Si la wallet NO está congelada NI en blacklist:
 → Indica que hay indicadores de riesgo pero la wallet no está congelada ni en listas negras. Aclara que CoinCash es únicamente informativo. No ofrecer el servicio de $100.
@@ -399,17 +421,32 @@ Responde claro, profesional y directo.`,
           }),
         });
 
-        const visionData = await visionRes.json();
-        const reply      = visionData.choices?.[0]?.message?.content;
-
-        if (reply) {
-          await sendToTelegram(telegramChatId, reply);
-          console.log(`[openai-vision] ✅ Análisis de imagen enviado a chat ${telegramChatId}`);
+        if (!visionRes.ok) {
+          const errText = await visionRes.text();
+          console.error("[openai-vision] API error:", errText.slice(0, 200));
+          visionError = true;
         } else {
-          console.error("[openai-vision] Sin respuesta:", JSON.stringify(visionData).slice(0, 200));
+          const visionData = await visionRes.json();
+          visionReply = visionData.choices?.[0]?.message?.content ?? null;
         }
       } catch (err: any) {
-        console.error("[openai-vision] Error:", err?.message);
+        console.error("[openai-vision] Fetch error:", err?.message);
+        visionError = true;
+      }
+
+      // Step 3: Respond based on result
+      if (!visionError && visionReply && visionReply.trim() !== "IMAGEN_NO_CLARA") {
+        // OpenAI analyzed the image successfully
+        await sendToTelegram(telegramChatId, visionReply);
+        console.log(`[openai-vision] ✅ Análisis enviado a chat ${telegramChatId}`);
+      } else {
+        // OpenAI failed or image was unclear → ask user to confirm
+        const fallback = visionError
+          ? "Ocurrió un error al analizar la imagen. Por favor intenta nuevamente o escríbenos tu consulta."
+          : "No pude identificar claramente la información de la wallet en la imagen.\n\n¿Podrías confirmarme:\n1. ¿La dirección aparece como congelada o en blacklist?\n2. ¿Qué plataforma o app muestra el error?\n\nCon esa información puedo ayudarte mejor.";
+
+        await sendToTelegram(telegramChatId, fallback);
+        console.log(`[openai-vision] ⚠️  Imagen no clara o error — fallback enviado a chat ${telegramChatId}`);
       }
 
       return;
