@@ -62,6 +62,7 @@ router.post("/send-telegram", async (req, res) => {
   }
 
   try {
+    // 1. Forward notification to admin's Telegram chat
     const url  = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
     const resp = await fetch(url, {
       method:  "POST",
@@ -75,12 +76,32 @@ router.post("/send-telegram", async (req, res) => {
       return res.status(502).json({ success: false, error: "Telegram API error" });
     }
 
-    // Track which user triggered this notification so the admin can reply
-    // freely without needing to use Telegram's Reply feature.
+    // Track which user triggered this notification
     const notifUserId = extractCcId(message);
     if (notifUserId && CHAT_ID) {
       lastActiveUser.set(parseInt(CHAT_ID, 10) || CHAT_ID, notifUserId);
       console.log(`[telegram] Último usuario activo actualizado → ${notifUserId}`);
+    }
+
+    // 2. Extract the user's actual message text from the notification
+    //    Notification format: "🟢 Nuevo mensaje CoinCash\n\n👤 Usuario: CC-XXXXXX\n💬 <texto>"
+    const userTextMatch = message.match(/💬\s*(.+)$/s);
+    const userText      = userTextMatch ? userTextMatch[1].trim() : null;
+
+    // 3. Call OpenAI and auto-respond to the user — fire and forget
+    if (notifUserId && userText) {
+      askOpenAI(userText).then(async (aiReply) => {
+        if (!aiReply) return;
+
+        // Send AI reply to admin's Telegram so they can see it
+        await sendToTelegram(CHAT_ID, `🤖 IA → ${notifUserId}:\n${aiReply}`);
+
+        // Also deliver the AI reply directly to the user's in-app chat
+        const io = req.app.get("io");
+        await deliverSupportReply(io, notifUserId, aiReply);
+
+        console.log(`[openai] ✅ Respuesta automática → ${notifUserId}: "${aiReply.slice(0, 80)}"`);
+      }).catch((err) => console.error("[openai] auto-reply error:", err?.message));
     }
 
     return res.json({ success: true });
