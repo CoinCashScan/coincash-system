@@ -135,8 +135,16 @@ export default function ChatPage() {
 
   function handleSend() {
     if (!input.trim() || !myCcId) return;
-    sendMessage(SUPPORT_ID, input.trim());
+    const text = input.trim();
+    sendMessage(SUPPORT_ID, text);
     setInput("");
+    fetch(`${API}/send-telegram`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({
+        message: `🟢 Nuevo mensaje CoinCash\n\n👤 Usuario: ${myCcId}\n💬 ${text}`,
+      }),
+    }).catch(() => {});
   }
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
