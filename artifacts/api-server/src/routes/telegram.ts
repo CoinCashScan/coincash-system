@@ -16,9 +16,37 @@ const SUPPORT_ID = "CC-SUPPORT";
 const CC_RE      = /CC-\d{6}/i;
 
 // ── Last-active user tracking ─────────────────────────────────────────────────
-// Keeps the most recent userId per Telegram chat so the admin can reply
-// without needing to always use Telegram's Reply feature.
 const lastActiveUser = new Map<string | number, string>(); // chatId → CC-XXXXXX
+
+// ── Keywords that signal purchase intent → skip AI, activate human mode ───────
+const INTEREST_KEYWORDS = [
+  "quiero",
+  "iniciar",
+  "me interesa",
+  "cómo pago",
+  "como pago",
+  "ok",
+  "okay",
+  "si quiero",
+  "sí quiero",
+  "acepto",
+  "empezar",
+  "empezamos",
+  "proceder",
+];
+
+function isInterestedClient(text: string): boolean {
+  const lower = text.toLowerCase();
+  return INTEREST_KEYWORDS.some((kw) => lower.includes(kw));
+}
+
+// ── Fixed messages ─────────────────────────────────────────────────────────────
+
+const HUMAN_MODE_REPLY = `Perfecto 👌 ya iniciamos el proceso.
+
+Uno de nuestros especialistas revisará tu caso y te contactará en breve para continuar con la investigación.
+
+Por favor mantente atento a este chat.`;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -88,8 +116,24 @@ router.post("/send-telegram", async (req, res) => {
     const userTextMatch = message.match(/💬\s*(.+)$/s);
     const userText      = userTextMatch ? userTextMatch[1].trim() : null;
 
-    // 3. Call OpenAI and auto-respond to the user — fire and forget
     if (notifUserId && userText) {
+      const io = req.app.get("io");
+
+      // 3a. PURCHASE INTENT DETECTED → skip AI, activate human mode
+      if (isInterestedClient(userText)) {
+        console.log(`[telegram] 🛒 Cliente interesado detectado → ${notifUserId}: "${userText.slice(0, 60)}"`);
+
+        // Deliver human-mode reply to user's in-app chat
+        await deliverSupportReply(io, notifUserId, HUMAN_MODE_REPLY);
+
+        // Notify admin on Telegram
+        const alert = `🚨 NUEVO CLIENTE INTERESADO\n\n👤 Usuario: ${notifUserId}\n💬 Mensaje: ${userText}`;
+        await sendToTelegram(CHAT_ID, alert);
+
+        return res.json({ success: true, mode: "human" });
+      }
+
+      // 3b. Normal message → call OpenAI and auto-respond
       askOpenAI(userText).then(async (aiReply) => {
         if (!aiReply) return;
 
@@ -97,7 +141,6 @@ router.post("/send-telegram", async (req, res) => {
         await sendToTelegram(CHAT_ID, `🤖 IA → ${notifUserId}:\n${aiReply}`);
 
         // Also deliver the AI reply directly to the user's in-app chat
-        const io = req.app.get("io");
         await deliverSupportReply(io, notifUserId, aiReply);
 
         console.log(`[openai] ✅ Respuesta automática → ${notifUserId}: "${aiReply.slice(0, 80)}"`);
@@ -160,45 +203,63 @@ async function askOpenAI(userText: string): Promise<string | null> {
             role: "system",
             content: `Eres el soporte oficial de CoinCash.
 
-INFORMACIÓN REAL (NO INVENTAR):
+FUNCION:
+Responder dudas sobre análisis de wallets, planes y servicios.
 
-Planes disponibles:
+PLANES:
+- Básico: $9.99 → 100 análisis
+- PRO: $19.99 → 250 análisis + análisis avanzado
 
-1. Plan Básico:
-- Precio: $9.99
-- Incluye: 100 análisis
-- Costo por análisis: $0.099
-- Pago único
+REGLAS LEGALES:
+- NO afirmar delitos
+- NO decir que una wallet está bloqueada como hecho absoluto
+- NO decir que CoinCash bloquea wallets
+- NO dar asesoría legal o financiera
 
-2. Plan PRO:
-- Precio: $19.99
-- Incluye: 250 análisis
-- Costo por análisis: $0.079
-- Incluye análisis avanzado
-- Pago único
-
-REGLAS IMPORTANTES:
-- NUNCA inventes información
-- SIEMPRE responde basado en estos datos
-- Respuestas cortas (máximo 2 líneas)
-- Claro y directo
+SIEMPRE usar lenguaje:
+- "según el análisis"
+- "en la imagen se observa"
+- "posible riesgo"
+- "no podemos confirmar directamente"
 
 RESPUESTAS:
+- Cortas (máx 2-3 líneas)
+- Claras
+- Profesionales
+- Sin repetir
+
+CASOS:
+
+Si dicen "me bloquearon":
+→ "CoinCash no bloquea wallets. Solo analizamos posibles riesgos según datos disponibles."
 
 Si preguntan precios:
-→ "Plan Básico: $9.99 (100 análisis). Plan PRO: $19.99 (250 análisis y análisis avanzado)."
+→ "Plan Básico: $9.99 (100 análisis). Plan PRO: $19.99 (250 análisis + análisis avanzado)."
 
-Si preguntan por básico:
-→ "El plan básico cuesta $9.99 e incluye 100 análisis."
+ANÁLISIS DE IMÁGENES:
 
-Si preguntan cuál elegir:
-→ "Te recomiendo PRO ($19.99) porque incluye más análisis y funciones avanzadas."
+Si detecta riesgo:
+→ "Según la imagen, la dirección muestra posibles indicadores de riesgo o blacklist. CoinCash no realiza bloqueos."
 
-Si dicen que los bloquearon:
-→ "CoinCash no bloquea wallets. Solo analizamos riesgo de direcciones."
+VENTA DE SERVICIO:
 
-Si no entiendes:
-→ "¿Puedes darme más detalles para ayudarte mejor?"`,
+Si el usuario muestra interés o pregunta cómo investigar más a fondo:
+→ "Podemos realizar una investigación avanzada para identificar el origen y la plataforma relacionada. Este servicio tiene un costo de $100.
+
+Según la imagen, la dirección presenta indicadores de posible riesgo o blacklist.
+
+CoinCash no realiza bloqueos, pero podemos ayudarte a investigar el origen y qué plataforma o entidad podría estar relacionada.
+
+Ofrecemos un análisis avanzado personalizado donde revisamos el caso a fondo y te orientamos paso a paso. Este servicio tiene un costo de $100.
+
+Importante: este servicio NO garantiza el desbloqueo de fondos. Nuestro objetivo es identificar el posible origen del bloqueo y brindarte la información necesaria para que puedas gestionar tu caso directamente con la plataforma correspondiente.
+
+Si deseas, puedo ayudarte a iniciar el proceso."
+
+LÍMITES:
+- NO investigar casos reales
+- NO decir qué exchange bloqueó
+- NO dar conclusiones finales definitivas`,
           },
           {
             role: "user",
@@ -253,12 +314,10 @@ router.post("/telegram-webhook", async (req, res) => {
     if (fromBot) return;
 
     // ── Image analysis (vision) ───────────────────────────────────────────────
-    // If the message contains a photo, analyze it with OpenAI vision and reply.
     if (msg.photo && Array.isArray(msg.photo) && msg.photo.length > 0) {
       const fileId = msg.photo[msg.photo.length - 1].file_id;
 
       try {
-        // Get the file path from Telegram
         const fileRes  = await fetch(
           `https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${fileId}`,
         );
@@ -289,7 +348,18 @@ router.post("/telegram-webhook", async (req, res) => {
             messages: [
               {
                 role: "system",
-                content: "Eres experto en análisis de wallets cripto (TRON, USDT, riesgo, blacklist, transacciones). Responde claro y profesional.",
+                content: `Eres experto en análisis de wallets cripto (TRON, USDT, riesgo, blacklist, transacciones).
+
+REGLAS LEGALES:
+- NO afirmar delitos como hechos absolutos
+- Usa lenguaje como "según la imagen se observa", "posible riesgo", "indicadores de"
+- NO decir que CoinCash bloquea wallets
+- NO dar asesoría legal o financiera
+
+Si detectas riesgo, ofrece el servicio de investigación avanzada ($100) con este mensaje:
+"Según la imagen, la dirección presenta indicadores de posible riesgo o blacklist. CoinCash no realiza bloqueos, pero podemos ayudarte a investigar el origen. Ofrecemos un análisis avanzado por $100. ¿Deseas iniciar el proceso?"
+
+Responde claro, profesional y corto.`,
               },
               {
                 role: "user",
@@ -327,8 +397,6 @@ router.post("/telegram-webhook", async (req, res) => {
     if (text.startsWith("🟢")) return;
 
     // ── OpenAI auto-reply to Telegram ─────────────────────────────────────────
-    // Call OpenAI and send the AI-generated response back to the same Telegram chat.
-    // Runs concurrently with the in-app delivery below.
     const aiReplyPromise = askOpenAI(text).then(async (respuesta) => {
       if (respuesta && telegramChatId) {
         await sendToTelegram(telegramChatId, respuesta);
@@ -337,16 +405,6 @@ router.post("/telegram-webhook", async (req, res) => {
     });
 
     // ── In-app routing ────────────────────────────────────────────────────────
-    // Determine the target user CC-ID and deliver the message to the in-app chat.
-    //
-    //    Strategy A: Admin replies to a notification using Telegram's reply feature
-    //                → extract CC-ID from the original notification text.
-    //
-    //    Strategy B: Admin writes "CC-XXXXXX: mensaje" or includes CC-ID anywhere.
-    //
-    //    Strategy C: Fallback to the last user that sent a message from this
-    //                Telegram chat (so admin can reply normally without CC-ID).
-
     let userId: string | null = null;
     let replyText: string     = text;
 
@@ -397,7 +455,6 @@ router.post("/telegram-webhook", async (req, res) => {
       console.warn(`[telegram-webhook] No se pudo determinar userId para entrega in-app. text="${text.slice(0, 100)}"`);
     }
 
-    // Wait for OpenAI reply to finish (non-blocking on error)
     await aiReplyPromise.catch(() => {});
 
   } catch (err: any) {
