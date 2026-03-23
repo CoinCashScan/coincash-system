@@ -1013,7 +1013,7 @@ export async function getDeviceStats(): Promise<{
 
 // ── Freemium ──────────────────────────────────────────────────────────────────
 
-export const FREE_SCAN_LIMIT = 5;
+export const FREE_SCAN_LIMIT = 3;
 
 // ── Device identification ─────────────────────────────────────────────────────
 
