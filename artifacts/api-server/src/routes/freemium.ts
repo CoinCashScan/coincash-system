@@ -615,4 +615,64 @@ router.get("/freemium/security-log", async (req, res) => {
   }
 });
 
+// ── GET /api/check-plan ───────────────────────────────────────────────────────
+// Returns the real plan and scan budget for a given userId (coincash_id).
+// This is the ONLY source of truth for plan validation — no IP, no network.
+// Query: ?userId=CC-XXXXXX   (also accepts ?ccId= for backwards compat)
+// Returns: { userId, plan, paidScansRemaining, canScan, daysRemaining? }
+router.get("/check-plan", async (req, res) => {
+  const userId = (
+    ((req.query.userId as string) ?? (req.query.ccId as string) ?? "")
+  ).trim();
+
+  if (!userId) {
+    return res.status(400).json({ error: "userId required" });
+  }
+
+  try {
+    // Ensure the user row exists (creates free-tier record on first call)
+    await ensureFreemiumUser(userId);
+
+    const [plan, paidScansRemaining, daysRemaining] = await Promise.all([
+      getUserPlan(userId),
+      getPaidScansRemaining(userId),
+      getProDaysRemaining(userId),
+    ]);
+
+    const isPaid = plan === "basico" || plan === "pro";
+
+    let canScan: boolean;
+    let remaining: number | null;
+
+    if (isPaid) {
+      // Paid plan: canScan purely from scan budget — NO IP, NO network check
+      if (paidScansRemaining === null) {
+        // Legacy unlimited admin grant
+        canScan   = true;
+        remaining = null;
+      } else {
+        canScan   = paidScansRemaining > 0;
+        remaining = paidScansRemaining;
+      }
+    } else {
+      // Free plan: ccId-based daily count only (no IP cross-check here)
+      const scansToday = await getScanCountToday(userId);
+      canScan   = scansToday < FREE_SCAN_LIMIT;
+      remaining = Math.max(0, FREE_SCAN_LIMIT - scansToday);
+    }
+
+    return res.json({
+      userId,
+      plan,
+      paidScansRemaining: isPaid ? paidScansRemaining : null,
+      canScan,
+      remaining,
+      daysRemaining: plan === "pro" ? daysRemaining : null,
+    });
+  } catch (err: any) {
+    console.error("[check-plan] error:", err?.message);
+    return res.status(500).json({ error: "internal error" });
+  }
+});
+
 export default router;
