@@ -13,7 +13,7 @@ const router = Router();
 const BOT_TOKEN  = process.env.TELEGRAM_BOT_TOKEN ?? "";
 const CHAT_ID    = process.env.TELEGRAM_CHAT_ID   ?? "";
 const SUPPORT_ID = "CC-SUPPORT";
-const CC_RE      = /CC-\d{6}/;
+const CC_RE      = /CC-\d{6}/i;
 
 // ── Last-active user tracking ─────────────────────────────────────────────────
 // Keeps the most recent userId per Telegram chat so the admin can reply
@@ -35,17 +35,17 @@ async function deliverSupportReply(
       senderCcId:   saved.sender_coincash_id ?? SUPPORT_ID,
       receiverCcId: saved.receiver_coincash_id ?? userId,
       message:      saved.message,
-      createdAt:    saved.timestamp,
+      timestamp:    saved.timestamp,
     };
     io.to(userId).emit("receive_message", msg);
     io.to(SUPPORT_ID).emit("receive_message", msg);
   }
 }
 
-/** Extract CC-XXXXXX from a string, or return null. */
+/** Extract CC-XXXXXX from a string, or return null. Always returns uppercase. */
 function extractCcId(text: string): string | null {
   const m = CC_RE.exec(text ?? "");
-  return m ? m[0] : null;
+  return m ? m[0].toUpperCase() : null;
 }
 
 // ── POST /api/send-telegram ───────────────────────────────────────────────────
@@ -162,18 +162,28 @@ router.post("/telegram-webhook", async (req, res) => {
 
     // Strategy B — CC-ID in message text
     if (!userId) {
-      // Format: "CC-123456: mensaje"
-      const colonMatch = text.match(/^(CC-\d{6})\s*:\s*(.+)$/s);
+      // Format: "CC-123456: mensaje" at start (colon separator)
+      const colonMatch = text.match(/^(CC-\d{6})\s*:\s*(.+)$/si);
       if (colonMatch) {
-        userId    = colonMatch[1];
+        userId    = colonMatch[1].toUpperCase();
         replyText = colonMatch[2].trim();
       }
-      // Format: "CC-123456 mensaje" (space only)
+      // Format: "CC-123456 mensaje" at start (space only)
       if (!userId) {
-        const spaceMatch = text.match(/^(CC-\d{6})\s+(.+)$/s);
+        const spaceMatch = text.match(/^(CC-\d{6})\s+(.+)$/si);
         if (spaceMatch) {
-          userId    = spaceMatch[1];
+          userId    = spaceMatch[1].toUpperCase();
           replyText = spaceMatch[2].trim();
+        }
+      }
+      // Format: CC-ID appears anywhere in the text (e.g. "mensaje para CC-123456")
+      // Strip it from the message and use the remaining text as the reply.
+      if (!userId) {
+        const anyMatch = text.match(/\b(CC-\d{6})\b/i);
+        if (anyMatch) {
+          userId    = anyMatch[1].toUpperCase();
+          replyText = text.replace(anyMatch[0], "").replace(/\s{2,}/g, " ").trim();
+          if (!replyText) replyText = text; // fallback: send full text if stripping leaves nothing
         }
       }
       if (userId) console.log(`[telegram-webhook] Strategy B → userId: ${userId}`);

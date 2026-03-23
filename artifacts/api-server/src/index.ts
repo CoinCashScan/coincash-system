@@ -150,9 +150,64 @@ function formatMsg(m: any) {
   };
 }
 
+// ── Telegram webhook auto-registration ───────────────────────────────────────
+// Registers this server instance as the Telegram webhook so that admin replies
+// always arrive at whichever server (dev or prod) is running.
+// Skips registration in development mode to avoid overriding the production URL.
+async function registerTelegramWebhook(): Promise<void> {
+  const token   = process.env.TELEGRAM_BOT_TOKEN;
+  const domains = process.env.REPLIT_DOMAINS;
+  const isDev   = process.env.NODE_ENV === "development";
+
+  if (!token || !domains) return;
+
+  // In development, skip auto-registration so the production webhook is not overridden.
+  // Can force registration by setting FORCE_TELEGRAM_WEBHOOK=true.
+  if (isDev && process.env.FORCE_TELEGRAM_WEBHOOK !== "true") {
+    console.log("[telegram] Skipping webhook registration (dev mode). Set FORCE_TELEGRAM_WEBHOOK=true to override.");
+    return;
+  }
+
+  // Use the first domain listed (primary domain for this deployment)
+  const domain     = domains.split(",")[0].trim();
+  const webhookUrl = `https://${domain}/api/telegram-webhook`;
+
+  try {
+    const current = await fetch(
+      `https://api.telegram.org/bot${token}/getWebhookInfo`,
+    ).then((r) => r.json());
+
+    const currentUrl = current?.result?.url ?? "";
+
+    if (currentUrl === webhookUrl) {
+      console.log(`[telegram] Webhook ya registrado → ${webhookUrl}`);
+      return;
+    }
+
+    const res = await fetch(
+      `https://api.telegram.org/bot${token}/setWebhook`,
+      {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ url: webhookUrl, allowed_updates: ["message"] }),
+      },
+    ).then((r) => r.json());
+
+    if (res.ok) {
+      console.log(`[telegram] ✅ Webhook registrado → ${webhookUrl}`);
+    } else {
+      console.error("[telegram] Error registrando webhook:", res.description);
+    }
+  } catch (err: any) {
+    console.error("[telegram] registerWebhook error:", err?.message);
+  }
+}
+
 // ── Start server ──────────────────────────────────────────────────────────────
 httpServer.listen(port, () => {
   console.log(`Server listening on port ${port} (HTTP + Socket.io)`);
   // Start background TronScan payment monitor
   startPaymentMonitor(io);
+  // Register Telegram webhook pointing to this server instance
+  registerTelegramWebhook();
 });
