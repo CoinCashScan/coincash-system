@@ -15,6 +15,11 @@ const CHAT_ID    = process.env.TELEGRAM_CHAT_ID   ?? "";
 const SUPPORT_ID = "CC-SUPPORT";
 const CC_RE      = /CC-\d{6}/;
 
+// ── Last-active user tracking ─────────────────────────────────────────────────
+// Keeps the most recent userId per Telegram chat so the admin can reply
+// without needing to always use Telegram's Reply feature.
+const lastActiveUser = new Map<string | number, string>(); // chatId → CC-XXXXXX
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /** Format a message from CC-SUPPORT and push it to the user via Socket.io. */
@@ -70,6 +75,14 @@ router.post("/send-telegram", async (req, res) => {
       return res.status(502).json({ success: false, error: "Telegram API error" });
     }
 
+    // Track which user triggered this notification so the admin can reply
+    // freely without needing to use Telegram's Reply feature.
+    const notifUserId = extractCcId(message);
+    if (notifUserId && CHAT_ID) {
+      lastActiveUser.set(parseInt(CHAT_ID, 10) || CHAT_ID, notifUserId);
+      console.log(`[telegram] Último usuario activo actualizado → ${notifUserId}`);
+    }
+
     return res.json({ success: true });
   } catch (err: any) {
     console.error("[telegram] fetch error:", err?.message);
@@ -117,58 +130,74 @@ router.post("/telegram-webhook", async (req, res) => {
 
     if (!msg) return;
 
-    const text    = (msg.text ?? "").trim();
-    const fromBot = msg.from?.is_bot === true;
+    const text      = (msg.text ?? "").trim();
+    const fromBot   = msg.from?.is_bot === true;
+    const telegramChatId = msg.chat?.id;
 
     // 1. Ignore empty messages or messages sent by the bot itself
     if (!text || fromBot) return;
 
     // 2. Ignore outgoing system notifications (messages the app sent TO Telegram)
-    //    These start with the green circle emoji we use in send-telegram calls.
     if (text.startsWith("🟢")) return;
 
     // 3. Determine the target user CC-ID.
     //
-    //    Strategy A (preferred): Admin replies to a notification using Telegram's
-    //    reply feature → extract CC-ID from the original notification text.
+    //    Strategy A: Admin replies to a notification using Telegram's reply feature
+    //                → extract CC-ID from the original notification text.
     //
-    //    Strategy B (fallback): Admin writes "CC-XXXXXX: mensaje" in a new message.
+    //    Strategy B: Admin writes "CC-XXXXXX: mensaje" or "CC-XXXXXX mensaje".
+    //
+    //    Strategy C: Fallback to the last user that sent a message from this
+    //                Telegram chat (so admin can reply normally without CC-ID).
 
-    let userId: string | null  = null;
-    let replyText: string      = text;
+    let userId: string | null = null;
+    let replyText: string     = text;
 
-    // Strategy A — reply_to_message
-    const replyToText = msg.reply_to_message?.text ?? "";
+    // Strategy A — reply_to_message (preferred)
+    const replyToText = msg.reply_to_message?.text ?? msg.reply_to_message?.caption ?? "";
     if (replyToText) {
       userId = extractCcId(replyToText);
+      console.log(`[telegram-webhook] Strategy A — reply_to text: "${replyToText.slice(0, 80)}" → userId: ${userId}`);
     }
 
-    // Strategy B — message starts with CC-XXXXXX
+    // Strategy B — CC-ID in message text
     if (!userId) {
-      const colonIdx = text.indexOf(":");
-      if (colonIdx > 0) {
-        const candidate = text.slice(0, colonIdx).trim();
-        if (CC_RE.test(candidate)) {
-          userId    = candidate;
-          replyText = text.slice(colonIdx + 1).trim();
+      // Format: "CC-123456: mensaje"
+      const colonMatch = text.match(/^(CC-\d{6})\s*:\s*(.+)$/s);
+      if (colonMatch) {
+        userId    = colonMatch[1];
+        replyText = colonMatch[2].trim();
+      }
+      // Format: "CC-123456 mensaje" (space only)
+      if (!userId) {
+        const spaceMatch = text.match(/^(CC-\d{6})\s+(.+)$/s);
+        if (spaceMatch) {
+          userId    = spaceMatch[1];
+          replyText = spaceMatch[2].trim();
         }
       }
-      // Also handle "CC-XXXXXX mensaje" (space separator)
-      if (!userId) {
-        userId    = extractCcId(text);
-        replyText = userId ? text.replace(CC_RE, "").trim() : text;
-      }
+      if (userId) console.log(`[telegram-webhook] Strategy B → userId: ${userId}`);
+    }
+
+    // Strategy C — use last known active user for this Telegram chat
+    if (!userId && telegramChatId) {
+      userId = lastActiveUser.get(telegramChatId) ?? null;
+      if (userId) console.log(`[telegram-webhook] Strategy C (last active) → userId: ${userId}`);
     }
 
     if (!userId || !replyText) {
-      console.log("[telegram-webhook] No se pudo determinar el userId o el mensaje. Ignorando.");
+      console.warn(`[telegram-webhook] No se pudo determinar userId. text="${text.slice(0, 100)}" replyTo="${replyToText.slice(0, 100)}"`);
       return;
     }
 
     // 4. Deliver the reply to the in-app chat
     const io = req.app.get("io");
     await deliverSupportReply(io, userId, replyText);
-    console.log(`[telegram-webhook] Respuesta entregada → ${userId}: ${replyText.slice(0, 80)}`);
+
+    // Update last-active user for this Telegram chat
+    if (telegramChatId) lastActiveUser.set(telegramChatId, userId);
+
+    console.log(`[telegram-webhook] ✅ Respuesta entregada → ${userId}: "${replyText.slice(0, 80)}"`);
 
   } catch (err: any) {
     console.error("[telegram-webhook] Error:", err?.message);
