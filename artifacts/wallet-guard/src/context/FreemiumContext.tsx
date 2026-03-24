@@ -55,9 +55,33 @@ const DEFAULT_FREEMIUM: FreemiumStatus = {
 
 const FreemiumContext = createContext<FreemiumContextValue | null>(null);
 
+// ── Plan cache (localStorage) — survives network transitions ─────────────────
+// Prevents the plan from resetting to "free" when WiFi ↔ mobile data switches.
+
+const LS_PLAN_CACHE = "cc-plan-cache";
+
+function savePlanCache(status: FreemiumStatus): void {
+  try {
+    localStorage.setItem(LS_PLAN_CACHE, JSON.stringify(status));
+  } catch {}
+}
+
+function loadPlanCache(): FreemiumStatus | null {
+  try {
+    const raw = localStorage.getItem(LS_PLAN_CACHE);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as FreemiumStatus;
+    // Only trust the cache if it held a paid plan — free plans don't need caching
+    if (parsed.plan === "basico" || parsed.plan === "pro") return parsed;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 // ── API helpers ───────────────────────────────────────────────────────────────
 
-async function fetchFreemiumStatus(ccId: string): Promise<FreemiumStatus> {
+async function fetchFreemiumStatus(ccId: string): Promise<FreemiumStatus | null> {
   try {
     const deviceId   = getDeviceId();
     const deviceHash = await getDeviceHash();
@@ -67,11 +91,16 @@ async function fetchFreemiumStatus(ccId: string): Promise<FreemiumStatus> {
       ...(deviceHash ? { fp: deviceHash } : {}),
     });
     const res = await fetch(`${API_BASE}/freemium/status?${params}`);
-    if (!res.ok) return DEFAULT_FREEMIUM;
+    if (!res.ok) return null;               // signal: request failed
     const data = await res.json();
-    return { ...DEFAULT_FREEMIUM, ...data };
+    const status: FreemiumStatus = { ...DEFAULT_FREEMIUM, ...data };
+    // Persist paid plan to localStorage so network transitions don't reset it
+    if (status.plan === "basico" || status.plan === "pro") {
+      savePlanCache(status);
+    }
+    return status;
   } catch {
-    return DEFAULT_FREEMIUM;
+    return null;                            // signal: network error
   }
 }
 
@@ -124,9 +153,11 @@ export function FreemiumProvider({ children }: { children: ReactNode }) {
       setCcId(id);
       ccIdRef.current = id;
 
-      const status = await fetchFreemiumStatus(id);
+      // Try fetching from server; fall back to localStorage cache on failure
+      const fetched = await fetchFreemiumStatus(id);
       if (cancelled) return;
 
+      const status = fetched ?? loadPlanCache() ?? DEFAULT_FREEMIUM;
       setFreemium(status);
       setFreemiumLoaded(true);
 
@@ -139,6 +170,7 @@ export function FreemiumProvider({ children }: { children: ReactNode }) {
       pollRef.current = setInterval(async () => {
         if (cancelled) return;
         const s = await fetchFreemiumStatus(id);
+        if (s === null) return; // Network error — keep current state, do NOT reset to free
         setFreemium((prev) => {
           const wasFree = prev.plan === "free";
           const nowPaid = s.plan === "basico" || s.plan === "pro";
@@ -221,6 +253,7 @@ export function FreemiumProvider({ children }: { children: ReactNode }) {
   const refreshFreemium = useCallback(async () => {
     if (!ccId) return;
     const status = await fetchFreemiumStatus(ccId);
+    if (status === null) return; // Network error — keep current state
     setFreemium((prev) => ({ ...prev, ...status }));
   }, [ccId]);
 
